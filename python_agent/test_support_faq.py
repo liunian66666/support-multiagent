@@ -22,6 +22,7 @@ class SupportFaqContractTest(unittest.TestCase):
             "怎么退款", "申请退款", "退款如何操作",
             "帮我查一下我的快递", "订单到哪了", "怎么查询订单状态",
             "你都会什么", "你能帮我什么忙",
+            "订单号怎么找", "单号在哪看", "订单编号咋查",
         ):
             self.assertTrue(lookup(query, "t_demo"), query)
 
@@ -51,10 +52,30 @@ class SupportFaqContractTest(unittest.TestCase):
         self.assertEqual(handoff_reason("转人工"), "用户主动请求转人工")
 
     def test_order_id_only_with_order_context(self):
+        # 演示格式
         self.assertEqual(order_id("查询订单 ORD-2024-001"), "ORD-2024-001")
         self.assertEqual(order_id("快递 ORD-2024-001 到哪了"), "ORD-2024-001")
+        # 电商前缀
+        self.assertEqual(order_id("帮我查 TB202410180001"), "TB202410180001")
+        self.assertEqual(order_id("订单 JD20241018001 状态"), "JD20241018001")
+        self.assertEqual(order_id("查 PDD-12345678 物流"), "PDD-12345678")
+        # 显式上下文（无前缀纯数字/字母数字组合）
+        self.assertEqual(order_id("订单号是 ABC-123-XYZ"), "ABC-123-XYZ")
+        self.assertEqual(order_id("我的单号: 202410181234"), "202410181234")
+        self.assertEqual(order_id("订单编号 1234567890"), "1234567890")
+        # 无上下文或无格式
         self.assertIsNone(order_id("ORD-2024-001"))
         self.assertIsNone(order_id("帮我查一下我的快递"))
+        self.assertIsNone(order_id("我等了 30 分钟还没发货"))  # 纯短数字不误匹配
+        self.assertIsNone(order_id("13800138000"))  # 手机号不误匹配
+
+    def test_find_order_id_answer_is_structured_and_honest(self):
+        answer = lookup("订单号怎么找", "t_demo")
+        self.assertIn("购买记录", answer)
+        self.assertIn("收货短信", answer)
+        self.assertIn("电子发票", answer)
+        self.assertIn("支付凭证", answer)
+        self.assertIn("核验订单归属", answer)  # 不承诺一定查到，只承诺核验动作
 
 
 if __name__ == "__main__":

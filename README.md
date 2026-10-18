@@ -35,6 +35,10 @@
 | 知识库索引一致性修复 | 重索引后检索器自动重建（原先需重启服务才恢复）；按 `metadata.doc_id` 清理旧向量（原先删除条件未命中，导致残留与重复） | `python_agent/tools.py`、`kb_index_worker.py`、`routers_kb.py` |
 | 演示政策知识 | 为演示租户补录示例政策文档，运费、发货时效、退款到账等可检索作答；知识库未覆盖的问题明确拒答而非编造 | `python_agent/kb_seed/demo-store-policy-v1.md` |
 | 确定性答复写入检查点 | 流程 FAQ / 订单核验 / 转人工原本绕过 LangGraph，后续 LLM 读不到这次问答；现通过旁路图（与主 Agent 共享同一 checkpointer 与 thread_id）把问答追加到检查点，长对话上下文连续；工单未完结时跳过，写入失败不影响答复 | `python_agent/agent_factory.py`、`python_agent/main.py` |
+| 订单号格式扩展 | 由单一 `ORD-xxx` 演示格式扩展至电商前缀（TB/JD/PDD/DY/TMALL/1688）与显式上下文（「订单号是 xxx」「单号: xxx」），识别真实商家订单号；纯短数字与手机号不误匹配 | `python_agent/support_faq.py` |
+| 「订单号怎么找」FAQ 化 | 高频问题原先走 LLM，答法不一；现做成确定性 FAQ，分点列出购买记录/收货短信/电子发票/支付凭证四个查找位置 | `python_agent/support_faq.py` |
+| 订单核验失败自动转人工 | 核验失败时不再只返回文本「请转人工」，自动触发 interrupt 建单，`reason` 标注「订单核验失败（订单号 xxx），转人工处理」；工单未完结时不重复建单 | `python_agent/main.py` |
+| 历史订单上下文记忆 | 用户追问「刚才那个订单现在怎样」「之前那个快递到哪了」时，从检查点历史消息复用最近订单号，避免 LLM 答非所问 | `python_agent/support_faq.py`、`python_agent/main.py` |
 
 ### 能力边界（未开放的部分）
 
@@ -53,7 +57,7 @@
 复现方式：
 
 ```bash
-docker compose exec -T agent python -m unittest test_support_faq.py test_faq_bridge.py -v   # Python 8+3 项通过
+docker compose exec -T agent python -m unittest test_support_faq.py test_faq_bridge.py -v   # Python 9+3 项通过
 docker build --target builder -t cs-go-merge-test -f go_service/Dockerfile .
 docker run --rm cs-go-merge-test go test ./...                            # Go 通过
 ```

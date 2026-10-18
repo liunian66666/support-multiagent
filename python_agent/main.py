@@ -105,7 +105,7 @@ from config import *
 
 # ====================== Tools（已拆分到 tools.py，采用 app 注入模式） ======================
 import tools
-from support_faq import lookup as lookup_process_faq, is_handoff, order_id as process_order_id, handoff_reason
+from support_faq import lookup as lookup_process_faq, is_handoff, order_id as process_order_id, handoff_reason, has_order_reference
 
 
 
@@ -344,6 +344,37 @@ async def _record_to_checkpoint(app, thread_id: str, question: str, answer: str)
         logger.exception("checkpoint bridge write failed thread=%s", thread_id)
 
 
+# 订单核验失败的文本标识（query_order_readonly 返回值中出现即触发自动转人工）
+_ORDER_LOOKUP_FAILURE_MARKERS = ("无法核验", "未通过核验", "暂不可用", "暂时不可用", "无法核验订单")
+
+
+async def _last_order_id_from_history(app, thread_id: str) -> str | None:
+    """从会话检查点历史消息中找最近一条用户消息里的订单号。
+
+    用于「刚才那个订单」「之前那个快递」这类指代场景：当前消息无具体订单号，
+    但有订单上下文 + 指代词时，从历史复用上一轮订单号，避免 LLM 答非所问。
+    读取失败不影响主流程，仅返回 None。
+    """
+    bridge = getattr(app.state, "faq_bridge", None)
+    if bridge is None:
+        return None
+    try:
+        config = {"configurable": {"thread_id": thread_id}}
+        state = await bridge.aget_state(config)
+        if not state or not state.values:
+            return None
+        messages = state.values.get("messages", [])
+        for msg in reversed(messages):
+            if isinstance(msg, HumanMessage):
+                oid = process_order_id(msg.content)
+                if oid:
+                    return oid
+        return None
+    except Exception:
+        logger.exception("last_order_id_from_history failed thread=%s", thread_id)
+        return None
+
+
 @app.post("/agent/chat", response_model=AgentResp)
 async def agent_chat(req: ChatRequest, request: Request):
     trace_id_var.set(request.headers.get("X-Trace-Id", "-"))
@@ -371,10 +402,19 @@ async def agent_chat(req: ChatRequest, request: Request):
             "reason": reason, "direct_handoff": True,
         })
     oid = process_order_id(user_message)
+    # 指代回溯：当前消息无订单号但有「刚才/那个/之前」+ 订单/快递上下文时，从历史取最近订单号
+    if oid is None and has_order_reference(user_message):
+        oid = await _last_order_id_from_history(request.app, thread_id)
     if oid:
         answer = await tools.query_order_readonly(oid)
         if not req.has_pending_ticket:
             await _record_to_checkpoint(request.app, thread_id, user_message, answer)
+            # 订单核验失败（无法核验/暂不可用）时自动转人工，reason 带订单号上下文
+            if any(k in answer for k in _ORDER_LOOKUP_FAILURE_MARKERS):
+                reason = f"订单核验失败（订单号 {oid}），转人工处理"
+                return AgentResp(success=True, is_interrupt=True, interrupt_data={
+                    "reason": reason, "direct_handoff": True, "order_id": oid,
+                })
         return AgentResp(success=True, is_interrupt=False, content=answer + SERVICE_FOOTER)
     answer = lookup_process_faq(user_message, tenant_id)
     if answer:
@@ -457,10 +497,19 @@ async def agent_chat_stream(req: ChatRequest, request: Request):
             yield f"data: {_json.dumps({'type':'interrupt','data':info}, ensure_ascii=False)}\n\n"
             return
         oid = process_order_id(user_message)
+        # 指代回溯：当前消息无订单号但有「刚才/那个/之前」+ 订单/快递上下文时，从历史取最近订单号
+        if oid is None and has_order_reference(user_message):
+            oid = await _last_order_id_from_history(request.app, thread_id)
         if oid:
             answer = await tools.query_order_readonly(oid)
             if not req.has_pending_ticket:
                 await _record_to_checkpoint(request.app, thread_id, user_message, answer)
+                # 订单核验失败自动转人工，reason 带订单号上下文
+                if any(k in answer for k in _ORDER_LOOKUP_FAILURE_MARKERS):
+                    reason = f"订单核验失败（订单号 {oid}），转人工处理"
+                    info = {"reason": reason, "direct_handoff": True, "order_id": oid}
+                    yield f"data: {_json.dumps({'type':'interrupt','data':info}, ensure_ascii=False)}\n\n"
+                    return
             yield f"data: {_json.dumps({'type':'end','content':answer + SERVICE_FOOTER}, ensure_ascii=False)}\n\n"
             return
         answer = lookup_process_faq(user_message, tenant_id)
