@@ -19,13 +19,11 @@
 
 ---
 
-## 本仓库说明：在原项目基础上的整合改动
+## 本仓库说明：在原项目基础上的整合优化
 
-本仓库基于 [myrockey/ai_customer_service](https://github.com/myrockey/ai_customer_service) 的多租户客服系统，在其之上完成「电商客服 Agent 能力整合」。**原始项目的架构与绝大部分功能由原作者实现**，本节只记录本次新增与修改的部分，便于区分归属。
+本仓库基于 [myrockey/ai_customer_service](https://github.com/myrockey/ai_customer_service) 的多租户客服系统，在其之上完成「电商客服 Agent 能力整合」优化。**原始项目的架构与绝大部分功能由原作者实现**，本节只记录本次优化新增与修改的部分，便于区分归属。
 
-**改动分支**：`merge/support-agent-20261018`（含完整历史，与 `main` 相比多出两个提交）
-
-### 本次改动内容
+### 本次优化内容
 
 | 改动 | 说明 | 位置 |
 |---|---|---|
@@ -85,8 +83,8 @@ docker run --rm cs-go-merge-test go test ./...                            # Go �
 ## 🚀 快速开始
 
 ```bash
-# 1. 克隆项目（含本次整合分支）
-git clone -b merge/support-agent-20261018 https://github.com/liunian66666/support-multiagent.git
+# 1. 克隆项目
+git clone https://github.com/liunian66666/support-multiagent.git
 cd support-multiagent
 
 # 2. 配置环境变量
