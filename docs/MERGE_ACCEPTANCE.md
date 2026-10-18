@@ -1,0 +1,43 @@
+# 客服 Agent 合并实测记录（2026-10-18）
+
+## 当前交付范围
+
+主项目是 `ai_customer_service`。用户入口沿用 `http://localhost:8080/chat/pc.html` → Nginx → Go `/ws/chat` / `/api/user/chat` → Python `/agent/chat` / `/agent/chat/stream`；消息与工单沿用 Go/MySQL，模型检查点沿用 PostgreSQL，租户知识库沿用 Qdrant。没有部署第二套 Streamlit/FastAPI/Milvus/SQLite 演示系统。
+
+从 `support-agent` 迁入的是可审核的通用客服流程及回答边界。`python_agent/support_faq.py` 对明确问法直接答复，标明 `process-playbook-v1 / generic-process` 来源，并要求商家政策与订单归属另行核验；`python_agent/kb_seed/support-agent-process-v1.md` 经现有后台上传和手动索引进入 `kb_t_demo`。公开话术模板没有被当作商家政策导入。
+
+## 阶段结果
+
+| 阶段 | 验收 | 实测结果 |
+|---|---|---|
+| 保护基线 | 两仓状态及原有数据可恢复 | 来源仓未提交文件 126 个、主仓未跟踪 `.idea` 文件 7 个已快照到 `support-agent/runtime/merge-safeguard-20261018/`；MySQL 单事务导出 37,490 字节，SHA-256 `db5325472db1e4471231cebcabfcaf57fd32648fa7e74546d8acff1b77e13134`。原数据卷未重置。 |
+| 统一入口/租户 | 客户页面 → Go → Agent；跨租户访问拒绝 | 页面在线；Go 请求给 Agent 带内部令牌和租户头，Agent 校验与 `thread_id` 前缀一致；以 `t_demo` 令牌读取 `t_admin` 历史返回 403；不带内部身份直接调用 Agent 聊天返回 403。 |
+| FAQ | 页面问“怎么申请退货？” | 页面得到通用流程答复与来源提示；刷新后历史仍从 MySQL 出现。页面问“你可以做什么？”时明确说明真实订单查询、退款与支付尚未接通。Python 4 个新增单测通过。 |
+| 知识库 | 主项目管理接口登记与索引 | `t_demo` 文档 `c111e8bd171b4bfe8abf54fd7ce3ca30` 完成索引，status=1、4 个分片；Qdrant `kb_t_demo` 实际 4 点，嵌入的 `tenant_id` 均为 `t_demo`。 |
+| 订单安全框架 | 查询旧演示订单号 | 页面只答“真实订单接口和订单归属验证尚未接通，无法核验”；旧 `/api/business/order` 返回 410 且不含订单内容；内部订单接口无令牌返回 403。**真实订单状态查询未完成**。 |
+| 转人工 | 页面按钮 → 工单 → 管理端 | 页面返回 `TK-e1bb1a7d`；管理端查询同租户工单 status=0，消息含用户请求与系统建单记录。按钮发送文本与界面文本已统一，不承诺等待时间。 |
+| 质量门 | 构建/测试 | 最终 Go `go test ./...` 已通过；Python FAQ 单测 4/4，通过；Go、Agent、Nginx 镜像构建和容器启动通过；Compose 7 项服务均运行，带健康检查的 6 项均 healthy。 |
+
+## 尚未完成的产品边界
+
+1. **真实订单查询**：主项目现有 `orders` 表只有演示记录且没有可信的租户和客户归属字段；用户也确认暂无真实订单接口。Go 的内部只读适配器因此对所有订单状态返回 503。要开放需提供业务 API 契约、可靠的用户身份映射、同租户同客户归属校验和异常/越权测试。
+2. **客户级会话身份**：现有用户令牌证明租户，不绑定具体访客 `user_id`；现有 SDK/页面从浏览器传 `user_id`。跨租户校验已通过，但同租户不同访客的不可冒用性尚未建立。接真实订单前必须由可信宿主签发绑定访客身份的会话令牌，并将 Go 历史读取、WebSocket 和订单适配器同时改为按令牌主体校验。快速 FAQ 回答已写入 Go/MySQL 历史，但不进入 PostgreSQL 的 LangGraph 检查点；长对话模型上下文仍需桥接。
+3. **退款与支付**：主项目当前 Agent 只有知识库搜索、订单只读查询、转人工三个工具，没有接入来源项目的 SQLite 演示写入工具。订单归属、真实业务接口和独立审批接通前保持关闭。
+4. **政策知识**：当前仅导入演示流程文档，不能作为店铺政策。若要回答资格、时效、运费、金额，需按租户提交审核文档并验证检索证据。
+
+## 可复现命令
+
+```text
+docker compose ps
+docker compose exec -T agent python -m unittest test_support_faq.py -v
+docker build --target builder -t cs-go-merge-test -f go_service/Dockerfile .
+docker run --rm cs-go-merge-test go test ./...
+```
+
+用户页面：`http://localhost:8080/chat/pc.html`。演示账号仅供本地测试，生产不可把 `app_secret` 放进页面 URL。
+
+
+
+
+
+真实订单后续接入条件见 [ORDER_ADAPTER_CONTRACT.md](./ORDER_ADAPTER_CONTRACT.md)。
