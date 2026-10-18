@@ -39,6 +39,9 @@ TEXT_SPLITTER_CHUNK_OVERLAP = 30
 RETRIEVER_TOP_K = 3
 
 # ====================== 默认 Prompt ======================
+# 服务页脚：LLM 路径由系统提示要求追加，快答路径（FAQ/订单）绕过 LLM，需手动追加以保持一致。
+SERVICE_FOOTER = "\n\n智能客服 客服中心 | 工作时间 9:00-18:00"
+
 DEFAULT_SYSTEM_PROMPT = """你是智能客服系统 的智能客服"小Q"。
 ## 你的职责
 1. 热情接待每一位用户，用"您"称呼

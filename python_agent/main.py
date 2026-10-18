@@ -375,12 +375,12 @@ async def agent_chat(req: ChatRequest, request: Request):
         answer = await tools.query_order_readonly(oid)
         if not req.has_pending_ticket:
             await _record_to_checkpoint(request.app, thread_id, user_message, answer)
-        return AgentResp(success=True, is_interrupt=False, content=answer)
+        return AgentResp(success=True, is_interrupt=False, content=answer + SERVICE_FOOTER)
     answer = lookup_process_faq(user_message, tenant_id)
     if answer:
         if not req.has_pending_ticket:
             await _record_to_checkpoint(request.app, thread_id, user_message, answer)
-        return AgentResp(success=True, is_interrupt=False, content=answer)
+        return AgentResp(success=True, is_interrupt=False, content=answer + SERVICE_FOOTER)
     agent = await get_tenant_agent(request.app, tenant_id)
 
     config = {"configurable": {"thread_id": thread_id}}
@@ -461,13 +461,13 @@ async def agent_chat_stream(req: ChatRequest, request: Request):
             answer = await tools.query_order_readonly(oid)
             if not req.has_pending_ticket:
                 await _record_to_checkpoint(request.app, thread_id, user_message, answer)
-            yield f"data: {_json.dumps({'type':'end','content':answer}, ensure_ascii=False)}\n\n"
+            yield f"data: {_json.dumps({'type':'end','content':answer + SERVICE_FOOTER}, ensure_ascii=False)}\n\n"
             return
         answer = lookup_process_faq(user_message, tenant_id)
         if answer:
             if not req.has_pending_ticket:
                 await _record_to_checkpoint(request.app, thread_id, user_message, answer)
-            yield f"data: {_json.dumps({'type':'end','content':answer}, ensure_ascii=False)}\n\n"
+            yield f"data: {_json.dumps({'type':'end','content':answer + SERVICE_FOOTER}, ensure_ascii=False)}\n\n"
             return
 
         # P1-2：并发活跃会话配额校验
