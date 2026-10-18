@@ -29,7 +29,8 @@
 |---|---|---|
 | 统一入口身份校验 | Go 向 Agent 透传内部令牌与租户头，Agent 校验令牌有效性及 `thread_id` 租户前缀一致，阻断绕过网关直连 | `agent/client.go`、`python_agent/main.py` |
 | 订单查询门禁 | 订单归属无法证明时统一 fail-closed：内部接口返回 503「无法核验」，旧的公开 `/api/business/order` 返回 410 且不再返回任何订单内容 | `handler/user.go`、`router.go` |
-| 迁移客服流程 FAQ | 从外部客服 Agent 项目迁入通用流程问答与回答边界，答复标注来源，未命中时拒答而非编造商家政策 | `python_agent/support_faq.py` |
+| 迁移客服流程 FAQ | 从外部客服 Agent 项目迁入通用流程问答与回答边界，意图关键词匹配（退货/退款/订单状态/能力），常见变体问法可命中；答复标注来源，未命中时拒答而非编造商家政策 | `python_agent/support_faq.py` |
+| 转人工意图扩展 | 识别「找人工」「人工客服」「转接」「投诉」等说法并区分建单原因；意图优先级：转人工 > 具体订单号 > 流程 FAQ > LLM，避免订单请求被流程答复截胡 | `python_agent/support_faq.py`、`python_agent/main.py` |
 | 转人工流程修正 | 区分用户主动转人工与中断恢复，避免建单后重复 resume 打断会话；前端按钮文案与发送文本统一，不承诺等待时长 | `handler/ws.go`、`chat/chat.go`、`web/chat/pc.html` |
 | 知识库索引一致性修复 | 重索引后检索器自动重建（原先需重启服务才恢复）；按 `metadata.doc_id` 清理旧向量（原先删除条件未命中，导致残留与重复） | `python_agent/tools.py`、`kb_index_worker.py`、`routers_kb.py` |
 | 演示政策知识 | 为演示租户补录示例政策文档，运费、发货时效、退款到账等可检索作答；知识库未覆盖的问题明确拒答而非编造 | `python_agent/kb_seed/demo-store-policy-v1.md` |
@@ -51,7 +52,7 @@
 复现方式：
 
 ```bash
-docker compose exec -T agent python -m unittest test_support_faq.py -v   # Python 4 项通过
+docker compose exec -T agent python -m unittest test_support_faq.py -v   # Python 8 项通过
 docker build --target builder -t cs-go-merge-test -f go_service/Dockerfile .
 docker run --rm cs-go-merge-test go test ./...                            # Go 通过
 ```

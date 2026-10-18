@@ -105,7 +105,7 @@ from config import *
 
 # ====================== Tools（已拆分到 tools.py，采用 app 注入模式） ======================
 import tools
-from support_faq import lookup as lookup_process_faq, is_handoff, order_id as process_order_id
+from support_faq import lookup as lookup_process_faq, is_handoff, order_id as process_order_id, handoff_reason
 
 
 
@@ -337,16 +337,18 @@ async def agent_chat(req: ChatRequest, request: Request):
     tenant_var.set(tenant_id)
     thread_var.set(thread_id)
     pending_ticket_var.set(req.has_pending_ticket)
+    # 意图优先级：明确转人工 > 具体订单号（避免被订单流程 FAQ 截胡）> 流程 FAQ > LLM/RAG
+    if is_handoff(user_message) and not req.has_pending_ticket:
+        return AgentResp(success=True, is_interrupt=True, interrupt_data={
+            "reason": handoff_reason(user_message), "direct_handoff": True,
+        })
+    oid = process_order_id(user_message)
+    if oid:
+        return AgentResp(success=True, is_interrupt=False,
+                         content=await tools.query_order_readonly(oid))
     answer = lookup_process_faq(user_message, tenant_id)
     if answer:
         return AgentResp(success=True, is_interrupt=False, content=answer)
-    if is_handoff(user_message) and not req.has_pending_ticket:
-        return AgentResp(success=True, is_interrupt=True, interrupt_data={
-            "reason": "用户主动请求转人工", "direct_handoff": True,
-        })
-    if process_order_id(user_message):
-        return AgentResp(success=True, is_interrupt=False,
-                         content=await tools.query_order_readonly(process_order_id(user_message)))
     agent = await get_tenant_agent(request.app, tenant_id)
 
     config = {"configurable": {"thread_id": thread_id}}
@@ -412,17 +414,18 @@ async def agent_chat_stream(req: ChatRequest, request: Request):
         tenant_var.set(tenant_id)
         thread_var.set(thread_id)
         pending_ticket_var.set(req.has_pending_ticket)
-        answer = lookup_process_faq(user_message, tenant_id)
-        if answer:
-            yield f"data: {_json.dumps({'type':'end','content':answer}, ensure_ascii=False)}\n\n"
-            return
+        # 意图优先级同 /agent/chat：转人工 > 具体订单号 > 流程 FAQ > LLM/RAG
         if is_handoff(user_message) and not req.has_pending_ticket:
-            info = {"reason": "用户主动请求转人工", "direct_handoff": True}
+            info = {"reason": handoff_reason(user_message), "direct_handoff": True}
             yield f"data: {_json.dumps({'type':'interrupt','data':info}, ensure_ascii=False)}\n\n"
             return
         oid = process_order_id(user_message)
         if oid:
             answer = await tools.query_order_readonly(oid)
+            yield f"data: {_json.dumps({'type':'end','content':answer}, ensure_ascii=False)}\n\n"
+            return
+        answer = lookup_process_faq(user_message, tenant_id)
+        if answer:
             yield f"data: {_json.dumps({'type':'end','content':answer}, ensure_ascii=False)}\n\n"
             return
 
