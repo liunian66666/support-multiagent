@@ -107,7 +107,12 @@ async def search_kb(query: str) -> str:
 
 
 async def query_order_readonly(order_id: str) -> str:
-    """Ask the Go business adapter using the trusted tenant/session context."""
+    """Ask the Go business adapter using the trusted tenant/session context.
+
+    Go 的 StatusCode 中间件会把 body.code 映射到 HTTP status（code=403→HTTP 403），
+    所以 HTTP 4xx 是正常的业务响应（订单不存在/不属于您），不是请求失败。
+    仅 HTTP 5xx 或网络异常视为系统不可用。
+    """
     tid = (_tenant_var.get() if _tenant_var is not None else "") or ""
     thread_id = (_thread_var.get() if _thread_var is not None else "") or ""
     if not INTERNAL_API_TOKEN or not tid or not thread_id.startswith(tid + ":"):
@@ -118,13 +123,20 @@ async def query_order_readonly(order_id: str) -> str:
             params={"order_id": order_id, "tenant_id": tid, "thread_id": thread_id},
             headers={"X-Internal-Token": INTERNAL_API_TOKEN}, timeout=5,
         )
-        if resp.status_code == 503:
-            return "真实订单接口和订单归属验证尚未接通，无法核验订单状态；请转人工客服。"
-        resp.raise_for_status()
+        if resp.status_code >= 500:
+            return "订单系统暂时不可用，无法核验订单状态；请转人工客服。"
         data = resp.json()
-        if data.get("code") != 0:
-            return "订单查询未通过核验，请转人工客服。"
-        return str(data.get("data") or "订单状态暂不可用，请转人工客服。")
+        code = data.get("code")
+        if code == 0:
+            d = data.get("data") or {}
+            return (f"订单 {d.get('order_id','')} 状态：{d.get('status','未知')}；"
+                    f"商品：{d.get('item','')}；金额：{d.get('amount','')}；"
+                    f"下单日期：{d.get('create_date','')}。")
+        if code == 404:
+            return f"未找到订单 {order_id}，订单可能不存在或不属于您；请转人工客服。"
+        if code == 403:
+            return f"订单 {order_id} 不属于您，无法核验状态；如需协助请转人工客服。"
+        return "订单查询未通过核验，请转人工客服。"
     except Exception:
         if _logger:
             _logger.warning("order lookup unavailable tenant=%s", tid)
@@ -133,7 +145,7 @@ async def query_order_readonly(order_id: str) -> str:
 
 @tool
 async def query_order(order_id: str) -> str:
-    """只读查询本人订单。尚无真实业务接口及归属证明时明确拒绝返回订单状态。"""
+    """只读查询本人订单。校验订单归属（tenant_id + customer_id）通过后返回状态，否则 fail-closed。"""
     return await query_order_readonly(order_id)
 
 

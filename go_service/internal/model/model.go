@@ -9,6 +9,8 @@ import (
 type Order struct {
 	ID         uint64    `gorm:"primaryKey" json:"id"`
 	OrderID    string    `gorm:"column:order_id;size:64;unique" json:"order_id"`
+	TenantID   string    `gorm:"column:tenant_id;size:64;index:idx_order_tenant" json:"tenant_id"`
+	CustomerID string    `gorm:"column:customer_id;size:255;index:idx_order_customer" json:"customer_id"`
 	UserName   string    `gorm:"column:user_name;size:128" json:"user_name"`
 	Item       string    `gorm:"column:item;size:255" json:"item"`
 	Amount     float64   `gorm:"column:amount;type:decimal(12,2)" json:"amount"`

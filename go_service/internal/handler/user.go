@@ -14,21 +14,50 @@ import (
 
 // ============ 业务内部接口：给Python Agent调用查询订单 ============
 
-// BusinessOrder is the reserved read-only order adapter for the authenticated Agent.
-// The legacy orders table contains demonstration rows without tenant/customer ownership.
-// Until a real owner-aware business reader is wired, fail closed for every order ID.
+// BusinessOrder is the read-only order adapter for the authenticated Agent.
+//
+// 订单归属校验：order.customer_id 必须等于请求 thread_id（即 tid:visitor），
+// 且 order.tenant_id 必须等于请求 tenant_id。命中返回状态，不命中返回 fail-closed
+// 文本，不暴露订单存在性给非归属用户。演示订单数据已明确标注为演示用，
+// 不构成真实商家业务答复。
 func BusinessOrder(c *gin.Context) {
 	tenantID := c.Query("tenant_id")
 	threadID := c.Query("thread_id")
+	orderID := c.Query("order_id")
 	if config.GlobalConfig.InternalAPIToken == "" ||
 		c.GetHeader("X-Internal-Token") != config.GlobalConfig.InternalAPIToken ||
 		tenantID == "" || !strings.HasPrefix(threadID, tenantID+":") ||
-		c.Query("order_id") == "" {
+		orderID == "" {
 		c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "订单查询身份校验失败"})
 		return
 	}
-	c.JSON(http.StatusServiceUnavailable, gin.H{
-		"code": 503, "msg": "真实订单接口和订单归属验证尚未接通，无法核验订单状态；请转人工客服。",
+
+	var order model.Order
+	err := config.DB.Where("order_id = ?", orderID).First(&order).Error
+	if err != nil {
+		// 订单不存在：fail-closed，不区分"不存在"与"不属于您"
+		c.JSON(http.StatusOK, gin.H{
+			"code": 404, "msg": "未找到订单或订单不属于您，请确认订单号或转人工客服。",
+		})
+		return
+	}
+	// 归属校验：tenant + customer 双重比对
+	if order.TenantID != tenantID || order.CustomerID != threadID {
+		c.JSON(http.StatusOK, gin.H{
+			"code": 403, "msg": "订单不属于您，无法核验状态；如需协助请转人工客服。",
+		})
+		return
+	}
+	// 命中：返回订单状态
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{
+			"order_id":    order.OrderID,
+			"item":        order.Item,
+			"amount":      order.Amount,
+			"status":      order.Status,
+			"create_date": order.CreateDate,
+		},
 	})
 }
 

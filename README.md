@@ -28,7 +28,7 @@
 | 优化项 | 说明 | 位置 |
 |---|---|---|
 | 统一入口身份校验 | Go 向 Agent 透传内部令牌与租户头，Agent 校验令牌有效性及 `thread_id` 租户前缀一致，阻断绕过网关直连 | `agent/client.go`、`python_agent/main.py` |
-| 订单查询门禁 | 订单归属无法证明时统一 fail-closed：内部接口返回 503「无法核验」，旧的公开 `/api/business/order` 返回 410 且不再返回任何订单内容 | `handler/user.go`、`router.go` |
+| 订单查询真实查询与归属校验 | `orders` 表加 `tenant_id`+`customer_id` 字段并灌演示数据；`BusinessOrder` 从 fail-closed 503 改为查表+比对 `customer_id==thread_id`，命中返回状态/商品/金额/下单日期，不命中 fail-closed 不暴露订单存在性；Python 按	body.code 分支返回（修复 Go StatusCode 中间件把 body.code 映射到 HTTP status 导致 raise_for_status 误异常） | `handler/user.go`、`model/model.go`、`python_agent/tools.py` |
 | 迁移客服流程 FAQ | 从外部客服 Agent 项目迁入通用流程问答与回答边界，意图关键词匹配（退货/退款/订单状态/能力），常见变体问法可命中；答复标注来源，未命中时拒答而非编造商家政策 | `python_agent/support_faq.py` |
 | 转人工意图扩展 | 识别「找人工」「人工客服」「转接」「投诉」等说法并区分建单原因；意图优先级：转人工 > 具体订单号 > 流程 FAQ > LLM，避免订单请求被流程答复截胡 | `python_agent/support_faq.py`、`python_agent/main.py` |
 | 转人工流程修正 | 区分用户主动转人工与中断恢复，避免建单后重复 resume 打断会话；前端按钮文案与发送文本统一，不承诺等待时长 | `handler/ws.go`、`chat/chat.go`、`web/chat/pc.html` |
@@ -42,11 +42,11 @@
 
 ### 能力边界（未开放的部分）
 
-以下功能**未**在本仓库实现，保持关闭状态，避免用演示数据冒充真实业务：
+订单查询与归属校验逻辑已就绪，使用演示订单数据验证（5 条，覆盖待发货/已发货/已完成/已取消）。以下功能**未**开放，避免用演示数据冒充真实业务：
 
-- **真实订单查询**：现有 `orders` 表仅为演示数据，缺少租户与客户归属字段；接入条件见 [ORDER_ADAPTER_CONTRACT.md](./docs/ORDER_ADAPTER_CONTRACT.md)
+- **真实订单数据**：`orders` 表现为演示数据，真实商家接入时只需换成真实订单数据或接业务 API，归属校验逻辑不变；接入条件见 [ORDER_ADAPTER_CONTRACT.md](./docs/ORDER_ADAPTER_CONTRACT.md)
 - **退款与支付**：需业务写接口、交易幂等、独立审批与审计，当前不注册任何可调用的写入工具
-- **客户级会话身份**：现有令牌证明租户，未绑定具体访客，同租户内不可冒用性尚未建立
+- **客户级会话身份**：现有令牌证明租户，未绑定具体访客；订单归属校验基于 `user_id` 字符串比对，同租户内冒用 `user_id` 可读他人订单——演示不触发，真实业务接入前需可信宿主签发绑定访客身份的会话令牌
 
 ### 验收记录
 

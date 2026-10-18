@@ -345,7 +345,8 @@ async def _record_to_checkpoint(app, thread_id: str, question: str, answer: str)
 
 
 # 订单核验失败的文本标识（query_order_readonly 返回值中出现即触发自动转人工）
-_ORDER_LOOKUP_FAILURE_MARKERS = ("无法核验", "未通过核验", "暂不可用", "暂时不可用", "无法核验订单")
+# 命中本人订单时返回"订单 xxx 状态：..."，不含以下任何标识
+_ORDER_LOOKUP_FAILURE_MARKERS = ("未找到订单", "不属于您", "未通过核验", "无法核验", "暂不可用", "暂时不可用")
 
 
 async def _last_order_id_from_history(app, thread_id: str) -> str | None:
