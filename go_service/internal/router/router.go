@@ -58,12 +58,16 @@ func SetupRoutes(r *gin.Engine) {
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	// ============ 业务内部接口：给Python Agent调用查询订单 ============
-	r.GET("/api/business/order", handler.BusinessOrder)
+	// Preserve an explicit retirement response for old clients; no order data is returned.
+	r.GET("/api/business/order", func(c *gin.Context) {
+		c.JSON(http.StatusGone, gin.H{"code": 410, "msg": "公开订单查询已停用；请通过客服会话核验身份"})
+	})
 
 	// ============ 内部接口：给 Python Agent 调用查询租户模型配置 ============
 	agentInternal := r.Group("/api/agent", middleware.InternalAuth())
 	{
 		agentInternal.GET("/model-config", handler.AgentModelConfig)
+		agentInternal.GET("/order", handler.BusinessOrder)
 		// P1-2：Agent 配额校验用（返回租户配额数值）
 		agentInternal.GET("/tenant-quota", handler.AgentTenantQuota)
 		agentInternal.GET("/tenant-concurrency", handler.AgentTenantConcurrency)
@@ -247,7 +251,7 @@ func SetupRoutes(r *gin.Engine) {
 			plat.PUT("/menus/:id", handler.AdminMenuUpdate)
 			plat.DELETE("/menus/:id", handler.AdminMenuDelete)
 			plat.POST("/menus/reset-builtin", handler.AdminMenuResetBuiltin)
-	plat.POST("/menus/batch-update", handler.AdminMenuBatchUpdate)
+			plat.POST("/menus/batch-update", handler.AdminMenuBatchUpdate)
 			plat.GET("/tenants", handler.TenantList)
 			plat.GET("/tenants/:tid", handler.TenantDetail)
 			plat.POST("/tenants", handler.TenantCreate)

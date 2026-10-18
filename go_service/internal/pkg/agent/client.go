@@ -76,6 +76,22 @@ func AgentRequest(method, urlPath, query, contentType string, body io.Reader, tr
 	return io.ReadAll(resp.Body)
 }
 
+func tenantFromThreadID(payload any) string {
+	var threadID string
+	switch p := payload.(type) {
+	case ChatReq:
+		threadID = p.ThreadID
+	case ResumeReq:
+		threadID = p.ThreadID
+	}
+	for i, ch := range threadID {
+		if ch == ':' && i > 0 {
+			return threadID[:i]
+		}
+	}
+	return ""
+}
+
 func postWithTrace(url string, payload any, traceId string) (*http.Response, error) {
 	body, _ := json.Marshal(payload)
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
@@ -84,6 +100,8 @@ func postWithTrace(url string, payload any, traceId string) (*http.Response, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Trace-Id", traceId)
+	req.Header.Set("X-Internal-Token", config.GlobalConfig.InternalAPIToken)
+	req.Header.Set("X-Tenant-Id", tenantFromThreadID(payload))
 	return httpClient.Do(req)
 }
 
@@ -143,6 +161,8 @@ func CallAgentChatStream(ctx context.Context, threadID, msg, traceId string, has
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Trace-Id", traceId)
+	req.Header.Set("X-Internal-Token", config.GlobalConfig.InternalAPIToken)
+	req.Header.Set("X-Tenant-Id", tenantFromThreadID(payload))
 	req.Header.Set("Accept", "text/event-stream")
 
 	resp, err := httpClient.Do(req)

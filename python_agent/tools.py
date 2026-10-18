@@ -7,7 +7,7 @@ from langchain_core.tools import tool
 from langgraph.types import interrupt
 
 from cache import _kb_cache_get, _kb_cache_set
-from config import GO_BUSINESS_API
+from config import GO_BUSINESS_API, INTERNAL_API_TOKEN
 from db_pool import _pool_conn
 
 # 模块级 app 引用，由 main.py 注入
@@ -64,6 +64,10 @@ async def search_kb(query: str) -> str:
     """
     tid = _tenant_var.get() or ""
     thread_id = (_thread_var.get() if _thread_var is not None else "") or ""
+    from support_faq import lookup as lookup_process_faq
+    process_answer = lookup_process_faq(query, tid)
+    if process_answer:
+        return process_answer
 
     # P2-2：先查缓存
     cached = _kb_cache_get(tid, query)
@@ -81,7 +85,8 @@ async def search_kb(query: str) -> str:
         _logger.warning(f"[KB Degrade] tenant={tid} 检索失败，降级为纯LLM: {str(e)[:150]}")
         return "知识库暂未就绪，请稍后再试。"
     if not docs:
-        result = "未找到相关信息，建议转接人工客服。"
+        from support_faq import lookup as lookup_process_faq
+        result = lookup_process_faq(query, tid) or "未找到相关信息，建议转接人工客服。"
     else:
         result = "\n".join(f"- {doc.page_content}" for doc in docs)
 
@@ -94,21 +99,35 @@ async def search_kb(query: str) -> str:
     return result
 
 
-@tool
-async def query_order(order_id: str) -> str:
-    """根据订单号查询订单状态和详情，调用Go业务系统获取真实订单。
-    Args:
-        order_id: 订单号，如 ORD-2024-001
-    """
-    http_client = _app.state.http_client
+async def query_order_readonly(order_id: str) -> str:
+    """Ask the Go business adapter using the trusted tenant/session context."""
+    tid = (_tenant_var.get() if _tenant_var is not None else "") or ""
+    thread_id = (_thread_var.get() if _thread_var is not None else "") or ""
+    if not INTERNAL_API_TOKEN or not tid or not thread_id.startswith(tid + ":"):
+        return "订单身份无法核验，请转人工客服。"
     try:
-        resp = await http_client.get(f"{GO_BUSINESS_API}/api/business/order?order_id={order_id}", timeout=5)
+        resp = await _app.state.http_client.get(
+            f"{GO_BUSINESS_API}/api/agent/order",
+            params={"order_id": order_id, "tenant_id": tid, "thread_id": thread_id},
+            headers={"X-Internal-Token": INTERNAL_API_TOKEN}, timeout=5,
+        )
+        if resp.status_code == 503:
+            return "真实订单接口和订单归属验证尚未接通，无法核验订单状态；请转人工客服。"
         resp.raise_for_status()
         data = resp.json()
-        return str(data.get("data", "未获取订单数据"))
-    except Exception as e:
-        _logger.warning(f"query_order error: {e}")
-        return f"查询订单业务异常：{str(e)}"
+        if data.get("code") != 0:
+            return "订单查询未通过核验，请转人工客服。"
+        return str(data.get("data") or "订单状态暂不可用，请转人工客服。")
+    except Exception:
+        if _logger:
+            _logger.warning("order lookup unavailable tenant=%s", tid)
+        return "订单系统暂时不可用，无法核验订单状态；请转人工客服。"
+
+
+@tool
+async def query_order(order_id: str) -> str:
+    """只读查询本人订单。尚无真实业务接口及归属证明时明确拒绝返回订单状态。"""
+    return await query_order_readonly(order_id)
 
 
 @tool
@@ -127,6 +146,5 @@ async def transfer_to_human(reason: str) -> str:
         "message": f"用户请求转接人工客服，原因：{reason}。是否转接？"
     })
     if approval.get("confirmed"):
-        return (f"已为您转接人工客服，预计等待 {approval.get('wait_time', 3)} 分钟。"
-                f"工单号：{approval.get('ticket_id', 'N/A')}")
+        return f"转人工工单已创建，工单号：{approval.get('ticket_id', 'N/A')}。请等待客服接管。"
     return "转接已取消，我继续为您服务。"

@@ -1,8 +1,8 @@
 package handler
 
 import (
-	"fmt"
 	"net/http"
+	"strings"
 
 	"customer_service/internal/config"
 	"customer_service/internal/model"
@@ -14,18 +14,22 @@ import (
 
 // ============ 业务内部接口：给Python Agent调用查询订单 ============
 
-// BusinessOrder 查询订单信息：GET /api/business/order
+// BusinessOrder is the reserved read-only order adapter for the authenticated Agent.
+// The legacy orders table contains demonstration rows without tenant/customer ownership.
+// Until a real owner-aware business reader is wired, fail closed for every order ID.
 func BusinessOrder(c *gin.Context) {
-	orderId := c.Query("order_id")
-	var ord model.Order
-	err := config.DB.Where("order_id = ?", orderId).First(&ord).Error
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": 500, "data": "未找到订单"})
+	tenantID := c.Query("tenant_id")
+	threadID := c.Query("thread_id")
+	if config.GlobalConfig.InternalAPIToken == "" ||
+		c.GetHeader("X-Internal-Token") != config.GlobalConfig.InternalAPIToken ||
+		tenantID == "" || !strings.HasPrefix(threadID, tenantID+":") ||
+		c.Query("order_id") == "" {
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "订单查询身份校验失败"})
 		return
 	}
-	text := fmt.Sprintf("订单 %s：%s | 金额 ¥%.2f | 状态 %s | 日期 %s",
-		ord.OrderID, ord.Item, ord.Amount, ord.Status, ord.CreateDate)
-	c.JSON(http.StatusOK, gin.H{"code": 0, "data": text})
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"code": 503, "msg": "真实订单接口和订单归属验证尚未接通，无法核验订单状态；请转人工客服。",
+	})
 }
 
 // ============ 公开租户列表（用户端租户选择下拉） ============

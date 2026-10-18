@@ -105,6 +105,7 @@ from config import *
 
 # ====================== Tools（已拆分到 tools.py，采用 app 注入模式） ======================
 import tools
+from support_faq import lookup as lookup_process_faq, is_handoff, order_id as process_order_id
 
 
 
@@ -309,6 +310,17 @@ def _friendly_llm_error(e: Exception) -> str:
     return f"agent error:{str(e)}"
 
 
+def _require_trusted_chat(request: Request, thread_id: str) -> str:
+    """The Go gateway is the only authenticated chat entry point."""
+    tenant_id = tenant_from_thread(thread_id)
+    if (not INTERNAL_API_TOKEN or
+        request.headers.get("X-Internal-Token") != INTERNAL_API_TOKEN or
+        not tenant_id or
+        request.headers.get("X-Tenant-Id") != tenant_id):
+        raise HTTPException(status_code=403, detail="Agent chat identity verification failed")
+    return tenant_id
+
+
 @app.post("/agent/chat", response_model=AgentResp)
 async def agent_chat(req: ChatRequest, request: Request):
     trace_id_var.set(request.headers.get("X-Trace-Id", "-"))
@@ -321,10 +333,20 @@ async def agent_chat(req: ChatRequest, request: Request):
             content="thread_id 和 user_message 不能为空"
         )
 
-    tenant_id = tenant_from_thread(thread_id)
+    tenant_id = _require_trusted_chat(request, thread_id)
     tenant_var.set(tenant_id)
     thread_var.set(thread_id)
     pending_ticket_var.set(req.has_pending_ticket)
+    answer = lookup_process_faq(user_message, tenant_id)
+    if answer:
+        return AgentResp(success=True, is_interrupt=False, content=answer)
+    if is_handoff(user_message) and not req.has_pending_ticket:
+        return AgentResp(success=True, is_interrupt=True, interrupt_data={
+            "reason": "用户主动请求转人工", "direct_handoff": True,
+        })
+    if process_order_id(user_message):
+        return AgentResp(success=True, is_interrupt=False,
+                         content=await tools.query_order_readonly(process_order_id(user_message)))
     agent = await get_tenant_agent(request.app, tenant_id)
 
     config = {"configurable": {"thread_id": thread_id}}
@@ -379,6 +401,7 @@ async def agent_chat_stream(req: ChatRequest, request: Request):
     trace_id_var.set(request.headers.get("X-Trace-Id", "-"))
     thread_id = req.thread_id.strip()
     user_message = req.user_message.strip()
+    _require_trusted_chat(request, thread_id)
 
     async def event_generator():
         if not thread_id or not user_message:
@@ -389,6 +412,19 @@ async def agent_chat_stream(req: ChatRequest, request: Request):
         tenant_var.set(tenant_id)
         thread_var.set(thread_id)
         pending_ticket_var.set(req.has_pending_ticket)
+        answer = lookup_process_faq(user_message, tenant_id)
+        if answer:
+            yield f"data: {_json.dumps({'type':'end','content':answer}, ensure_ascii=False)}\n\n"
+            return
+        if is_handoff(user_message) and not req.has_pending_ticket:
+            info = {"reason": "用户主动请求转人工", "direct_handoff": True}
+            yield f"data: {_json.dumps({'type':'interrupt','data':info}, ensure_ascii=False)}\n\n"
+            return
+        oid = process_order_id(user_message)
+        if oid:
+            answer = await tools.query_order_readonly(oid)
+            yield f"data: {_json.dumps({'type':'end','content':answer}, ensure_ascii=False)}\n\n"
+            return
 
         # P1-2：并发活跃会话配额校验
         async with _pool_conn(request.app) as conn:
@@ -451,7 +487,7 @@ async def agent_chat_stream(req: ChatRequest, request: Request):
 async def agent_resume(req: ResumeRequest, request: Request):
     trace_id_var.set(request.headers.get("X-Trace-Id", "-"))
     thread_id = req.thread_id.strip()
-    tenant_id = tenant_from_thread(thread_id)
+    tenant_id = _require_trusted_chat(request, thread_id)
     tenant_var.set(tenant_id)
     thread_var.set(thread_id)
 

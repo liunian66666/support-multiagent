@@ -431,7 +431,7 @@ function handleWSMessage(data){
       if (data.reused) {
         addSystemMessage('🎫 您已提交人工客服，正在等待人工接入（工单号：' + (data.ticket_no||'') + '）');
       } else {
-        addSystemMessage('🎫 已为您创建工单（' + (data.ticket_no||'') + '），人工客服即将接入');
+        addSystemMessage('🎫 已为您创建工单（' + (data.ticket_no||'') + '），请等待客服接管');
       }
       postToParent('cs_handoff', {ticket_no: data.ticket_no, msg: data.msg, reused: !!data.reused});
       break;
@@ -809,7 +809,7 @@ function requestHandoff(){
   addUserMessage('请转接人工客服');
   showTyping();
   try {
-    ws.send(JSON.stringify({type:'chat', msg:'请转接人工客服，我需要人工处理'}));
+    ws.send(JSON.stringify({type:'chat', msg:'请转接人工客服'}));
   } catch(e) {
     hideTyping();
     addSystemMessage('发送失败：' + e.message);

@@ -241,9 +241,12 @@ func HandleUserWS() gin.HandlerFunc {
 								"type": "ticket", "ticket_no": t.TicketNo,
 								"reused": reused, "msg": "已提交人工客服，请等待处理",
 							})
-							_, _ = agent.CallAgentResume(agent.ResumeReq{
-								ThreadID: userID, Confirmed: true, WaitTime: 3, TicketID: t.TicketNo,
-							}, traceID)
+							direct, _ := interruptData["direct_handoff"].(bool)
+							if !direct {
+								_, _ = agent.CallAgentResume(agent.ResumeReq{
+									ThreadID: userID, Confirmed: true, WaitTime: 3, TicketID: t.TicketNo,
+								}, traceID)
+							}
 						},
 					)
 					// ✅ 只处理【网络层面错误】，**排除ctx取消（用户主动关闭页面，不需要推送错误）**

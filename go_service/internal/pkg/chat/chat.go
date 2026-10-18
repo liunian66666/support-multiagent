@@ -90,9 +90,12 @@ func ProcessUserMessage(threadID, userID, msg, traceID string) ChatResult {
 		_ = repository.AssignLastUserMessage(threadID, t.ID)
 
 		// 立即恢复 Agent 会话（best effort）：清掉挂起中断，排队期间用户消息走正常 AI 回答
-		_, _ = agent.CallAgentResume(agent.ResumeReq{
-			ThreadID: threadID, Confirmed: true, WaitTime: 3, TicketID: t.TicketNo,
-		}, traceID)
+		direct, _ := agentResp.InterruptData["direct_handoff"].(bool)
+		if !direct {
+			_, _ = agent.CallAgentResume(agent.ResumeReq{
+				ThreadID: threadID, Confirmed: true, WaitTime: 3, TicketID: t.TicketNo,
+			}, traceID)
+		}
 
 		// 通知对应租户的管理端有新工单
 		ws.WSHub.SendToAdminsByTenant(tenantID, map[string]interface{}{

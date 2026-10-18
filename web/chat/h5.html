@@ -358,7 +358,7 @@ function handleMsg(data){
   switch(data.type){
     case 'history': renderHistory(data.messages||[]); break;
     case 'chat_reply': hideTyping(); addAI(data.msg); break;
-    case 'ticket': hideTyping(); addSystem('🎫 '+(data.reused ? ('您已提交人工客服，正在等待人工接入（工单号：'+(data.ticket_no||'')+'）') : ('工单已创建（'+(data.ticket_no||'')+'），人工客服即将接入'))); break;
+    case 'ticket': hideTyping(); addSystem('🎫 '+(data.reused ? ('您已提交人工客服，正在等待人工接入（工单号：'+(data.ticket_no||'')+'）') : ('工单已创建（'+(data.ticket_no||'')+'），请等待客服接管'))); break;
     case 'human_notice': hideTyping(); addSystem('👤 '+(data.msg||'人工客服已接入')); break;
     case 'human_reply': hideTyping(); if(data.msg_type==='image') addImage(data.msg, true); else if(data.msg_type==='video') addVideo(data.msg, true); else addAI(data.msg, true); break;
     case 'notice': hideTyping(); addSystem(data.msg); break;
@@ -609,7 +609,7 @@ function requestHandoff(){
   if(!wsConnected){addSystem('连接未建立，请稍候...');return;}
   addUser('请转接人工客服');
   showTyping();
-  try{ ws.send(JSON.stringify({type:'chat',msg:'请转接人工客服，我需要人工处理'})); }
+  try{ ws.send(JSON.stringify({type:'chat',msg:'请转接人工客服'})); }
   catch(e){ hideTyping(); addSystem('发送失败：'+e.message); }
 }
 
