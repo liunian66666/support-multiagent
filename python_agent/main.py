@@ -48,7 +48,7 @@ from contextvars import ContextVar
 from db_ops import (tenant_from_thread, collection_name, verify_agent_tables, touch_session_retry,
                     record_token_usage, check_concurrent_sessions, load_active_prompt,
                     seed_default_prompt, cleanup_sessions, session_cleanup_loop)
-from agent_factory import current_model_name, current_model_source, current_chat_prices, get_tenant_agent, get_platform_model, get_platform_embeddings
+from agent_factory import current_model_name, current_model_source, current_chat_prices, get_tenant_agent, get_platform_model, get_platform_embeddings, build_faq_bridge
 
 # 协程上下文，每个请求独立trace_id
 trace_id_var: ContextVar[str] = ContextVar("trace_id", default="-")
@@ -147,6 +147,10 @@ async def lifespan(app: FastAPI):
         app.state.checkpointer = SafeAsyncPostgresSaver(app.state.checkpointer_conn, dsn=POSTGRES_DSN)
         await app.state.checkpointer.setup()
         logger.info("✅ AsyncPostgresSaver checkpointer setup done (concurrency-safe wrapper)")
+        # FAQ 快答旁路图：与主 Agent 共享同一 checkpointer，命中流程 FAQ 时把问答写进检查点，
+        # 使后续 LLM 对话能回忆快答上下文，长对话不再出现「忘了刚才答过什么」断层。
+        app.state.faq_bridge = build_faq_bridge(app.state.checkpointer)
+        logger.info("✅ FAQ 快答检查点旁路图已构建")
 
         # 扩展表：会话元数据 / Prompt / 知识库文档（含租户维度）
         async with app.state.db_pool.connection() as conn:
@@ -321,6 +325,25 @@ def _require_trusted_chat(request: Request, thread_id: str) -> str:
     return tenant_id
 
 
+async def _record_to_checkpoint(app, thread_id: str, question: str, answer: str):
+    """确定性答复写入会话检查点（best-effort）。
+
+    主 Agent 命中流程 FAQ / 订单核验 / 转人工时直接返回，绕过 LangGraph，导致后续 LLM 对话读不到这次问答。
+    通过旁路图把 (HumanMessage, AIMessage) 追加到同一 thread 检查点，使长对话上下文连续。
+    写入失败不影响答复，仅记日志。工单未完结（has_pending_ticket）时由调用方跳过，避免触碰中断态线程。
+    """
+    bridge = getattr(app.state, "faq_bridge", None)
+    if bridge is None:
+        return
+    try:
+        await bridge.ainvoke(
+            {"messages": [HumanMessage(content=question), AIMessage(content=answer)]},
+            config={"configurable": {"thread_id": thread_id}},
+        )
+    except Exception:
+        logger.exception("checkpoint bridge write failed thread=%s", thread_id)
+
+
 @app.post("/agent/chat", response_model=AgentResp)
 async def agent_chat(req: ChatRequest, request: Request):
     trace_id_var.set(request.headers.get("X-Trace-Id", "-"))
@@ -339,15 +362,24 @@ async def agent_chat(req: ChatRequest, request: Request):
     pending_ticket_var.set(req.has_pending_ticket)
     # 意图优先级：明确转人工 > 具体订单号（避免被订单流程 FAQ 截胡）> 流程 FAQ > LLM/RAG
     if is_handoff(user_message) and not req.has_pending_ticket:
+        reason = handoff_reason(user_message)
+        await _record_to_checkpoint(
+            request.app, thread_id, user_message,
+            f"已为您转接人工客服（原因：{reason}），请稍候。",
+        )
         return AgentResp(success=True, is_interrupt=True, interrupt_data={
-            "reason": handoff_reason(user_message), "direct_handoff": True,
+            "reason": reason, "direct_handoff": True,
         })
     oid = process_order_id(user_message)
     if oid:
-        return AgentResp(success=True, is_interrupt=False,
-                         content=await tools.query_order_readonly(oid))
+        answer = await tools.query_order_readonly(oid)
+        if not req.has_pending_ticket:
+            await _record_to_checkpoint(request.app, thread_id, user_message, answer)
+        return AgentResp(success=True, is_interrupt=False, content=answer)
     answer = lookup_process_faq(user_message, tenant_id)
     if answer:
+        if not req.has_pending_ticket:
+            await _record_to_checkpoint(request.app, thread_id, user_message, answer)
         return AgentResp(success=True, is_interrupt=False, content=answer)
     agent = await get_tenant_agent(request.app, tenant_id)
 
@@ -416,16 +448,25 @@ async def agent_chat_stream(req: ChatRequest, request: Request):
         pending_ticket_var.set(req.has_pending_ticket)
         # 意图优先级同 /agent/chat：转人工 > 具体订单号 > 流程 FAQ > LLM/RAG
         if is_handoff(user_message) and not req.has_pending_ticket:
-            info = {"reason": handoff_reason(user_message), "direct_handoff": True}
+            reason = handoff_reason(user_message)
+            info = {"reason": reason, "direct_handoff": True}
+            await _record_to_checkpoint(
+                request.app, thread_id, user_message,
+                f"已为您转接人工客服（原因：{reason}），请稍候。",
+            )
             yield f"data: {_json.dumps({'type':'interrupt','data':info}, ensure_ascii=False)}\n\n"
             return
         oid = process_order_id(user_message)
         if oid:
             answer = await tools.query_order_readonly(oid)
+            if not req.has_pending_ticket:
+                await _record_to_checkpoint(request.app, thread_id, user_message, answer)
             yield f"data: {_json.dumps({'type':'end','content':answer}, ensure_ascii=False)}\n\n"
             return
         answer = lookup_process_faq(user_message, tenant_id)
         if answer:
+            if not req.has_pending_ticket:
+                await _record_to_checkpoint(request.app, thread_id, user_message, answer)
             yield f"data: {_json.dumps({'type':'end','content':answer}, ensure_ascii=False)}\n\n"
             return
 

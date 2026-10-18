@@ -11,6 +11,7 @@ from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_openai import OpenAIEmbeddings
 from langchain_qdrant import QdrantVectorStore
+from langgraph.graph import StateGraph, MessagesState, START, END
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 from qdrant_client.http.models import Distance, VectorParams
@@ -60,6 +61,23 @@ def build_agent(system_prompt: str):
     )
     app.state.agent = agent
     logger.info("✅ Agent rebuilt with system_prompt len=%d", len(system_prompt))
+
+
+# FAQ 快答检查点旁路图：把 (用户问题, 确定性答复) 追加到与主 Agent 相同的 thread 检查点，
+# 使后续 LLM 对话能回忆快答上下文。不运行模型，仅落状态；与主 Agent 共享同一 checkpointer
+# 与 thread_id，因此下一轮 LLM ainvoke 会读到这段历史。
+def build_faq_bridge(checkpointer):
+    graph = StateGraph(MessagesState)
+
+    def _record(state):
+        # 输入已携带 [HumanMessage(q), AIMessage(a)]，add_messages reducer 会自动追加，
+        # 节点无需再产出消息；返回空 dict 表示本步无新增字段。
+        return {}
+
+    graph.add_node("record", _record)
+    graph.add_edge(START, "record")
+    graph.add_edge("record", END)
+    return graph.compile(checkpointer=checkpointer)
 
 
 # 向量库初始化失败冷却（秒）：embedding/集合不可用时降级为纯 LLM 对话，冷却期内不反复重试刷日志

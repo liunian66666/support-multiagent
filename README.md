@@ -34,6 +34,7 @@
 | 转人工流程修正 | 区分用户主动转人工与中断恢复，避免建单后重复 resume 打断会话；前端按钮文案与发送文本统一，不承诺等待时长 | `handler/ws.go`、`chat/chat.go`、`web/chat/pc.html` |
 | 知识库索引一致性修复 | 重索引后检索器自动重建（原先需重启服务才恢复）；按 `metadata.doc_id` 清理旧向量（原先删除条件未命中，导致残留与重复） | `python_agent/tools.py`、`kb_index_worker.py`、`routers_kb.py` |
 | 演示政策知识 | 为演示租户补录示例政策文档，运费、发货时效、退款到账等可检索作答；知识库未覆盖的问题明确拒答而非编造 | `python_agent/kb_seed/demo-store-policy-v1.md` |
+| 确定性答复写入检查点 | 流程 FAQ / 订单核验 / 转人工原本绕过 LangGraph，后续 LLM 读不到这次问答；现通过旁路图（与主 Agent 共享同一 checkpointer 与 thread_id）把问答追加到检查点，长对话上下文连续；工单未完结时跳过，写入失败不影响答复 | `python_agent/agent_factory.py`、`python_agent/main.py` |
 
 ### 能力边界（未开放的部分）
 
