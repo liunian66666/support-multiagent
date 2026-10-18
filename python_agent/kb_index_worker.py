@@ -54,7 +54,7 @@ async def _index_one(app, doc_id: str, tenant_id: str) -> None:
             app.state.qdrant_client.delete(
                 collection_name=collection_name(tenant_id),
                 points_selector=qmodels.FilterSelector(filter=qmodels.Filter(must=[
-                    qmodels.FieldCondition(key="doc_id", match=qmodels.MatchValue(value=doc_id))
+                    qmodels.FieldCondition(key="metadata.doc_id", match=qmodels.MatchValue(value=doc_id))
                 ])),
             )
         except Exception:

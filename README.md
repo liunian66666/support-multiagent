@@ -31,6 +31,8 @@
 | 订单查询门禁 | 订单归属无法证明时统一 fail-closed：内部接口返回 503「无法核验」，旧的公开 `/api/business/order` 返回 410 且不再返回任何订单内容 | `handler/user.go`、`router.go` |
 | 迁移客服流程 FAQ | 从外部客服 Agent 项目迁入通用流程问答与回答边界，答复标注来源，未命中时拒答而非编造商家政策 | `python_agent/support_faq.py` |
 | 转人工流程修正 | 区分用户主动转人工与中断恢复，避免建单后重复 resume 打断会话；前端按钮文案与发送文本统一，不承诺等待时长 | `handler/ws.go`、`chat/chat.go`、`web/chat/pc.html` |
+| 知识库索引一致性修复 | 重索引后检索器自动重建（原先需重启服务才恢复）；按 `metadata.doc_id` 清理旧向量（原先删除条件未命中，导致残留与重复） | `python_agent/tools.py`、`kb_index_worker.py`、`routers_kb.py` |
+| 演示政策知识 | 为演示租户补录示例政策文档，运费、发货时效、退款到账等可检索作答；知识库未覆盖的问题明确拒答而非编造 | `python_agent/kb_seed/demo-store-policy-v1.md` |
 
 ### 能力边界（未开放的部分）
 

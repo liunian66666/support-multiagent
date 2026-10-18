@@ -77,6 +77,18 @@ async def search_kb(query: str) -> str:
 
     retriever = _app.state.tenant_retrievers.get(tid)
     if retriever is None:
+        # 索引/重建索引完成后 worker 会清理检索器缓存，而 Agent 实例仍是缓存命中，
+        # 不会再次走 get_tenant_agent 的重建分支。此处按需重建，避免刚索引完的文档
+        # 长期返回"知识库暂未就绪"，需要重启服务才恢复。
+        try:
+            from agent_factory import ensure_tenant_vector, get_tenant_retriever
+            await ensure_tenant_vector(_app, tid)
+            retriever = get_tenant_retriever(_app, tid)
+        except Exception as e:
+            if _logger:
+                _logger.warning(f"[KB Retriever] rebuild failed tenant={tid}: {str(e)[:120]}")
+            retriever = None
+    if retriever is None:
         return "知识库暂未就绪，请稍后再试。"
     try:
         docs = await retriever.ainvoke(query)
