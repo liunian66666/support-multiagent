@@ -4,11 +4,15 @@ from support_faq import lookup, is_handoff, order_id, handoff_reason
 
 
 class SupportFaqContractTest(unittest.TestCase):
-    def test_process_answer_has_source_and_no_policy_promise(self):
+    def test_process_answer_clean_no_internal_source_tag(self):
         answer = lookup("怎么申请退货？", "t_demo")
-        self.assertIn("generic-process", answer)
-        self.assertIn("process-playbook-v1", answer)
         self.assertIn("核验订单归属、商品情况及商家政策", answer)
+        # 不应向终端用户暴露内部工程标识与架构术语
+        self.assertNotIn("support-agent", answer)
+        self.assertNotIn("process-playbook", answer)
+        self.assertNotIn("generic-process", answer)
+        self.assertNotIn("租户知识库", answer)
+        self.assertNotIn("来源", answer)
         self.assertIsNone(lookup("怎么申请退货？", ""))
         self.assertIsNone(lookup("未拆封七天内能退吗", "t_demo"))
 

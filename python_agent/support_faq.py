@@ -9,8 +9,6 @@ here and are answered by the tenant knowledge base.
 """
 import re
 
-_SOURCE = "support-agent:process-playbook-v1 / generic-process"
-
 _ANSWERS = {
     "return_apply": "请提供订单号和退货原因。客服核验订单归属、商品情况及商家政策后，才能判断如何处理。",
     "refund_apply": "请说明订单号与退款原因，客服核验订单归属、支付情况及商家政策后才能判断处理方式。当前系统不自动发起退款。",
@@ -51,7 +49,7 @@ def lookup(text: str, tenant_id: str) -> str | None:
     key = _intent(text)
     if not key:
         return None
-    return f"{_ANSWERS[key]}\n（来源：{_SOURCE}；本店政策请以租户知识库为准）"
+    return _ANSWERS[key]
 
 
 def is_handoff(text: str) -> bool:
