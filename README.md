@@ -53,7 +53,7 @@
 复现方式：
 
 ```bash
-docker compose exec -T agent python -m unittest test_support_faq.py -v   # Python 8 项通过
+docker compose exec -T agent python -m unittest test_support_faq.py test_faq_bridge.py -v   # Python 8+3 项通过
 docker build --target builder -t cs-go-merge-test -f go_service/Dockerfile .
 docker run --rm cs-go-merge-test go test ./...                            # Go 通过
 ```
