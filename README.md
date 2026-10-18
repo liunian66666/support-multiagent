@@ -25,7 +25,7 @@
 
 ### 本次优化内容
 
-| 改动 | 说明 | 位置 |
+| 优化项 | 说明 | 位置 |
 |---|---|---|
 | 统一入口身份校验 | Go 向 Agent 透传内部令牌与租户头，Agent 校验令牌有效性及 `thread_id` 租户前缀一致，阻断绕过网关直连 | `agent/client.go`、`python_agent/main.py` |
 | 订单查询门禁 | 订单归属无法证明时统一 fail-closed：内部接口返回 503「无法核验」，旧的公开 `/api/business/order` 返回 410 且不再返回任何订单内容 | `handler/user.go`、`router.go` |
