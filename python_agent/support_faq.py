@@ -72,7 +72,7 @@ def handoff_reason(text: str) -> str:
 
 
 def order_id(text: str) -> str | None:
-    if not re.search(r"订单|order", text, re.IGNORECASE):
+    if not re.search(r"订单|order|快递|物流|包裹", text, re.IGNORECASE):
         return None
     found = re.search(r"\bORD-[A-Za-z0-9-]{3,64}\b", text, re.IGNORECASE)
     return found.group(0) if found else None

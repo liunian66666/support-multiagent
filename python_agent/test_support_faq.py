@@ -48,6 +48,7 @@ class SupportFaqContractTest(unittest.TestCase):
 
     def test_order_id_only_with_order_context(self):
         self.assertEqual(order_id("查询订单 ORD-2024-001"), "ORD-2024-001")
+        self.assertEqual(order_id("快递 ORD-2024-001 到哪了"), "ORD-2024-001")
         self.assertIsNone(order_id("ORD-2024-001"))
         self.assertIsNone(order_id("帮我查一下我的快递"))
 
