@@ -27,7 +27,7 @@ from langchain.tools import tool
 from langchain.agents import create_agent
 from langchain.agents.middleware import before_model, after_model
 from langchain.chat_models import init_chat_model
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 import openai
 from langchain_openai import OpenAIEmbeddings
 from langchain_qdrant import QdrantVectorStore
@@ -495,8 +495,9 @@ async def agent_chat_stream(req: ChatRequest, request: Request):
                 stream_mode="messages"
             ):
                 stream_msgs.append(msg)
-                # 只推送 AIMessage 的内容（过滤 HumanMessage 和系统消息）
-                if hasattr(msg, "content") and msg.content and not isinstance(msg, HumanMessage):
+                # 只推送 AIMessage 的内容（过滤 HumanMessage / ToolMessage / 系统消息）。
+                # ToolMessage 是 search_kb 等工具的返回结果，原始文档文本不应混进用户看到的回复。
+                if hasattr(msg, "content") and msg.content and isinstance(msg, AIMessage):
                     chunk = msg.content if isinstance(msg.content, str) else str(msg.content)
                     if chunk:
                         full_content += chunk

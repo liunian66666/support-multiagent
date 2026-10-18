@@ -64,10 +64,6 @@ async def search_kb(query: str) -> str:
     """
     tid = _tenant_var.get() or ""
     thread_id = (_thread_var.get() if _thread_var is not None else "") or ""
-    from support_faq import lookup as lookup_process_faq
-    process_answer = lookup_process_faq(query, tid)
-    if process_answer:
-        return process_answer
 
     # P2-2：先查缓存
     cached = _kb_cache_get(tid, query)
@@ -97,8 +93,7 @@ async def search_kb(query: str) -> str:
         _logger.warning(f"[KB Degrade] tenant={tid} 检索失败，降级为纯LLM: {str(e)[:150]}")
         return "知识库暂未就绪，请稍后再试。"
     if not docs:
-        from support_faq import lookup as lookup_process_faq
-        result = lookup_process_faq(query, tid) or "未找到相关信息，建议转接人工客服。"
+        result = "未找到相关信息，建议转接人工客服。"
     else:
         result = "\n".join(f"- {doc.page_content}" for doc in docs)
 

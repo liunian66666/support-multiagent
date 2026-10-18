@@ -81,6 +81,11 @@
 
 已知边界（更新）：确定性答复（流程 FAQ / 订单核验 / 转人工）此前绕过 LangGraph、不进 PostgreSQL 检查点，导致后续 LLM 对话读不到这次问答。现已通过旁路图（`build_faq_bridge`，与主 Agent 共享同一 checkpointer 与 thread_id）把 (HumanMessage, AIMessage) 追加到检查点；写入为 best-effort，失败仅记日志不影响答复，工单未完结（`has_pending_ticket=True`）时跳过避免触碰中断态线程。`has_pending_ticket` 状态下转人工请求复用未完结工单、不再新建——此项保持不变。
 
+流式输出内容泄漏修复（实测发现）：
+- **根因一**：`search_kb` 工具内部又调了一次 `lookup_process_faq`，用 LLM 改写后的查询命中 FAQ，把带 `（来源：support-agent:process-playbook-v1...）` 标签的确定性答复当成检索结果返回给 LLM，LLM 原样吐出再补自己的话——前端看到的就是「FAQ 答复 + LLM 答复」混杂。修复：`search_kb` 只做向量检索，不再内嵌 FAQ 匹配（主入口 main.py 已在 LLM 之前拦截 FAQ）。
+- **根因二**：流式过滤器只排除了 `HumanMessage`，没排除 `ToolMessage`——`search_kb` 的工具返回（原始 KB 文档文本）被当成 AI 回复 chunk 推给前端。修复：只推送 `AIMessage` 的内容。
+- 实测对比：问「订单号怎么找」，修复前 chunks 含原始文档 + source 标签，修复后只输出 LLM 自然语言「您可以登录平台进入「我的订单」页面...」。
+
 实测（走前端 `/api/user/chat`）：
 
 | 路径 | 提问 | 检查点 | 后续 LLM 能否回忆 |
