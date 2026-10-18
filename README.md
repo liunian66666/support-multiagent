@@ -19,6 +19,45 @@
 
 ---
 
+## 本仓库说明：在原项目基础上的整合改动
+
+本仓库基于 [myrockey/ai_customer_service](https://github.com/myrockey/ai_customer_service) 的多租户客服系统，在其之上完成「电商客服 Agent 能力整合」。**原始项目的架构与绝大部分功能由原作者实现**，本节只记录本次新增与修改的部分，便于区分归属。
+
+**改动分支**：`merge/support-agent-20261018`（含完整历史，与 `main` 相比多出两个提交）
+
+### 本次改动内容
+
+| 改动 | 说明 | 位置 |
+|---|---|---|
+| 统一入口身份校验 | Go 向 Agent 透传内部令牌与租户头，Agent 校验令牌有效性及 `thread_id` 租户前缀一致，阻断绕过网关直连 | `agent/client.go`、`python_agent/main.py` |
+| 订单查询门禁 | 订单归属无法证明时统一 fail-closed：内部接口返回 503「无法核验」，旧的公开 `/api/business/order` 返回 410 且不再返回任何订单内容 | `handler/user.go`、`router.go` |
+| 迁移客服流程 FAQ | 从外部客服 Agent 项目迁入通用流程问答与回答边界，答复标注来源，未命中时拒答而非编造商家政策 | `python_agent/support_faq.py` |
+| 转人工流程修正 | 区分用户主动转人工与中断恢复，避免建单后重复 resume 打断会话；前端按钮文案与发送文本统一，不承诺等待时长 | `handler/ws.go`、`chat/chat.go`、`web/chat/pc.html` |
+
+### 能力边界（未开放的部分）
+
+以下功能**未**在本仓库实现，保持关闭状态，避免用演示数据冒充真实业务：
+
+- **真实订单查询**：现有 `orders` 表仅为演示数据，缺少租户与客户归属字段；接入条件见 [ORDER_ADAPTER_CONTRACT.md](./docs/ORDER_ADAPTER_CONTRACT.md)
+- **退款与支付**：需业务写接口、交易幂等、独立审批与审计，当前不注册任何可调用的写入工具
+- **客户级会话身份**：现有令牌证明租户，未绑定具体访客，同租户内不可冒用性尚未建立
+
+### 验收记录
+
+- [MERGE_GOAL.md](./docs/MERGE_GOAL.md)：合并目标、分阶段验收标准与写入操作门禁
+- [MERGE_ACCEPTANCE.md](./docs/MERGE_ACCEPTANCE.md)：逐阶段实测结果、可复现命令与未完成边界
+- [RESUME_CLAIMS.md](./docs/RESUME_CLAIMS.md)：可对外表述的范围界定
+
+复现方式：
+
+```bash
+docker compose exec -T agent python -m unittest test_support_faq.py -v   # Python 4 项通过
+docker build --target builder -t cs-go-merge-test -f go_service/Dockerfile .
+docker run --rm cs-go-merge-test go test ./...                            # Go 通过
+```
+
+---
+
 ## 📸 界面预览
 
 | 平台管理员 · 租户管理 | 租户 · 工单管理（人工接管） | 终端用户 · SDK 在线客服 |
@@ -46,9 +85,9 @@
 ## 🚀 快速开始
 
 ```bash
-# 1. 克隆项目
-git clone https://github.com/myrockey/ai_customer_service.git
-cd ai_customer_service
+# 1. 克隆项目（含本次整合分支）
+git clone -b merge/support-agent-20261018 https://github.com/liunian66666/support-multiagent.git
+cd support-multiagent
 
 # 2. 配置环境变量
 cp .env.example .env
