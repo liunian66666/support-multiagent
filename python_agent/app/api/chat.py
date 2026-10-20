@@ -7,13 +7,19 @@ from langgraph.types import Command
 
 from app.agent import tools
 from app.agent.builder import get_tenant_agent
-from app.agent.faq_agent import faq_agent as get_faq_specialist, recent_messages
+from app.agent.faq_agent import faq_agent as get_faq_specialist
+from app.agent.faq_agent import recent_messages
 from app.api.deps import _require_trusted_chat
 from app.chat.faq import has_order_reference
 from app.chat.intent import Route, route_message
-from app.chat.order import (_awaiting_order_id, _last_order_id_from_history,
-                            looks_like_bare_order_id, order_handoff_reason,
-                            should_auto_handoff)
+from app.chat.order import (
+    _awaiting_order_id,
+    _last_order_id_from_history,
+    looks_like_bare_order_id,
+    order_handoff_reason,
+    should_auto_handoff,
+)
+from app.chat.plan import plan_compound
 from app.chat.reply import _friendly_llm_error
 from app.infra.config import PROD_MODE, SERVICE_FOOTER
 from app.infra.context import pending_ticket_var, tenant_var, thread_var, trace_id_var
@@ -22,10 +28,29 @@ from app.infra.db.session import touch_session_retry
 from app.infra.db.tenant import tenant_from_thread
 from app.infra.db_pool import _pool_conn
 from app.schemas import AgentResp, ChatRequest, ResumeRequest
+from app.services.compound import execute_compound
 from app.services.dialog import _record_to_checkpoint, _record_usage_after_chat
 
 logger = logging.getLogger("agent")
 router = APIRouter()
+
+
+async def _compound_plan(app, thread_id: str, message: str, route: Route):
+    """Resume an unfinished compound question only within the same trusted thread."""
+    if route.specialist == "handoff":
+        return None, message
+    if looks_like_bare_order_id(message) and await _awaiting_order_id(app, thread_id):
+        for previous in reversed(await recent_messages(app, thread_id)):
+            if isinstance(previous, HumanMessage):
+                old = plan_compound(str(previous.content))
+                if old and old.needs_order_id:
+                    return plan_compound(message, resumed_order_id=message,
+                                         resumed_question=str(previous.content)), str(previous.content)
+                break
+    plan = plan_compound(message)
+    if plan and plan.needs_order_id and route.order_id:
+        plan = plan_compound(message, resumed_order_id=route.order_id)
+    return plan, message
 
 
 @router.post("/agent/chat", response_model=AgentResp)
@@ -55,6 +80,27 @@ async def agent_chat(req: ChatRequest, request: Request):
             and await _awaiting_order_id(request.app, thread_id)):
         route = Route("order", order_id=user_message.strip())
     logger.info("support specialist=%s tenant=%s", route.specialist, tenant_id)
+    plan, full_question = await _compound_plan(request.app, thread_id, user_message, route)
+    if plan:
+        try:
+            result = await execute_compound(request.app, tenant_id, thread_id,
+                                            full_question, plan,
+                                            has_pending_ticket=req.has_pending_ticket)
+            if result.interrupt_data:
+                return AgentResp(success=True, is_interrupt=True,
+                                 interrupt_data=result.interrupt_data)
+            if not req.has_pending_ticket:
+                await _record_to_checkpoint(request.app, thread_id, user_message, result.content)
+            if result.model_messages:
+                async with _pool_conn(request.app) as conn:
+                    await _record_usage_after_chat(request, conn, tenant_id, thread_id,
+                                                   result.model_messages)
+            return AgentResp(success=True, is_interrupt=False,
+                             content=result.content + SERVICE_FOOTER)
+        except Exception as e:
+            logger.exception("/agent/chat compound error")
+            return AgentResp(success=False, is_interrupt=False,
+                             content=_friendly_llm_error(e))
     if route.specialist == "handoff":
         reason = route.reason or "用户请求转人工"
         await _record_to_checkpoint(
@@ -145,6 +191,7 @@ async def agent_chat_stream(req: ChatRequest, request: Request):
       data: {"type":"interrupt","data":中断数据}\n\n
     """
     import json as _json
+
     from fastapi.responses import StreamingResponse
 
     trace_id_var.set(request.headers.get("X-Trace-Id", "-"))
@@ -172,6 +219,28 @@ async def agent_chat_stream(req: ChatRequest, request: Request):
                 and await _awaiting_order_id(request.app, thread_id)):
             route = Route("order", order_id=user_message.strip())
         logger.info("support stream specialist=%s tenant=%s", route.specialist, tenant_id)
+        plan, full_question = await _compound_plan(request.app, thread_id, user_message, route)
+        if plan:
+            try:
+                result = await execute_compound(request.app, tenant_id, thread_id,
+                                                full_question, plan,
+                                                has_pending_ticket=req.has_pending_ticket)
+                if result.interrupt_data:
+                    payload = {"type": "interrupt", "data": result.interrupt_data}
+                    yield f"data: {_json.dumps(payload, ensure_ascii=False)}\n\n"
+                    return
+                if not req.has_pending_ticket:
+                    await _record_to_checkpoint(request.app, thread_id, user_message, result.content)
+                if result.model_messages:
+                    async with _pool_conn(request.app) as conn:
+                        await _record_usage_after_chat(request, conn, tenant_id, thread_id,
+                                                       result.model_messages)
+                payload = {"type": "end", "content": result.content + SERVICE_FOOTER}
+                yield f"data: {_json.dumps(payload, ensure_ascii=False)}\n\n"
+            except Exception as e:
+                logger.exception("/agent/chat/stream compound error")
+                yield f"data: {_json.dumps({'type':'error','msg':_friendly_llm_error(e)}, ensure_ascii=False)}\n\n"
+            return
         if route.specialist == "handoff":
             reason = route.reason or "用户请求转人工"
             info = {"reason": reason, "direct_handoff": True}
