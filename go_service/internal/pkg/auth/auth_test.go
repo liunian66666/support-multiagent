@@ -17,7 +17,7 @@ func setupTestTenants(t *testing.T) {
 	authEnabled = true
 	authTTL = time.Hour
 	// 测试环境无 Redis：黑名单判定按"未拉黑"处理（黑名单语义单独由 Redis 集成验证）
-	isTokenBlacklistedFn = func(string) bool { return false }
+	TokenBlacklistChecker = func(string) bool { return false }
 	tenantByKey = map[string]RuntimeTenant{
 		"t1_key": {TenantID: "t_alpha", Name: "Alpha", AppKey: "t1_key", AppSecretHash: crypto.HashSecret("secret_alpha"), Status: 1},
 		"t2_key": {TenantID: "t_beta", Name: "Beta", AppKey: "t2_key", AppSecretHash: crypto.HashSecret("secret_beta"), Status: 1},
@@ -158,7 +158,7 @@ func TestBlacklistAndVerify(t *testing.T) {
 		t.Skip("需要 Redis 环境")
 	}
 	setupTestTenants(t)
-	isTokenBlacklistedFn = IsTokenBlacklisted // 黑名单语义测试用真实实现
+	TokenBlacklistChecker = IsTokenBlacklisted // 黑名单语义测试用真实实现
 	tok, _, _, err := IssueToken("t1_key", "secret_alpha")
 	if err != nil {
 		t.Fatal(err)
@@ -180,12 +180,15 @@ func TestRefreshToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	newTok, tid, _, err := RefreshToken(tok)
+	newTok, tid, uid, _, err := RefreshToken(tok)
 	if err != nil {
 		t.Fatalf("RefreshToken 失败: %v", err)
 	}
 	if tid != "t_alpha" {
 		t.Errorf("刷新后租户 %s, 期望 t_alpha", tid)
+	}
+	if uid != 0 {
+		t.Errorf("app_key 令牌刷新后 uid 应为 0, got %d", uid)
 	}
 	if _, err := VerifyToken(newTok); err != nil {
 		t.Errorf("新 token 校验失败: %v", err)
@@ -197,6 +200,134 @@ func TestRefreshToken(t *testing.T) {
 	}
 	if _, err := VerifyToken(tok); err == nil {
 		t.Error("刷新后旧 token 应失效")
+	}
+}
+
+// ============ 令牌类型边界（P0：客户令牌不得进入管理端/刷新接口） ============
+
+// issueCustomerTokenForTest 签发一个客户会话令牌（不落库，仅验签测试用）
+func issueCustomerTokenForTest(t *testing.T, tenantID, customerID, sessionID string) string {
+	t.Helper()
+	tok, _, err := IssueCustomerToken(tenantID, customerID, sessionID)
+	if err != nil {
+		t.Fatalf("IssueCustomerToken 失败: %v", err)
+	}
+	return tok
+}
+
+// TestVerifyTokenFullRejectsCustomerToken 客户令牌过管理端验签必须被拒
+//（两条提权路径共用 VerifyTokenFull：直接进管理接口、经刷新变成管理令牌）
+func TestVerifyTokenFullRejectsCustomerToken(t *testing.T) {
+	setupTestTenants(t)
+	tok := issueCustomerTokenForTest(t, "t_alpha", "t_alpha:buyer1", "sess-001")
+	if _, _, err := VerifyTokenFull(tok); err == nil {
+		t.Error("客户会话令牌不应通过管理端验签 VerifyTokenFull")
+	}
+	if _, err := VerifyToken(tok); err == nil {
+		t.Error("客户会话令牌不应通过通用租户校验 VerifyToken")
+	}
+}
+
+// TestRefreshTokenRejectsCustomerToken 客户令牌刷新必须被拒（不得转换成管理令牌）
+func TestRefreshTokenRejectsCustomerToken(t *testing.T) {
+	setupTestTenants(t)
+	tok := issueCustomerTokenForTest(t, "t_alpha", "t_alpha:buyer1", "sess-002")
+	if _, _, _, _, err := RefreshToken(tok); err == nil {
+		t.Error("客户会话令牌不应允许刷新（不得转换成管理令牌）")
+	}
+}
+
+// TestVerifyCustomerTokenRejectsAdminToken 管理令牌不得冒用客户会话路由
+func TestVerifyCustomerTokenRejectsAdminToken(t *testing.T) {
+	setupTestTenants(t)
+	adminTok, _, _, err := IssueToken("t1_key", "secret_alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyCustomerToken(adminTok); err == nil {
+		t.Error("管理端令牌不应通过客户会话验签")
+	}
+	subTok, _, err := IssueUserToken("t_alpha", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyCustomerToken(subTok); err == nil {
+		t.Error("子账号令牌不应通过客户会话验签")
+	}
+}
+
+// TestVerifyRejectsUnknownKind 未知类型令牌两个入口都必须拒绝（不当管理令牌放行）
+func TestVerifyRejectsUnknownKind(t *testing.T) {
+	setupTestTenants(t)
+	raw := `{"tid":"t_alpha","exp":` + strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10) +
+		`,"nonce":"n","kind":"weird_future_kind"}`
+	sig := signPayload(crypto.HashSecret("secret_alpha"), []byte(raw))
+	tok := base64.RawURLEncoding.EncodeToString([]byte(raw)) + "." + sig
+	if _, _, err := VerifyTokenFull(tok); err == nil {
+		t.Error("未知类型令牌不应通过管理端验签")
+	}
+	if _, err := VerifyCustomerToken(tok); err == nil {
+		t.Error("未知类型令牌不应通过客户会话验签")
+	}
+}
+
+// TestCustomerTokenExpiredAndForgedRejected 客户令牌过期/伪造必须被拒
+func TestCustomerTokenExpiredAndForgedRejected(t *testing.T) {
+	setupTestTenants(t)
+	// 过期客户令牌
+	rawExp := `{"tid":"t_alpha","exp":` + strconv.FormatInt(time.Now().Add(-time.Minute).Unix(), 10) +
+		`,"nonce":"n","kind":"customer","cid":"t_alpha:buyer1","sess":"s1"}`
+	tokExp := base64.RawURLEncoding.EncodeToString([]byte(rawExp)) + "." +
+		signPayload(crypto.HashSecret("secret_alpha"), []byte(rawExp))
+	if _, err := VerifyCustomerToken(tokExp); err == nil {
+		t.Error("过期客户令牌应被拒")
+	}
+	// 伪造签名客户令牌
+	raw := `{"tid":"t_alpha","exp":` + strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10) +
+		`,"nonce":"n","kind":"customer","cid":"t_alpha:buyer1","sess":"s1"}`
+	forged := base64.RawURLEncoding.EncodeToString([]byte(raw)) + "." +
+		signPayload(crypto.HashSecret("secret_beta"), []byte(raw)) // 错误租户密钥签名
+	if _, err := VerifyCustomerToken(forged); err == nil {
+		t.Error("伪造签名的客户令牌应被拒")
+	}
+}
+
+// TestRefreshTokenPreservesUID 子账号刷新后 uid 必须保留（权限身份不丢失）
+func TestRefreshTokenPreservesUID(t *testing.T) {
+	setupTestTenants(t)
+	tok, _, err := IssueUserToken("t_alpha", 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newTok, tid, uid, _, err := RefreshToken(tok)
+	if err != nil {
+		t.Fatalf("RefreshToken 失败: %v", err)
+	}
+	if tid != "t_alpha" || uid != 42 {
+		t.Fatalf("刷新后身份丢失: tid=%s uid=%d", tid, uid)
+	}
+	gotTid, gotUID, err := VerifyTokenFull(newTok)
+	if err != nil {
+		t.Fatalf("新令牌校验失败: %v", err)
+	}
+	if gotTid != "t_alpha" || gotUID != 42 {
+		t.Errorf("刷新后 uid 不一致: got (%s,%d), want (t_alpha,42)", gotTid, gotUID)
+	}
+}
+
+// TestAppKeyRefreshHasNoUID app_key 管理员令牌刷新后 uid 仍为 0
+func TestAppKeyRefreshHasNoUID(t *testing.T) {
+	setupTestTenants(t)
+	tok, _, _, err := IssueToken("t1_key", "secret_alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, uid, _, err := RefreshToken(tok)
+	if err != nil {
+		t.Fatalf("RefreshToken 失败: %v", err)
+	}
+	if uid != 0 {
+		t.Errorf("app_key 管理员刷新后 uid 应为 0, got %d", uid)
 	}
 }
 

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>客服演示账号登录</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f3f7fc;color:#1e293b;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;padding:20px}
+    main{width:min(100%,420px);background:white;border-radius:18px;padding:32px;box-shadow:0 12px 40px #16436b16}
+    .icon{font-size:34px}h1{font-size:23px;margin:12px 0 8px}p{color:#64748b;font-size:14px;line-height:1.7;margin:0 0 24px}
+    label{display:block;font-size:14px;font-weight:600;margin:18px 0 8px}select,input{width:100%;height:44px;border:1px solid #cbd5e1;border-radius:9px;padding:0 12px;font-size:15px;background:white}
+    select:focus,input:focus{outline:2px solid #93c5fd;border-color:#2563eb}button,.guest{display:flex;align-items:center;justify-content:center;width:100%;height:44px;border-radius:9px;font-size:15px;cursor:pointer}
+    button{border:0;background:#1677ff;color:white;font-weight:600;margin-top:24px}button:disabled{opacity:.6;cursor:wait}.guest{color:#1677ff;text-decoration:none;border:1px solid #bfdbfe;margin-top:12px}
+    .error{min-height:20px;color:#b91c1c;font-size:13px;margin-top:12px}.note{font-size:12px;color:#64748b;margin:16px 0 0}
+  </style>
+</head>
+<body>
+<main>
+  <div class="icon" aria-hidden="true">💬</div>
+  <h1>登录查询演示订单</h1>
+  <p>常见问题和转人工可以免登录咨询。只有查看个人订单时，才需要登录买家演示账号。</p>
+  <form id="loginForm" method="post" autocomplete="on">
+    <label for="customer">演示买家</label>
+    <select id="customer" name="customer_id">
+      <option value="buyer1">buyer1（有演示订单）</option>
+      <option value="buyer2">buyer2（无演示订单）</option>
+    </select>
+    <label for="password">演示密码</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required placeholder="请输入演示密码">
+    <button id="submitButton" type="submit">登录并进入客服</button>
+    <div class="error" id="error" role="alert" aria-live="polite"></div>
+  </form>
+  <a class="guest" id="guestLink" href="/chat/pc.html">先以访客咨询，无需登录</a>
+  <p class="note">此入口仅用于虚构数据演示。真实订单必须由商家现有账号体系核验客户身份；密码不会写入网址或浏览器存储。</p>
+</main>
+<script>
+(function(){
+  try { localStorage.removeItem('cs_demo_creds'); } catch(e) {}
+  var params = new URLSearchParams(location.search);
+  var target = params.get('return') === 'h5' ? 'h5' : 'pc';
+  var selected = params.get('customer_id');
+  if (selected === 'buyer1' || selected === 'buyer2') document.getElementById('customer').value = selected;
+  document.getElementById('guestLink').href = '/chat/' + target + '.html';
+  document.getElementById('loginForm').addEventListener('submit', async function(event){
+    event.preventDefault();
+    var button = document.getElementById('submitButton');
+    var error = document.getElementById('error');
+    button.disabled = true;
+    error.textContent = '';
+    try {
+      var customer = document.getElementById('customer').value;
+      var password = document.getElementById('password').value;
+      var response = await fetch('/api/auth/customer-token', {
+        method: 'POST', headers: {'Content-Type':'application/json','Cache-Control':'no-store'},
+        body: JSON.stringify({app_key:'demo_buyer_key', app_secret:password, customer_id:customer})
+      });
+      var result = await response.json();
+      if (result.code !== 0 || !result.data || !result.data.token) throw new Error(result.msg || '登录失败');
+      var prefix = target === 'h5' ? 'cs_h5_session_' : 'cs_session_';
+      localStorage.setItem(prefix + location.origin + '_' + customer, JSON.stringify({
+        token:result.data.token, tenant_id:result.data.tenant_id,
+        customer_id:result.data.customer_id, thread_id:result.data.thread_id,
+        is_guest:false
+      }));
+      document.getElementById('password').value = '';
+      location.replace('/chat/' + target + '.html?customer_id=' + encodeURIComponent(customer));
+    } catch(e) {
+      error.textContent = e.message || '登录失败，请重试';
+      button.disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>

@@ -17,6 +17,22 @@ server:
 auth:
   enabled: true
   token_ttl: "24h"
+  # 演示客户登录（默认 false，仅演示环境经 docker-compose 显式开启）：
+  # 开放 /api/auth/customer-token，用【演示客户凭证】+ 白名单 customer_id 签发
+  # 仅含虚构客户/订单的短期客户会话令牌。凭证与管理端 app_key/app_secret 完全分离，
+  # 管理密钥不得用于客户登录。真实接入必须保持 false，改为校验商家登录凭证。
+  # 容器部署可用 CS_AUTH_DEMO_CUSTOMER_LOGIN 覆盖。
+  demo_customer_login: false
+  merchant_preview_login: false
+  demo_guest_chat: false
+  demo_guest_tenant_id: "t_demo"
+  # 演示客户凭证（secret 为占位符，实际值经环境变量注入：
+  # DEMO_CUSTOMER_{APP_KEY大写}_SECRET，如 DEMO_CUSTOMER_DEMO_BUYER_KEY_SECRET）
+  demo_customers:
+    - tenant_id: "t_demo"
+      app_key: "demo_buyer_key"
+      app_secret: "CHANGE_ME"
+      customers: ["buyer1", "buyer2"]
   tenants:
     - tenant_id: "t_admin"
       name: "平台管理员"

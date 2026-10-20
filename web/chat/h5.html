@@ -177,6 +177,7 @@ html,body{height:100%;width:100%;overflow:hidden;background:#f5f6f8;-webkit-text
       <div class="title" id="chatTitle">智能客服</div>
       <div class="status"><span class="dot"></span><span id="chatStatus">在线</span></div>
     </div>
+    <button id="customerLoginButton" type="button" onclick="openCustomerLogin()" style="display:none;border:1px solid #fff8;background:transparent;color:white;border-radius:7px;padding:7px 9px;font-size:12px">登录查订单</button>
   </div>
 
   <!-- 消息区 -->
@@ -250,10 +251,13 @@ function qp(name){
 
 var CONFIG = {
   server: qp('server') || (location.protocol + '//' + location.host),
+  // 宿主/SDK 直接签发 token 传入时使用（生产接入路径）
   token: qp('token'),
-  user_id: qp('user_id'),
-  app_key: qp('app_key'),
-  app_secret: qp('app_secret'),
+  // 演示客户凭证（仅演示模式）：与管理端 app_secret 完全分离
+  customer_key: qp('customer_key'),
+  customer_secret: qp('customer_secret'),
+  // 演示客户选择（仅演示模式）：如 buyer1 / buyer2，限服务端白名单
+  customer_id: qp('customer_id'),
   title: qp('title') || '智能客服',
   theme: qp('theme') || '#1890ff',
 };
@@ -267,56 +271,153 @@ function darken(hex){
   return '#'+[r,g,b].map(function(x){return Math.max(0,x-30).toString(16).padStart(2,'0')}).join('');
 }
 
-// ============ user_id ============
-function parseTenantId(token){
-  try{
-    var p=token.split('.');
-    var b64=p.length===3?p[1]:p[0];
-    b64=b64.replace(/-/g,'+').replace(/_/g,'/');
-    while(b64.length%4)b64+='=';
-    var d=JSON.parse(atob(b64));
-    return d.tid||d.tenant_id||null;
-  }catch(e){return null;}
-}
-var tenantId=null;
-function getUserId(){
-  var tid=tenantId||'unknown';
-  if(CONFIG.user_id) return (CONFIG.user_id.indexOf(':')>0)?CONFIG.user_id:(tid+':'+CONFIG.user_id);
-  var key='cs_h5_uid_'+tid;
-  var uid=localStorage.getItem(key);
-  if(!uid){uid='h5_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);localStorage.setItem(key,uid);}
-  return tid+':'+uid;
-}
-var userId=null;
-
-// ============ Token ============
+// ============ 会话管理 ============
+// 身份全部来自服务端签发的客户会话（customer token）：
+//   1) URL 传入 token（宿主签发）→ 直接用
+//   2) localStorage 有本客户的会话 → 恢复（刷新不丢 thread_id 与历史）
+//   3) 都没有 → 用演示客户凭证调 /api/auth/customer-token 换取并持久化
+// 前端不再自行生成或拼装 user_id；恢复的会话被拒时自动重登一次。
 var authToken = CONFIG.token;
-async function ensureToken(){
-  if (authToken) return authToken;
-  if (CONFIG.app_key && CONFIG.app_secret) {
+var session = null; // {token, tenant_id, customer_id, thread_id, fromStorage}
+var reloginTried = false;
+
+function sessionStorageKey(){
+  if (!CONFIG.customer_id) return 'cs_h5_guest_session_' + CONFIG.server;
+  return 'cs_h5_session_' + CONFIG.server + '_' + (CONFIG.customer_id || 'buyer1');
+}
+function openCustomerLogin(){
+  location.href = '/chat/login.html?return=h5' + (CONFIG.customer_id ? '&customer_id=' + encodeURIComponent(CONFIG.customer_id) : '');
+}
+function updateLoginButton(){
+  var button = document.getElementById('customerLoginButton');
+  if (button) button.style.display = session && session.is_guest ? 'block' : 'none';
+}
+function loadStoredSession(){
+  try {
+    var raw = localStorage.getItem(sessionStorageKey());
+    if (!raw) return null;
+    var s = JSON.parse(raw);
+    if (!s || !s.token) return null;
+    var want = CONFIG.customer_id;
+    if (want) {
+      var storedName = (s.customer_id || '').split(':').pop();
+      if (s.customer_id !== want && storedName !== want) return null;
+    }
+    return s;
+  } catch(e) { return null; }
+}
+function saveStoredSession(s){
+  try {
+    localStorage.setItem(sessionStorageKey(), JSON.stringify({
+      token: s.token, tenant_id: s.tenant_id,
+      customer_id: s.customer_id, thread_id: s.thread_id, is_guest: !!s.is_guest
+    }));
+  } catch(e) {}
+}
+function clearStoredSession(){
+  try { localStorage.removeItem(sessionStorageKey()); } catch(e) {}
+}
+
+// 清除旧版演示页曾保存的明文密码；新登录页只保存短期会话令牌。
+try { localStorage.removeItem('cs_demo_creds'); } catch(e) {}
+function scrubSecretFromUrl(){
+  try {
+    if (!history.replaceState) return;
+    var params = new URLSearchParams(location.search);
+    var touched = false;
+    ['customer_secret','app_secret','token'].forEach(function(k){
+      if (params.has(k)) { params.delete(k); touched = true; }
+    });
+    if (!touched) return;
+    var q = params.toString();
+    history.replaceState(null, '', location.pathname + (q ? '?' + q : '') + location.hash);
+  } catch(e) {}
+}
+scrubSecretFromUrl();
+
+async function ensureSession(){
+  if (session) return session;
+  if (authToken) {
+    session = { token: authToken, tenant_id: null, customer_id: null, thread_id: null, fromStorage: false };
+    return session;
+  }
+  var stored = loadStoredSession();
+  if (stored) {
+    authToken = stored.token;
+    session = {
+      token: stored.token, tenant_id: stored.tenant_id,
+      customer_id: stored.customer_id, thread_id: stored.thread_id,
+      fromStorage: true, is_guest: !!stored.is_guest
+    };
+    updateLoginButton();
+    return session;
+  }
+  if (CONFIG.customer_key && CONFIG.customer_secret) {
     showToast('正在登录...');
-    var resp = await fetch(CONFIG.server + '/api/auth/token', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({app_key:CONFIG.app_key, app_secret:CONFIG.app_secret})
+    var resp = await fetch(CONFIG.server + '/api/auth/customer-token', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        app_key: CONFIG.customer_key,
+        app_secret: CONFIG.customer_secret,
+        customer_id: CONFIG.customer_id || 'buyer1'
+      })
     });
     var data = await resp.json();
-    if (data.code === 0) { authToken = data.data.token; hideToast(); return authToken; }
+    if (data.code === 0) {
+      authToken = data.data.token;
+      session = {
+        token: data.data.token,
+        tenant_id: data.data.tenant_id,
+        customer_id: data.data.customer_id,
+        thread_id: data.data.thread_id,
+        fromStorage: false
+      };
+      saveStoredSession(session);
+      updateLoginButton();
+      hideToast();
+      return session;
+    }
     throw new Error(data.msg || '登录失败');
   }
-  throw new Error('缺少 token 或 app_key/app_secret');
+  if (CONFIG.customer_id) {
+    openCustomerLogin();
+    throw new Error('请先登录客户账号');
+  }
+  showToast('正在连接访客客服...');
+  var guestResp = await fetch(CONFIG.server + '/api/auth/guest-token', {method:'POST'});
+  var guestData = await guestResp.json();
+  if (guestData.code !== 0) throw new Error(guestData.msg || '访客客服暂不可用');
+  session = {
+    token: guestData.data.token, tenant_id: guestData.data.tenant_id,
+    customer_id: guestData.data.customer_id, thread_id: guestData.data.thread_id,
+    is_guest: true, fromStorage: false
+  };
+  authToken = session.token;
+  saveStoredSession(session);
+  updateLoginButton();
+  hideToast();
+  return session;
+}
+
+// 兼容旧调用点：只需要 token 的场景
+async function ensureToken(){
+  var s = await ensureSession();
+  return s.token;
 }
 
 // ============ WebSocket ============
-var ws = null, wsConnected = false, reconnectTimer = null, reconnectCount = 0, heartbeatTimer = null, kickedFlag = false;
+var ws = null, wsConnected = false, reconnectTimer = null, reconnectCount = 0, heartbeatTimer = null, kickedFlag = false, wsOpened = false;
 
 function connectWS(){
   kickedFlag = false;
-  ensureToken().then(function(token){
-    tenantId = parseTenantId(token) || CONFIG.app_key || 'unknown';
-    userId = getUserId();
-    var url = CONFIG.server.replace(/^http/,'ws') + '/ws/chat?token='+encodeURIComponent(token)+'&user_id='+encodeURIComponent(userId);
+  wsOpened = false;
+  ensureSession().then(function(s){
+    // 身份以服务端会话为准：WS 只带 token，不再传 user_id
+    var url = CONFIG.server.replace(/^http/,'ws') + '/ws/chat?token='+encodeURIComponent(s.token);
     ws = new WebSocket(url);
     ws.onopen = function(){
+      wsOpened = true;
       wsConnected = true; reconnectCount = 0; hideToast();
       document.getElementById('chatStatus').textContent = '在线';
       startHeartbeat();
@@ -328,6 +429,16 @@ function connectWS(){
       wsConnected = false; stopHeartbeat();
       document.getElementById('chatStatus').textContent = '重连中...';
       if (kickedFlag) return; // 已在其他窗口建立连接，停止重连
+      // 恢复的会话被服务端拒绝（token 过期/被吊销）：清掉旧会话重新登录一次
+      if (!wsOpened && s.fromStorage && !reloginTried) {
+        reloginTried = true;
+        clearStoredSession();
+        session = null;
+        authToken = null;
+        showToast('会话已过期，正在重新登录...');
+        connectWS();
+        return;
+      }
       scheduleReconnect();
     };
     ws.onerror = function(){ ws.close(); };
@@ -358,7 +469,14 @@ function handleMsg(data){
   switch(data.type){
     case 'history': renderHistory(data.messages||[]); break;
     case 'chat_reply': hideTyping(); addAI(data.msg); break;
-    case 'ticket': hideTyping(); addSystem('🎫 '+(data.reused ? ('您已提交人工客服，正在等待人工接入（工单号：'+(data.ticket_no||'')+'）') : ('工单已创建（'+(data.ticket_no||'')+'），请等待客服接管'))); break;
+    case 'ticket': {
+      hideTyping();
+      var why = data.reason ? ('（原因：' + data.reason + '）') : '';
+      addSystem('🎫 ' + (data.reused
+        ? ('您已提交人工客服，正在等待人工接入（工单号：' + (data.ticket_no||'') + '）' + why)
+        : ('工单已创建（' + (data.ticket_no||'') + '），请等待客服接管' + why)));
+      break;
+    }
     case 'human_notice': hideTyping(); addSystem('👤 '+(data.msg||'人工客服已接入')); break;
     case 'human_reply': hideTyping(); if(data.msg_type==='image') addImage(data.msg, true); else if(data.msg_type==='video') addVideo(data.msg, true); else addAI(data.msg, true); break;
     case 'notice': hideTyping(); addSystem(data.msg); break;
@@ -511,7 +629,6 @@ async function submitRating(){
       method: 'POST',
       headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token},
       body: JSON.stringify({
-        user_id: userId,
         score: ratingScore,
         tags: ratingTags.join(','),
         comment: document.getElementById('ratingComment').value.trim()
@@ -535,6 +652,10 @@ function sendMessage(){
   var input=document.getElementById('msgInput');
   var text=input.value.trim();
   if(!text) return;
+  if(session && session.is_guest && /\b(?:ORD[-\w]+|TB\d+|JD\d+|PDD\d+|DY\d+|TMALL\d+|1688\d+)\b/i.test(text)){
+    addSystem('查询个人订单需要登录。常见问题仍可免登录咨询；点击顶部“登录查订单”继续。');
+    return;
+  }
   if(!wsConnected){addSystem('连接未建立，请稍候...');return;}
   addUser(text);
   input.value=''; autoResize(input);
@@ -558,7 +679,8 @@ async function uploadMedia(input, kind, file){
   if(!wsConnected){ addSystem('连接未建立，请稍候...'); return; }
   var fd=new FormData();
   fd.append('file', file);
-  var upUrl=CONFIG.server+'/api/user/upload?user_id='+encodeURIComponent(userId||'');
+  // 上传接口身份来自 Bearer token（服务端会话），不再传 user_id query
+  var upUrl=CONFIG.server+'/api/user/upload';
   try{
     var token = authToken || await ensureToken();
     var resp=await fetch(upUrl,{method:'POST',headers:{'Authorization':'Bearer '+token},body:fd});

@@ -24,13 +24,18 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-// handleUserWS 用户端 WebSocket：/ws/chat?user_id=xxx
+// handleUserWS 用户端 WebSocket：/ws/chat
+// 身份来自服务端客户会话（middleware.UserAuth 注入 thread_id），不信任 query 传入；
+// 未启用鉴权的演示模式回退 query user_id（兼容旧前端/测试）
 // 客户端消息协议：{"type":"chat","msg":"..."} / {"type":"ping"}
 func HandleUserWS() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID := c.Query("user_id")
+		userID := middleware.ThreadOf(c)
 		if userID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "缺少 user_id"})
+			userID = c.Query("user_id") // 鉴权关闭时的演示回退
+		}
+		if userID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "缺少会话身份"})
 			return
 		}
 
@@ -239,7 +244,8 @@ func HandleUserWS() gin.HandlerFunc {
 							}
 							ws.WSHub.SendToUser(userID, map[string]interface{}{
 								"type": "ticket", "ticket_no": t.TicketNo,
-								"reused": reused, "msg": "已提交人工客服，请等待处理",
+								"reused": reused, "reason": reason,
+								"msg": "已提交人工客服，请等待处理",
 							})
 							direct, _ := interruptData["direct_handoff"].(bool)
 							if !direct {

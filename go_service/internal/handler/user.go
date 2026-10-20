@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"customer_service/internal/config"
+	"customer_service/internal/middleware"
 	"customer_service/internal/model"
 	"customer_service/internal/pkg/chat"
 	"customer_service/internal/repository"
@@ -16,10 +17,12 @@ import (
 
 // BusinessOrder is the read-only order adapter for the authenticated Agent.
 //
-// 订单归属校验：order.customer_id 必须等于请求 thread_id（即 tid:visitor），
-// 且 order.tenant_id 必须等于请求 tenant_id。命中返回状态，不命中返回 fail-closed
-// 文本，不暴露订单存在性给非归属用户。演示订单数据已明确标注为演示用，
-// 不构成真实商家业务答复。
+// 归属链路（客户身份不信任客户端传入，以服务端会话记录为准）：
+//  1. X-Internal-Token 服务间校验 + thread_id 必须属于请求租户
+//  2. 用 thread_id 反查 customer_sessions 得到稳定的 customer_id
+//     （thread_id 只表示一段对话，不作为订单归属依据）
+//  3. 查询限定 tenant_id + customer_id + order_id 三条件
+//  4. 订单不存在与不属于该客户返回相同提示，不暴露订单存在性
 func BusinessOrder(c *gin.Context) {
 	tenantID := c.Query("tenant_id")
 	threadID := c.Query("thread_id")
@@ -32,23 +35,33 @@ func BusinessOrder(c *gin.Context) {
 		return
 	}
 
-	var order model.Order
-	err := config.DB.Where("order_id = ?", orderID).First(&order).Error
+	// customer_id 从服务端会话记录反查：thread_id → customer_sessions → customer_id。
+	// 旧格式 thread_id（无会话记录，如历史演示会话）fail-closed，不可查询订单。
+	sess, err := repository.FindCustomerSessionByThread(threadID, tenantID)
 	if err != nil {
-		// 订单不存在：fail-closed，不区分"不存在"与"不属于您"
 		c.JSON(http.StatusOK, gin.H{
 			"code": 404, "msg": "未找到订单或订单不属于您，请确认订单号或转人工客服。",
 		})
 		return
 	}
-	// 归属校验：tenant + customer 双重比对
-	if order.TenantID != tenantID || order.CustomerID != threadID {
+	// 管理员旧链接只用于体验聊天，不得借预览身份读取任何客户订单。
+	if sess.IsPreview {
+		c.JSON(http.StatusOK, gin.H{"code": 404, "msg": "未找到订单或订单不属于您，请确认订单号或转人工客服。"})
+		return
+	}
+	if sess.IsGuest {
+		c.JSON(http.StatusOK, gin.H{"code": 401, "msg": "查询个人订单请先登录客户账号。"})
+		return
+	}
+
+	// 三条件限定查询；未命中统一提示（不区分不存在与不属于您）
+	order, err := repository.FindOrderForCustomer(tenantID, sess.CustomerID, orderID)
+	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"code": 403, "msg": "订单不属于您，无法核验状态；如需协助请转人工客服。",
+			"code": 404, "msg": "未找到订单或订单不属于您，请确认订单号或转人工客服。",
 		})
 		return
 	}
-	// 命中：返回订单状态
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
@@ -96,21 +109,26 @@ type UserChatBody struct {
 }
 
 // UserChat 用户聊天接口：POST /api/user/chat
+// thread_id 从服务端客户会话注入（middleware.UserAuth），不信任 body 传入；
+// 未启用鉴权的演示模式回退 body.user_id（兼容旧测试）
 func UserChat(c *gin.Context) {
 	var body UserChatBody
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误"})
 		return
 	}
-	threadID := body.UserID
-	res := chat.ProcessUserMessage(threadID, body.UserID, body.Msg, c.GetString(config.TraceIDKey))
+	threadID := middleware.ThreadOf(c)
+	if threadID == "" {
+		threadID = body.UserID // 鉴权关闭时的演示回退
+	}
+	res := chat.ProcessUserMessage(threadID, threadID, body.Msg, c.GetString(config.TraceIDKey))
 	switch res.Kind {
 	case "reply":
 		c.JSON(http.StatusOK, gin.H{"code": 0, "msg": res.Msg})
 	case "ticket":
 		c.JSON(http.StatusOK, gin.H{
 			"code": 0, "msg": "已提交人工客服，请等待处理",
-			"is_human_wait": true, "ticket_no": res.TicketNo,
+			"is_human_wait": true, "ticket_no": res.TicketNo, "reason": res.Reason,
 		})
 	case "human":
 		c.JSON(http.StatusOK, gin.H{"code": 0, "msg": res.Msg, "is_human": true})
@@ -126,10 +144,11 @@ func UserChat(c *gin.Context) {
 // ============ 用户历史消息 ============
 
 // UserMessages 获取用户历史消息：GET /api/user/messages
+// thread_id 从服务端客户会话注入，不信任 query 传入
 func UserMessages(c *gin.Context) {
-	threadID := c.Query("thread_id")
+	threadID := middleware.ThreadOf(c)
 	if threadID == "" {
-		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "缺少 thread_id"})
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "会话身份缺失，请重新登录"})
 		return
 	}
 	msgs, err := repository.ListMessages(threadID)

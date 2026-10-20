@@ -1,9 +1,6 @@
 package middleware
 
 import (
-	"bytes"
-	"encoding/json"
-	"io"
 	"net/http"
 	"strings"
 
@@ -42,7 +39,12 @@ func resolveToken(c *gin.Context) string {
 	return c.Query("token")
 }
 
-// UserAuth 用户侧鉴权：校验 token 有效性 + user_id 归属当前租户
+// UserAuth 用户侧鉴权：客户会话令牌 → 服务端会话记录 → 注入身份
+//
+// 身份链路（不再信任 URL/body 传入的 user_id）：
+//  1. Bearer token 必须是服务端签发的客户会话令牌（kind=customer）
+//  2. 令牌内 session id 必须在 customer_sessions 表中存在且未过期（fail-closed）
+//  3. tenant_id / customer_id / thread_id 全部以服务端会话记录为准注入 context
 func UserAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !auth.AuthEnabled() { // 演示模式放行
@@ -55,35 +57,38 @@ func UserAuth() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		tenantID, err := auth.VerifyToken(tok)
+		claims, err := auth.VerifyCustomerToken(tok)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "令牌无效或已过期"})
+			c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "无效的客户会话令牌，请重新登录"})
 			c.Abort()
 			return
 		}
-		// 取 user_id：GET/WS 从 query（user_id 或 thread_id）；POST 从 body（读后重置，供 handler 继续解析）
-		userID := c.Query("user_id")
-		if userID == "" {
-			userID = c.Query("thread_id")
-		}
-		if userID == "" && c.Request.Method == http.MethodPost {
-			body, _ := io.ReadAll(c.Request.Body)
-			c.Request.Body = io.NopCloser(bytes.NewReader(body))
-			var b struct {
-				UserID string `json:"user_id"`
-			}
-			if json.Unmarshal(body, &b) == nil {
-				userID = b.UserID
-			}
-		}
-		if userID == "" || !auth.UserIDBelongsToTenant(tenantID, userID) {
-			c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "user_id 不属于当前租户"})
+		// 查库确认会话仍然有效（服务端可吊销；过期即失效）
+		sess, err := repository.FindCustomerSessionByToken(claims.SessionID)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "会话已过期，请重新登录"})
 			c.Abort()
 			return
 		}
-		c.Set("tenant_id", tenantID)
+		c.Set("tenant_id", sess.TenantID)
+		c.Set("customer_id", sess.CustomerID)
+		c.Set("thread_id", sess.ThreadID)
 		c.Next()
 	}
+}
+
+// ThreadOf 从 context 取当前客户会话的 thread_id（服务端签发，非客户端传入）
+func ThreadOf(c *gin.Context) string {
+	v, _ := c.Get("thread_id")
+	s, _ := v.(string)
+	return s
+}
+
+// CustomerOf 从 context 取当前客户会话的 customer_id（稳定客户标识）
+func CustomerOf(c *gin.Context) string {
+	v, _ := c.Get("customer_id")
+	s, _ := v.(string)
+	return s
 }
 
 // AdminAuth 管理侧鉴权：校验 token 并注入租户

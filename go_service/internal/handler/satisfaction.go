@@ -14,7 +14,9 @@ import (
 )
 
 // UserSubmitRating 用户端提交/覆盖满意度评价：POST /api/user/rating
-// body: {user_id(=thread_id), score 1-5, tags?, comment?}
+// thread_id 从服务端客户会话注入（middleware.UserAuth），不信任 body 传入的 user_id；
+// 未启用鉴权的演示模式回退 body.user_id（兼容旧前端/测试）
+// body: {score 1-5, tags?, comment?}（user_id 字段已废弃，仅演示回退读取）
 func UserSubmitRating(c *gin.Context) {
 	tid := middleware.TenantOf(c)
 	if tid == "" {
@@ -31,8 +33,12 @@ func UserSubmitRating(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "参数错误"})
 		return
 	}
-	if b.UserID == "" {
-		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "缺少 user_id"})
+	threadID := middleware.ThreadOf(c)
+	if threadID == "" {
+		threadID = b.UserID // 鉴权关闭时的演示回退
+	}
+	if threadID == "" {
+		c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "会话身份缺失，请重新登录"})
 		return
 	}
 	if b.Score < 1 || b.Score > 5 {
@@ -41,12 +47,12 @@ func UserSubmitRating(c *gin.Context) {
 	}
 	// 同租户同会话唯一，重复提交覆盖（保留原创建时间语义：更新 score/tags/comment）
 	var r model.SatisfactionRating
-	err := config.DB.Where("tenant_id = ? AND thread_id = ?", tid, b.UserID).First(&r).Error
+	err := config.DB.Where("tenant_id = ? AND thread_id = ?", tid, threadID).First(&r).Error
 	if err != nil {
 		r = model.SatisfactionRating{
 			TenantID: tid,
-			ThreadID: b.UserID,
-			UserKey:  b.UserID,
+			ThreadID: threadID,
+			UserKey:  threadID,
 			Score:    b.Score,
 			Tags:     strings.TrimSpace(b.Tags),
 			Comment:  strings.TrimSpace(b.Comment),

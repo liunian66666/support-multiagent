@@ -150,8 +150,9 @@ func isFullPerms(perms []string) bool {
 }
 
 // IsAdminUser 是否租户管理员：权限并集覆盖全部权限码即视为管理员。
-// 与角色名/标记解耦（admin 角色可删可改）；权限集合是唯一身份来源，避免双源不一致
-func IsAdminUser(userID uint64) bool {
+// 与角色名/标记解耦（admin 角色可删可改）；权限集合是唯一身份来源，避免双源不一致。
+// 导出为变量以便测试注入（生产恒为下方实现）。
+var IsAdminUser = func(userID uint64) bool {
 	if userID == 0 {
 		return true // app_key 管理员（无 user_id）全权，与 canHandleTicket 的 uid==0 放行一致
 	}

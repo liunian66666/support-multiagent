@@ -5,3 +5,4 @@ __pycache__/
 agent.log
 main_chroma.py.bak
 *.bak
+tests/

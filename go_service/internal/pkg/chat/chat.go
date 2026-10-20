@@ -16,6 +16,7 @@ type ChatResult struct {
 	Kind     string // reply / ticket / human / busy / error
 	Msg      string
 	TicketNo string
+	Reason   string // [ours] 转人工原因：透出到前端，用户要知道为什么被转接
 	Err      error
 }
 
@@ -83,7 +84,8 @@ func ProcessUserMessage(threadID, userID, msg, traceID string) ChatResult {
 			ws.WSHub.SendToAdminsByTenant(tenantID, map[string]interface{}{
 				"type": "ticket_update", "ticket": t,
 			})
-			return ChatResult{Kind: "ticket", TicketNo: t.TicketNo, Msg: "您已提交人工客服，正在等待处理（工单号：" + t.TicketNo + "）"}
+			return ChatResult{Kind: "ticket", TicketNo: t.TicketNo, Reason: reason,
+				Msg: "您已提交人工客服，正在等待处理（工单号：" + t.TicketNo + "）"}
 		}
 		_ = repository.SaveTicketMessage(threadID, "system", "已提交人工客服，工单号："+t.TicketNo, "text", t.ID)
 		// 转接诉求消息归属新工单（工单会话隔离：详情只显示本工单消息）
@@ -106,7 +108,7 @@ func ProcessUserMessage(threadID, userID, msg, traceID string) ChatResult {
 				"created_at": t.CreatedAt.Format(time.RFC3339),
 			},
 		})
-		return ChatResult{Kind: "ticket", TicketNo: t.TicketNo, Msg: "已提交人工客服，请等待处理"}
+		return ChatResult{Kind: "ticket", TicketNo: t.TicketNo, Reason: reason, Msg: "已提交人工客服，请等待处理"}
 	}
 
 	content := agentResp.Content

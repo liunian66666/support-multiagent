@@ -77,7 +77,7 @@ python_lint:
   script:
     - cd python_agent
     - ruff check . --output-format=text
-    - flake8 . --max-line-length=120 --exclude=backups,examples
+    - flake8 . --max-line-length=120 --exclude=backups,assets
   allow_failure: false
   only:
     - merge_requests

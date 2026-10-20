@@ -203,9 +203,13 @@ CREATE TABLE IF NOT EXISTS `ticket_logs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工单操作历史表';
 
 -- 订单表（Agent 订单查询工具使用，演示数据可后续维护）
+-- 归属字段 tenant_id/customer_id：订单查询按 租户+稳定客户标识 双条件限定，
+-- 无归属信息的旧订单保持不可查询（fail-closed，不暴露存在性）
 CREATE TABLE IF NOT EXISTS `orders` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `order_id` varchar(64) NOT NULL COMMENT '订单号 如 ORD2024001',
+  `tenant_id` varchar(64) NOT NULL DEFAULT '' COMMENT '租户ID（归属校验）',
+  `customer_id` varchar(255) NOT NULL DEFAULT '' COMMENT '稳定客户标识（归属校验）',
   `user_name` varchar(64) DEFAULT NULL COMMENT '用户名',
   `item` varchar(128) DEFAULT NULL COMMENT '商品',
   `amount` decimal(12,2) DEFAULT 0 COMMENT '金额（元）',
@@ -213,8 +217,29 @@ CREATE TABLE IF NOT EXISTS `orders` (
   `create_date` varchar(32) DEFAULT NULL COMMENT '下单日期',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `order_id` (`order_id`)
+  UNIQUE KEY `order_id` (`order_id`),
+  KEY `idx_order_tenant` (`tenant_id`),
+  KEY `idx_order_customer` (`customer_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='订单表';
+
+-- 客户会话表（服务端签发的短期会话：前端只持 token，身份以本记录为准）
+CREATE TABLE IF NOT EXISTS `customer_sessions` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `tenant_id` varchar(64) NOT NULL DEFAULT '' COMMENT '租户ID',
+  `customer_id` varchar(255) NOT NULL DEFAULT '' COMMENT '稳定客户标识',
+  `thread_id` varchar(255) NOT NULL DEFAULT '' COMMENT '会话线程ID（服务端生成）',
+  `token` varchar(512) NOT NULL COMMENT '会话令牌（查库吊销/过期判定）',
+  `is_preview` tinyint(1) NOT NULL DEFAULT 0 COMMENT '商家测试预览会话（不可查订单）',
+  `is_guest` tinyint(1) NOT NULL DEFAULT 0 COMMENT '免登录访客会话（不可查订单）',
+  `expires_at` datetime(3) NOT NULL COMMENT '过期时间',
+  `created_at` datetime(3) DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `token` (`token`),
+  KEY `idx_csess_tenant` (`tenant_id`),
+  KEY `idx_csess_customer` (`customer_id`),
+  KEY `idx_csess_thread` (`thread_id`),
+  KEY `idx_csess_expires` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='客户会话表';
 
 -- 客户信息表（会话维度：正则自动提取 phone/email + 后台人工补全 name/address/remark）
 CREATE TABLE IF NOT EXISTS `customer_profiles` (
@@ -235,8 +260,11 @@ CREATE TABLE IF NOT EXISTS `customer_profiles` (
   KEY `idx_customer_profiles_tenant` (`tenant_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='客户信息表';
 
-INSERT INTO `orders` (`id`,`order_id`,`user_name`,`item`,`amount`,`status`,`create_date`,`created_at`) VALUES (1,'ORD-2024-001','小明','VIP 年费会员',799,'已完成','2024-01-15','2026-09-03 19:33:02');
-INSERT INTO `orders` (`id`,`order_id`,`user_name`,`item`,`amount`,`status`,`create_date`,`created_at`) VALUES (2,'ORD-2024-002','小明','Python 实战课程',199,'配送中','2024-03-20','2026-09-03 19:33:02');
+-- 虚构演示订单（归属：t_demo 租户 / 客户 t_demo:buyer1，仅演示用）
+-- 前端用 customer_id=buyer1 走 /api/auth/customer-token 登录后即可查询到这两单；
+-- 换其他客户登录会得到与"订单不存在"完全相同的提示（不暴露存在性）
+INSERT INTO `orders` (`id`,`order_id`,`tenant_id`,`customer_id`,`user_name`,`item`,`amount`,`status`,`create_date`,`created_at`) VALUES (1,'ORD-2024-001','t_demo','t_demo:buyer1','小明','VIP 年费会员',799,'已完成','2024-01-15','2026-09-03 19:33:02');
+INSERT INTO `orders` (`id`,`order_id`,`tenant_id`,`customer_id`,`user_name`,`item`,`amount`,`status`,`create_date`,`created_at`) VALUES (2,'ORD-2024-002','t_demo','t_demo:buyer1','小明','Python 实战课程',199,'配送中','2024-03-20','2026-09-03 19:33:02');
 
 -- RBAC：角色表（租户内，内置 admin/staff 由 EnsureTenantRoles 懒初始化）
 CREATE TABLE IF NOT EXISTS `roles` (

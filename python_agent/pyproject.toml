@@ -28,12 +28,20 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "main.py" = ["B008", "E402"]
+"app/server.py" = ["E402"]   # 日志必须先于其余模块装配，import 位于 setup 调用之后
 "backups/*" = ["ALL"]
-"examples/*" = ["ALL"]
+"assets/examples/*" = ["ALL"]
+"assets/examples/**" = ["ALL"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["config", "models", "cache", "tools", "logger"]
+known-first-party = ["app"]
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.pytest.ini_options]
+# tests/ 无 __init__.py 时 pytest 会把 tests/ 而非项目根放进 sys.path，
+# 必须显式声明根目录，否则 `import app` 失败。
+pythonpath = ["."]
+testpaths = ["tests"]

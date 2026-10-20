@@ -193,13 +193,18 @@ func UserTokenHandler(c *gin.Context) {
 
 // RefreshTokenHandler 刷新 Token：POST /api/auth/refresh
 // 请求头 Authorization: Bearer <旧 token>，返回新 token（旧 token 自动失效）
+//
+// 令牌类型边界：只刷新管理/子账号令牌（auth.RefreshToken 经 VerifyTokenFull 统一拦截，
+// 客户会话令牌在此返回 401，到期后由前端重新走客户登录，绝不转换令牌类型）。
+// 身份响应按令牌实际身份计算：app_key 管理员（uid=0）全权；子账号（uid>0）
+// 查账号与角色，is_admin/role_name 不得一律写死。
 func RefreshTokenHandler(c *gin.Context) {
 	oldToken := middleware.ExtractToken(c)
 	if oldToken == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "未提供 token"})
 		return
 	}
-	newToken, tid, exp, err := auth.RefreshToken(oldToken)
+	newToken, tid, uid, exp, err := auth.RefreshToken(oldToken)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "token 刷新失败: " + err.Error()})
 		return
@@ -212,12 +217,33 @@ func RefreshTokenHandler(c *gin.Context) {
 			tName = info.Name
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{
+	data := gin.H{
 		"token": newToken, "tenant_id": tid, "expires_in": exp, "is_platform_admin": isPlat,
 		"is_admin": true, "nickname": tid, // app_key 管理员全权
-		"role_name": "管理员", // 右上角角色名称
-		"tenant_name": tName, // 右上角租户名称
-	}})
+		"role_name": "管理员",
+		"tenant_name": tName,
+	}
+	if uid > 0 {
+		// 子账号：按真实账号与角色解析身份；账号不存在/已删除 → 拒绝刷新
+		user, roles, err := repository.GetUserWithRoles(uid)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "账号不存在或已禁用，请重新登录"})
+			return
+		}
+		nickname := user.Nickname
+		if nickname == "" {
+			nickname = user.Username
+		}
+		roleName := ""
+		if len(roles) > 0 {
+			roleName = roles[0].Name
+		}
+		data["user_id"] = user.ID
+		data["is_admin"] = repository.IsAdminUser(user.ID)
+		data["nickname"] = nickname
+		data["role_name"] = roleName
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": data})
 }
 
 // LogoutHandler 主动登出：POST /api/auth/logout

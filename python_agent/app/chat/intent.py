@@ -1,0 +1,42 @@
+"""确定性意图路由（纯规则，零 DB/网络，从 multi_agent.py 拆出）。
+
+原项目 SQLite/Milvus 的 specialist 无法直接搬过来：订单身份归属在 Go 网关，
+租户知识库在 Qdrant。本模块只保留 router 的判定边界，安全适配器复用现有实现。
+"""
+import re
+from dataclasses import dataclass
+
+from app.chat.faq import handoff_reason, is_handoff, lookup, order_id
+
+
+@dataclass(frozen=True)
+class Route:
+    specialist: str
+    order_id: str | None = None
+    answer: str | None = None
+    reason: str | None = None
+
+
+_ACTION = re.compile(r"(?:给我|帮我|我要|现在|立即|直接).{0,12}(?:退款|扣款|付款|支付|退货)|^请(?:立即|直接)?(?:退款|退货|支付|付款)|(?:退款|扣款|付款|支付).{0,10}(?:这单|该订单|订单号)")
+_FAQ = re.compile(r"政策|规则|运费|发票|课程|价格|配送|退换|退款|退货|物流|保修|售后|知识库|有什么|是什么|多久|如何|怎么")
+
+
+def route_message(message: str, tenant_id: str, *, pending_ticket: bool = False) -> Route:
+    """Route only by the trusted tenant and current message; never infer identity."""
+    if is_handoff(message) and not pending_ticket:
+        return Route("handoff", reason=handoff_reason(message))
+    if _ACTION.search(message):
+        if pending_ticket:
+            return Route("faq_fast", answer="您已提交人工客服，正在等待接入。客服接入后会继续核验退款或支付请求。")
+        # No refund/payment mutation specialist is exposed until business APIs,
+        # ownership checks and independent approval are all wired up.
+        return Route("handoff", reason="退款或支付操作需要人工核验")
+    oid = order_id(message)
+    if oid:
+        return Route("order", order_id=oid)
+    answer = lookup(message, tenant_id)
+    if answer:
+        return Route("faq_fast", answer=answer)
+    if _FAQ.search(message):
+        return Route("faq")
+    return Route("general")

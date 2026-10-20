@@ -11,6 +11,9 @@ import (
 // WriteAuditLog P1-3：写一条管理端操作审计日志（best-effort，失败仅记日志不影响主流程）
 // userIDs 为可选可变参数：传子账号 user_id 用于区分同名历史操作；不传默认 0（app_key 管理员）
 func WriteAuditLog(tenantID, operator, action, objectType, objectID, detail, ip string, userIDs ...uint64) {
+	if config.DB == nil {
+		return // best-effort：无 DB 环境（单测）直接跳过
+	}
 	if tenantID == "" {
 		tenantID = "system"
 	}

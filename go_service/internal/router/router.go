@@ -88,6 +88,10 @@ func SetupRoutes(r *gin.Engine) {
 	r.POST("/api/auth/user-token", handler.UserTokenHandler)
 	r.POST("/api/auth/refresh", handler.RefreshTokenHandler)
 	r.POST("/api/auth/logout", handler.LogoutHandler)
+	// 演示客户登录（仅 config.Auth.DemoCustomerLogin 启用）：签发短期客户会话令牌
+	r.POST("/api/auth/customer-token", handler.CustomerTokenHandler)
+	r.POST("/api/auth/guest-token", handler.GuestTokenHandler)
+	r.POST("/api/auth/merchant-preview-token", handler.MerchantPreviewTokenHandler)
 	// 修改自己密码（平台管理员/租户管理员，需登录态）
 	r.PUT("/api/auth/password", middleware.AdminAuth(), handler.ChangePasswordHandler)
 

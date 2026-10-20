@@ -155,6 +155,13 @@ services:
       CS_MYSQL_DSN: "root:${MYSQL_ROOT_PASSWORD:-123456}@tcp(mysql:3306)/${MYSQL_DATABASE:-cs_biz_db}?charset=utf8mb4&parseTime=True&loc=Local"
       CS_AGENT_URL: "http://agent:8000"
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-cs_internal_token_2026_secure}
+      # 演示客户登录（仅演示栈开启；config.yaml 默认 false）：
+      # 使用独立演示客户凭证，与管理端 app_secret 分离，泄露不影响管理端
+      CS_AUTH_DEMO_CUSTOMER_LOGIN: "${CS_AUTH_DEMO_CUSTOMER_LOGIN:-true}"
+      CS_AUTH_MERCHANT_PREVIEW_LOGIN: "${CS_AUTH_MERCHANT_PREVIEW_LOGIN:-true}"
+      CS_AUTH_DEMO_GUEST_CHAT: "${CS_AUTH_DEMO_GUEST_CHAT:-true}"
+      CS_AUTH_DEMO_GUEST_TENANT_ID: "${CS_AUTH_DEMO_GUEST_TENANT_ID:-t_demo}"
+      DEMO_CUSTOMER_DEMO_BUYER_KEY_SECRET: ${DEMO_CUSTOMER_DEMO_BUYER_KEY_SECRET:-demo_buyer_secret}
       # Redis（强制依赖）：登录限流 / Token 黑名单 / 模型配置缓存失效广播
       REDIS_ADDR: "redis:6379"
       # P0-4：数据库 API Key 的 AES 加密主密钥（必须配置，缺失时生产模式拒绝启动）

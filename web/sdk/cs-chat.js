@@ -1,21 +1,29 @@
 /*!
- * CS-Chat SDK v2.0 — 智能客服多端集成脚本（无依赖，单文件，iframe 模式）
+ * CS-Chat SDK v2.1 — 智能客服多端集成脚本（无依赖，单文件，iframe 模式）
  *
- * 架构：SDK 负责浮窗按钮 + 弹窗容器 + API + 事件，聊天内核用 iframe 加载 pc.html
+ * 架构：SDK 负责浮窗按钮 + 弹窗容器 + 事件，聊天内核用 iframe 加载 pc.html。
+ * 身份全部由服务端签发的客户会话（customer token）承载：SDK 自身不换令牌，
+ * 宿主签发的 token 通过 postMessage 交给 iframe；演示环境可直接免登录咨询。
  *
- * 快速开始（最简单，data-* 自动初始化）：
+ * 快速开始（生产：宿主后端核验已有买家登录态，再通过正式身份接入接口
+ * 签发客户会话令牌后传入；演示用 /api/auth/customer-token 不用于真实客户）：
  *   <script src="https://你的域名/sdk/cs-chat.js"
  *           data-server="https://你的域名"
- *           data-token="宿主后端换取的token"
+ *           data-token="宿主后端签发的客户会话令牌"
  *           data-title="在线客服"
  *           data-theme="#1890ff"></script>
+ *
+ * 演示模式（免登录访客，订单查询在客服登录页按需登录）：
+ *   <script src="cs-chat.js"
+ *           data-server="http://localhost:8080"></script>
  *
  * 手动初始化：
  *   <script src="cs-chat.js"></script>
  *   <script>
  *     CSCHAT.init({
  *       server: 'https://你的域名',
- *       token: 'xxx',        // 推荐：宿主后端换取后传入
+ *       token: 'xxx',            // 推荐：宿主后端签发客户会话令牌后传入
+ *       // 未登录时可免登录咨询；查询订单时引导用户进入登录页
  *       title: '在线客服',
  *       theme: '#1890ff',
  *       position: 'right',   // right / left
@@ -32,19 +40,18 @@
 (function (global) {
   'use strict';
 
-  // P1-5：SDK 版本常量（配合版本化 URL 使用，如 /sdk/cs-chat@2.0.0.js）
-  var SDK_VERSION = '2.0.0';
+  // P1-5：SDK 版本常量（配合版本化 URL 使用，如 /sdk/cs-chat@2.1.0.js）
+  var SDK_VERSION = '2.1.0';
   if (global) {
     try { global.CS_CHAT_SDK_VERSION = SDK_VERSION; } catch (e) {}
   }
 
-  var NS = 'cs_sdk_uid';
   var DEFAULTS = {
     server: '',              // 客服系统地址（必填，如 https://你的域名）
-    token: '',               // 访问令牌（推荐：宿主后端换取后传入）
-    app_key: '',             // 或传 app_key + app_secret，SDK 自动换票（仅演示，生产勿用）
-    app_secret: '',
-    tenant_id: '',           // 直传 token 时建议传租户ID（用于 user_id 前缀）
+    token: '',               // 客户会话令牌（推荐：宿主后端签发后传入）
+    customer_key: '',        // 旧配置保留解析，但不再传给 iframe
+    customer_secret: '',     // 旧配置保留解析，但不再传给 iframe
+    customer_id: '',         // 旧配置保留解析，但不再作为认证身份
     title: '在线客服',
     subtitle: '',
     theme: '#1890ff',
@@ -62,9 +69,7 @@
 
   var S = {
     cfg: null,
-    uid: '',
     token: '',
-    tenant: '',
     root: null,
     shadow: null,
     els: {},
@@ -91,62 +96,16 @@
       return '#' + [r,g,b].map(function(x){return Math.max(0,x-30).toString(16).padStart(2,'0')}).join('');
     } catch(e) { return hex; }
   }
-  function parseTenantId(token) {
-    try {
-      var p = token.split('.');
-      var b64 = p.length === 3 ? p[1] : p[0];
-      b64 = b64.replace(/-/g,'+').replace(/_/g,'/');
-      while (b64.length % 4) b64 += '=';
-      var d = JSON.parse(atob(b64));
-      return d.tid || d.tenant_id || '';
-    } catch(e) { return ''; }
-  }
 
-  /* ================= user_id ================= */
-  function getUserId() {
-    if (S.cfg.user_id) return S.cfg.user_id;
-    var tid = S.tenant || 'unknown';
-    var key = NS + '_' + tid;
-    var id = null;
-    try { id = localStorage.getItem(key); } catch(e) {}
-    if (!id) {
-      id = 'u_' + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
-      try { localStorage.setItem(key, id); } catch(e) {}
-    }
-    return tid + ':' + id;
-  }
-
-  /* ================= token ================= */
-  function ensureToken(cb) {
-    if (S.cfg.token) {
-      S.token = S.cfg.token;
-      S.tenant = S.cfg.tenant_id || parseTenantId(S.token);
-      cb();
-      return;
-    }
-    if (S.cfg.app_key && S.cfg.app_secret) {
-      var xhr = new XMLHttpRequest();
-      xhr.open('POST', S.cfg.server.replace(/\/$/,'') + '/api/auth/token', true);
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.onreadystatechange = function() {
-        if (xhr.readyState === 4) {
-          try {
-            var data = JSON.parse(xhr.responseText);
-            if (data.code === 0 && data.data && data.data.token) {
-              S.token = data.data.token;
-              S.tenant = data.data.tenant_id || parseTenantId(S.token);
-              cb();
-            } else {
-              console.error('[CS-Chat] 换token失败:', data.msg);
-              cb(data.msg || '换token失败');
-            }
-          } catch(e) { cb('解析响应失败'); }
-        }
-      };
-      xhr.send(JSON.stringify({app_key: S.cfg.app_key, app_secret: S.cfg.app_secret}));
-      return;
-    }
-    cb('缺少 token 或 app_key/app_secret');
+  /* ================= 会话透传（SDK 不换令牌） ================= */
+  // iframe URL 只含非敏感外观参数；token 经定向 postMessage 交付。
+  function chatIframeURL() {
+    var url = S.cfg.server.replace(/\/$/,'') + '/chat/pc.html' +
+      '?title=' + encodeURIComponent(S.cfg.title) +
+      '&theme=' + encodeURIComponent(S.cfg.theme);
+    if (S.cfg.subtitle) url += '&subtitle=' + encodeURIComponent(S.cfg.subtitle);
+    if (S.cfg.token) url += '&sdk_auth=1';
+    return url;
   }
 
   /* ================= 事件 ================= */
@@ -195,6 +154,9 @@
     S.shadow.appendChild(panel);
     S.els.panel = panel;
     S.els.iframe = panel.querySelector('.cs-iframe');
+    S.els.iframe.addEventListener('load', function(){
+      if (S.cfg && S.cfg.token) postToIframe('cs_auth', {token:S.cfg.token});
+    });
     S.els.closeBtn = panel.querySelector('.cs-panel-close');
     S.els.closeBtn.addEventListener('click', close);
 
@@ -253,10 +215,15 @@
 
   /* ================= iframe 通信 ================= */
   function handleIframeMessage(e) {
+    if (!S.cfg || !S.els.iframe || e.source !== S.els.iframe.contentWindow) return;
+    if (e.origin !== new URL(S.cfg.server, location.href).origin) return;
     if (!e.data || typeof e.data !== 'object') return;
     if (e.data.source !== 'cs-chat') return;
 
     switch(e.data.type) {
+      case 'cs_need_auth':
+        if (S.cfg.token) postToIframe('cs_auth', {token:S.cfg.token});
+        break;
       case 'cs_ready':
         S.iframeLoaded = true;
         emit('ready', e.data);
@@ -283,7 +250,7 @@
   function postToIframe(type, data) {
     if (S.els.iframe && S.els.iframe.contentWindow) {
       try {
-        S.els.iframe.contentWindow.postMessage(Object.assign({type: type}, data || {}), '*');
+        S.els.iframe.contentWindow.postMessage(Object.assign({type: type}, data || {}), new URL(S.cfg.server, location.href).origin);
       } catch(e) {}
     }
   }
@@ -310,23 +277,16 @@
       return;
     }
 
-    // 先渲染浮窗按钮（即使 token 还没获取到）
+    // 先渲染浮窗按钮（iframe 懒加载：打开弹窗才赋值 src，由 pc.html 完成登录）
     if (S.cfg.autoShow !== false) buildUI();
-
-    // 异步获取 token
-    ensureToken(function(err) {
-      if (err) {
-        console.warn('[CS-Chat] token 获取失败，调用 setToken() 后可使用:', err);
-        return;
-      }
-      S.uid = getUserId();
-      emit('init', {user_id: S.uid, tenant_id: S.tenant});
-    });
+    // 无 token 时，演示栈由聊天页签发访客会话；生产由宿主后端提供 token。
   }
 
   function config(cfg) {
     if (!S.cfg) { init(cfg); return; }
+    var credChanged = !!(cfg.token || cfg.customer_key || cfg.customer_secret || cfg.customer_id);
     S.cfg = merge(S.cfg, cfg);
+    if (cfg.token) S.token = cfg.token;
     if (S.els.btn) {
       // 更新按钮文字
       S.els.btn.innerHTML = '<span class="cs-btn-icon">' + esc(S.cfg.buttonIcon) + '</span>' +
@@ -337,10 +297,8 @@
       applyPosition();
       postToIframe('cs_config', {title: S.cfg.title, theme: S.cfg.theme});
     }
-    if (cfg.token) {
-      S.token = cfg.token;
-      S.tenant = cfg.tenant_id || parseTenantId(cfg.token);
-      S.uid = getUserId();
+    // 凭证变化：重载 iframe 让聊天内核用新身份重连
+    if (credChanged) {
       if (!S.root && S.cfg.autoShow !== false) buildUI();
       if (S.isOpen) loadIframe();
     }
@@ -348,13 +306,7 @@
 
   function loadIframe() {
     if (!S.els.iframe) return;
-    var url = S.cfg.server.replace(/\/$/,'') + '/chat/pc.html' +
-      '?token=' + encodeURIComponent(S.token) +
-      '&user_id=' + encodeURIComponent(S.uid) +
-      '&title=' + encodeURIComponent(S.cfg.title) +
-      '&theme=' + encodeURIComponent(S.cfg.theme);
-    if (S.cfg.subtitle) url += '&subtitle=' + encodeURIComponent(S.cfg.subtitle);
-    S.els.iframe.src = url;
+    S.els.iframe.src = chatIframeURL();
     S.iframeLoaded = false;
   }
 
@@ -396,8 +348,8 @@
     }
   }
 
-  function setToken(token, tenantId) {
-    config({token: token, tenant_id: tenantId || ''});
+  function setToken(token) {
+    config({token: token});
   }
 
   function on(event, fn) {
@@ -427,7 +379,7 @@
       var s = scripts[i];
       if (s.getAttribute('data-manual') === 'true') continue;
       var cfg = {};
-      var attrs = ['server','token','app-key','app-secret','tenant-id','title','subtitle','theme',
+      var attrs = ['server','token','customer-key','customer-secret','customer-id','title','subtitle','theme',
                    'position','width','height','offset-x','offset-y','button-text','button-icon','auto-show'];
       for (var j = 0; j < attrs.length; j++) {
         var val = s.getAttribute('data-' + attrs[j]);
@@ -454,7 +406,7 @@
 
   /* ================= 导出 API ================= */
   var CSCHAT = {
-    version: '2.0.0',
+    version: SDK_VERSION,
     init: init,
     config: config,
     open: open,
@@ -465,7 +417,7 @@
     on: on,
     off: off,
     destroy: destroy,
-    getUserId: function(){ return S.uid; },
+    getCustomerId: function(){ return S.cfg ? (S.cfg.customer_id || '') : ''; },
     isOpen: function(){ return S.isOpen; }
   };
 

@@ -4,7 +4,7 @@
 
 主项目是 `ai_customer_service`。用户入口沿用 `http://localhost:8080/chat/pc.html` → Nginx → Go `/ws/chat` / `/api/user/chat` → Python `/agent/chat` / `/agent/chat/stream`；消息与工单沿用 Go/MySQL，模型检查点沿用 PostgreSQL，租户知识库沿用 Qdrant。没有部署第二套 Streamlit/FastAPI/Milvus/SQLite 演示系统。
 
-从 `support-agent` 迁入的是可审核的通用客服流程及回答边界。`python_agent/support_faq.py` 对明确问法直接答复，标明 `process-playbook-v1 / generic-process` 来源，并要求商家政策与订单归属另行核验；`python_agent/kb_seed/support-agent-process-v1.md` 经现有后台上传和手动索引进入 `kb_t_demo`。公开话术模板没有被当作商家政策导入。
+从 `support-agent` 迁入的是可审核的通用客服流程及回答边界。`python_agent/app/chat/faq.py` 对明确问法直接答复，标明 `process-playbook-v1 / generic-process` 来源，并要求商家政策与订单归属另行核验；`python_agent/assets/kb_seed/support-agent-process-v1.md` 经现有后台上传和手动索引进入 `kb_t_demo`。公开话术模板没有被当作商家政策导入。
 
 ## 阶段结果
 
@@ -26,7 +26,7 @@
 
 | 项 | 操作 | 实测结果 |
 |---|---|---|
-| 文档登记 | 上传 `python_agent/kb_seed/demo-store-policy-v1.md`，分类「店铺政策」 | `doc_id=8b0a0bf7d19d41b8b519b2c2a00fb54e`，status=0 待索引 |
+| 文档登记 | 上传 `python_agent/assets/kb_seed/demo-store-policy-v1.md`，分类「店铺政策」 | `doc_id=8b0a0bf7d19d41b8b519b2c2a00fb54e`，status=0 待索引 |
 | 索引 | 后台重索引 | status=1，5 个分片；`kb_t_demo` 向量数 4 → 9 |
 | 检索命中 | 页面接口问「你们满多少包邮？」 | 回答给出 99 元包邮、未满收 8 元、偏远地区按实际计算 |
 | 检索命中 | 「退款一般多久能到账？」 | 回答给出验收后 1 个工作日发起、银行卡 1–3 个工作日 |
@@ -47,7 +47,7 @@
 
 - **现象**：重复重索引后政策文档向量累积到 10 条、集合总数 14；删除文档后其向量仍留在库中可被检索。
 - **根因**：Qdrant 中 payload 结构为 `{page_content, metadata:{doc_id,...}}`，但删除过滤使用 `key="doc_id"`，与嵌套字段 `metadata.doc_id` 不匹配，删除条件始终未命中。
-- **修复**：`kb_index_worker.py`、`routers_kb.py` 共 4 处（重索引前清理、删除文档、批量清理）改为 `key="metadata.doc_id"`。
+- **修复**：`app/workers/kb_index.py`、`app/api/kb.py` 共 4 处（重索引前清理、删除文档、批量清理）改为 `key="metadata.doc_id"`。
 - **验证**：重索引后集合总数由 14 回到 9（4 + 5，无重复）；上传临时文档并索引后删除，向量残留 0、总数回到 9。
 
 ## FAQ 意图匹配升级（2026-10-18 15:00 前后）
@@ -109,9 +109,11 @@
 
 高频问题「订单号怎么找/在哪/咋查」原先每次走 LLM，答法不一、浪费 token。现做成确定性 FAQ（分点列出 4 个查找位置：购买记录 / 收货短信 / 电子发票 / 支付凭证），答复末尾引导用户提供订单号后核验。`find_order_id` 意图组 A 约束话题（订单号/单号/订单编号），组 B 约束问法（怎么找/在哪/咋查等），避免与订单状态查询混淆。
 
-### 优化三：订单核验失败自动转人工
+### 优化三：订单核验失败自动转人工（2026-10-19 已收窄，见文末「订单查询失败分级」）
 
-原先核验失败返回「请转人工客服」文本，用户得自己再发「转人工」才建单，闭环断层。现检测 `query_order_readonly` 返回值含失败标识（无法核验/未通过核验/暂不可用等）时，自动触发 interrupt 建单，`reason` 标注「订单核验失败（订单号 xxx），转人工处理」，`direct_handoff=True`。工单未完结（`has_pending_ticket=True`）时不重复建单，避免一张订单多次建单。
+原先核验失败返回「请转人工客服」文本，用户得自己再发「转人工」才建单，闭环断层。当时改为检测 `query_order_readonly` 返回值含失败标识（无法核验/未通过核验/暂不可用等）时自动触发 interrupt 建单，`reason` 标注「订单核验失败（订单号 xxx），转人工处理」，`direct_handoff=True`。工单未完结（`has_pending_ticket=True`）时不重复建单。
+
+> 后续发现该判定按**用户文案子串**匹配，把「单号打错（404）」也升级成人工，用户输入 `订单10001` 即静默建单。现已改为结构化结果码分级，详见文末 2026-10-19 章节。
 
 ### 优化四：历史订单上下文记忆
 
@@ -186,3 +188,39 @@ docker run --rm cs-go-merge-test go test ./...
 
 
 真实订单后续接入条件见 [ORDER_ADAPTER_CONTRACT.md](./ORDER_ADAPTER_CONTRACT.md)。
+
+## 订单查询失败分级（2026-10-19）
+
+### 问题
+
+用户输入「订单10001」（演示库里没有该单号）时被自动建单（`TK-…`）。原因不是意图识别出错，而是：
+
+1. `order_id()` 的内联规则把「订单+10001」识别为订单号，路由到 `order`；
+2. 订单接口返回 404，`query_order_readonly` 输出「未找到订单 10001…请转人工客服。」；
+3. `api/chat.py` 用 `_ORDER_LOOKUP_FAILURE_MARKERS` 对**用户文案**做子串匹配，命中「未找到订单」即返回 `is_interrupt=True`；
+4. Go 收到中断后 `EnsureTicket()` 建单，前端提示「已为您创建工单」。
+
+即：单号打错属于用户可自助纠正的失败，却被当成必须人工的失败；判定还绑在文案上，改措辞就会改流程。
+
+### 改动
+
+| 层 | 文件 | 内容 |
+|---|---|---|
+| 领域规则 | `app/chat/order.py` | 新增结果码 `ORDER_OK/NOT_FOUND/UNAUTHENTICATED/FORBIDDEN/UNAVAILABLE/UNVERIFIED`、`AUTO_HANDOFF_ORDER_CODES`、`should_auto_handoff()`、`order_handoff_reason()`；删除 `_ORDER_LOOKUP_FAILURE_MARKERS` |
+| 适配器 | `app/agent/tools.py` | `lookup_order()` 返回 `OrderLookup(code, text)`；`query_order_readonly()` 仅取 text 供 LLM 工具兼容；404/401 文案去掉「请转人工客服」 |
+| 路由 | `app/api/chat.py`（HTTP + SSE 双入口） | 仅 `should_auto_handoff(code)` 为真时建单；404 返回核对提示；`pending_ticket` 时补充「客服接入后会继续核实」 |
+| 网关 | `go_service/internal/pkg/chat/chat.go`、`handler/ws.go`、`handler/user.go` | `ChatResult.Reason` 透传；WS `ticket` 事件与 HTTP `ticket` 响应新增 `reason` 字段 |
+| 前端 | `web/chat/pc.html`、`web/chat/h5.html` | 工单提示追加「（原因：…）」，`cs_handoff` 回传 `reason` |
+
+### 失败分级
+
+| 场景 | 结果码 | 是否转人工 | 用户看到 |
+|---|---|---|---|
+| 本人订单 | `OK` | 否 | 订单状态、商品、金额、下单日期 |
+| 单号不存在 / 不属于该账号（Go 合并返回 404） | `NOT_FOUND` | 否 | 「没有查到订单 xxx。请核对订单号后重新发送；如果确认单号无误，可以回复「转人工」…」 |
+| 访客未登录（401） | `UNAUTHENTICATED` | 否 | 提示登录客户账号，其他问题可继续免登录咨询 |
+| 归属校验不通过（403） | `FORBIDDEN` | 是 | 工单提示 + 原因「订单 xxx 归属校验未通过，需要人工核实」 |
+| 订单系统 5xx / 超时 | `UNAVAILABLE` | 是 | 工单提示 + 原因「订单系统暂时不可用，无法核验订单 xxx」 |
+| 内部 Token / 租户上下文缺失 | `UNVERIFIED` | 是 | 工单提示 + 原因「订单身份上下文缺失，无法核验订单 xxx」 |
+
+单测：`tests/test_order_lookup_code.py`（11 项：结果码映射、自助/转人工分级、原因文案、文本包装一致性），全量 48 项通过。

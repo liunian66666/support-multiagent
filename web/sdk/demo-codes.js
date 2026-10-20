@@ -17,15 +17,16 @@ window.CODE_EXAMPLES = {
 <!-- 方式二：手动初始化（推荐，可调用 API） -->
 <script src="https://你的客服域名/sdk/cs-chat.js" data-manual="true"></script>
 <script>
-  // 从你的服务端获取 token（app_secret 只存在服务端）
+  // 从你的服务端获取【客户会话令牌】：宿主后端先校验访客登录态，
+  // 再调用客服系统签发客户会话（演示模式：/api/auth/customer-token；
+  // 生产模式：校验商家登录凭证后签发同结构会话）。app_secret 只存在服务端。
   async function initCustomerService() {
     const resp = await fetch('/api/get-cs-token');
     const data = await resp.json();
 
     CSCHAT.init({
       server: 'https://你的客服域名',
-      token: data.token,              // 服务端换取的 token
-      tenant_id: data.tenant_id,      // 租户ID
+      token: data.token,              // 服务端签发的客户会话令牌
       title: '在线客服',
       theme: '#1890ff',
       position: 'right',              // right / left
@@ -62,47 +63,10 @@ window.CODE_EXAMPLES = {
 </a>
 
 <script>
-const CS_CONFIG = {
-  baseUrl: 'https://你的客服域名',
-  tokenApi: '/api/get-cs-token',  // 你自己服务端的换token接口
-  tenantId: 't_your_tenant',       // 你的租户ID
-};
-
-// user_id 管理（localStorage 持久化，同一浏览器同一用户）
-function getCsUserId() {
-  // 已登录用户：用系统用户ID（加前缀防枚举）
-  if (window.userInfo && window.userInfo.id) {
-    return CS_CONFIG.tenantId + ':user_' + window.userInfo.id;
-  }
-  // 游客：localStorage 持久化
-  let uid = localStorage.getItem('cs_h5_user_id');
-  if (!uid) {
-    uid = 'h5_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-    localStorage.setItem('cs_h5_user_id', uid);
-  }
-  return CS_CONFIG.tenantId + ':' + uid;
-}
-
-// 从服务端获取 token
-async function fetchCsToken() {
-  const resp = await fetch(CS_CONFIG.tokenApi);
-  const data = await resp.json();
-  return data.token;
-}
-
-// 打开客服页面（全屏）
-async function openCustomerService() {
-  const [token, userId] = await Promise.all([fetchCsToken(), getCsUserId()]);
-
-  // 拼接 h5/chat.html URL（移动端专用页面）
-  const url = CS_CONFIG.baseUrl + '/chat/h5.html'
-    + '?token=' + encodeURIComponent(token)
-    + '&user_id=' + encodeURIComponent(userId)
-    + '&title=' + encodeURIComponent('在线客服')
-    + '&theme=' + encodeURIComponent('#1890ff');
-
-  // 当前页面跳转（推荐，体验类似微信对话）
-  window.location.href = url;
+// 演示环境：免登录咨询，查询演示订单时页面会提供登录入口。
+// 生产客户身份由宿主系统后端验证并通过安全会话桥接，不放进 URL。
+function openCustomerService() {
+  window.location.href = 'https://你的客服域名/chat/h5.html';
 }
 </script>`,
 
@@ -125,7 +89,6 @@ import java.net.URLEncoder;
 public class CustomerServiceActivity extends AppCompatActivity {
     private WebView webView;
     private static final String CS_BASE_URL = "https://你的客服域名";
-    private static final String TENANT_ID = "t_your_tenant";
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -147,23 +110,8 @@ public class CustomerServiceActivity extends AppCompatActivity {
         // 注入 JSBridge（让 H5 能调用原生方法，如关闭 WebView）
         webView.addJavascriptInterface(new JsBridge(), "AndroidBridge");
 
-        // 从服务端获取 token（异步）
-        new Thread(() -> {
-            String token = fetchTokenFromServer(); // 调用你的后端接口
-            String userId = getUserId();             // 登录用用户ID，未登录用设备ID
-            String url = CS_BASE_URL + "/chat/h5.html"
-                + "?token=" + URLEncoder.encode(token, "UTF-8")
-                + "&user_id=" + URLEncoder.encode(TENANT_ID + ":" + userId, "UTF-8")
-                + "&title=" + URLEncoder.encode("在线客服", "UTF-8");
-            runOnUiThread(() -> webView.loadUrl(url));
-        }).start();
-    }
-
-    // user_id：登录用户用用户ID，未登录用设备ID
-    private String getUserId() {
-        String deviceId = android.provider.Settings.Secure.getString(
-            getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
-        return "app_" + deviceId;
+        // 演示：免登录咨询；生产不要把客户令牌放进 URL。
+        webView.loadUrl(CS_BASE_URL + "/chat/h5.html");
     }
 
     // JSBridge：H5 点击返回按钮时关闭 Activity
@@ -192,7 +140,6 @@ import WebKit
 class CustomerServiceViewController: UIViewController {
     var webView: WKWebView!
     let CS_BASE_URL = "https://你的客服域名"
-    let TENANT_ID = "t_your_tenant"
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -212,40 +159,10 @@ class CustomerServiceViewController: UIViewController {
         webView.navigationDelegate = self
         view.addSubview(webView)
 
-        // 从服务端获取 token
-        fetchToken { [weak self] token in
-            guard let self = self else { return }
-            let userId = self.getUserId()
-            var urlStr = "\\(self.CS_BASE_URL)/chat/h5.html"
-            urlStr += "?token=\\(token)"
-            urlStr += "&user_id=\\(self.TENANT_ID):\\(userId)"
-            urlStr += "&title=在线客服"
-
-            if let url = URL(string: urlStr.addingPercentEncoding(
-                withAllowedCharacters: .urlQueryAllowed)!) {
-                self.webView.load(URLRequest(url: url))
-            }
+        // 演示：免登录咨询；生产不要把客户令牌放进 URL。
+        if let url = URL(string: "\\(CS_BASE_URL)/chat/h5.html") {
+            webView.load(URLRequest(url: url))
         }
-    }
-
-    // 从服务端获取 token
-    func fetchToken(completion: @escaping (String) -> Void) {
-        guard let url = URL(string: "https://你的后端域名/api/get-cs-token") else { return }
-        URLSession.shared.dataTask(with: url) { data, _, _ in
-            if let data = data,
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let token = json["token"] as? String {
-                DispatchQueue.main.async { completion(token) }
-            }
-        }.resume()
-    }
-
-    // user_id：登录用户用用户ID，未登录用设备ID（IDFV）
-    func getUserId() -> String {
-        if let idfv = UIDevice.current.identifierForVendor?.uuidString {
-            return "app_\\(idfv)"
-        }
-        return "app_guest_\\(Date().timeIntervalSince1970)"
     }
 }
 
@@ -272,8 +189,7 @@ extension CustomerServiceViewController: WKNavigationDelegate {}`,
 <!-- 2. 页面逻辑 customer-service.js -->
 Page({
   data: {
-    csUrl: '',
-    tenantId: 't_your_tenant'  // 你的租户ID
+    csUrl: ''
   },
 
   onLoad() {
@@ -282,38 +198,11 @@ Page({
 
   async loadCustomerService() {
     try {
-      // 1. 从你的服务端获取 token（小程序不能存 app_secret）
-      const tokenRes = await wx.request({
-        url: 'https://你的后端域名/api/get-cs-token',
-        method: 'GET'
-      });
-      const token = tokenRes.data.token;
-
-      // 2. 获取 user_id（用 openid，同一用户固定）
-      const userId = this.getUserId();
-
-      // 3. 拼接 h5/chat.html URL
-      const url = 'https://你的客服域名/chat/h5.html'
-        + '?token=' + encodeURIComponent(token)
-        + '&user_id=' + encodeURIComponent(this.data.tenantId + ':' + userId)
-        + '&title=' + encodeURIComponent('在线客服')
-        + '&theme=' + encodeURIComponent('#1890ff');
-
-      this.setData({ csUrl: url });
+      // 演示：免登录咨询；查询订单时页面引导登录。
+      this.setData({ csUrl: 'https://你的客服域名/chat/h5.html' });
     } catch (err) {
       wx.showToast({ title: '客服暂时不可用', icon: 'none' });
     }
-  },
-
-  // user_id：用 openid，同一用户固定不变
-  getUserId() {
-    let openid = wx.getStorageSync('cs_openid');
-    if (!openid) {
-      // 实际项目中应通过 wx.login → 后端换 openid
-      openid = 'wx_guest_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-      wx.setStorageSync('cs_openid', openid);
-    }
-    return openid;
   },
 
   // 接收 web-view 发来的消息（用户点击关闭时触发）

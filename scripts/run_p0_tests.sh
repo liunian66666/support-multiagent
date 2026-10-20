@@ -22,8 +22,9 @@ else
 fi
 
 echo "==================== 2/3 Agent 单测 ===================="
-docker cp python_agent/test_agent_unit.py cs_agent:/app/test_agent_unit.py >/dev/null 2>&1
-if docker exec cs_agent sh -c 'cd /app && python3 test_agent_unit.py' >/dev/null 2>&1; then
+docker exec cs_agent mkdir -p /app/tests >/dev/null 2>&1
+docker cp python_agent/tests/test_agent_unit.py cs_agent:/app/tests/test_agent_unit.py >/dev/null 2>&1
+if docker exec cs_agent sh -c 'cd /app && python3 tests/test_agent_unit.py' >/dev/null 2>&1; then
   echo "[PASS] Agent 单测"
 else
   echo "[FAIL] Agent 单测"; FAIL=1
