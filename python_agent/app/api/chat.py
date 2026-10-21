@@ -307,6 +307,7 @@ async def agent_resume(req: ResumeRequest, request: Request):
 # 调试接口，查询checkpoint数据表（异步版本）
 @router.get("/agent/checkpoint/{thread_id}")
 async def get_checkpoint(thread_id: str, request: Request):
+    _require_trusted_chat(request, thread_id)
     async with _pool_conn(request.app) as conn:
         async with conn.cursor() as cur:
             await cur.execute("""

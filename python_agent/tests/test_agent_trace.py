@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
 
+from app.api.chat import get_checkpoint
 from app.api.trace import agent_trace
 from app.services import trace
 
@@ -37,6 +38,14 @@ class TraceRunTest(unittest.IsolatedAsyncioTestCase):
 
 
 class TraceAccessTest(unittest.IsolatedAsyncioTestCase):
+    async def test_checkpoint_rejects_other_tenant_before_database_read(self):
+        request = SimpleNamespace(headers={"X-Internal-Token": "secret",
+                                           "X-Tenant-Id": "t_other"}, app=object())
+        with patch("app.api.deps.INTERNAL_API_TOKEN", "secret"):
+            with self.assertRaises(HTTPException) as err:
+                await get_checkpoint("t_demo:buyer1", request)
+        self.assertEqual(err.exception.status_code, 403)
+
     async def test_internal_token_and_tenant_are_required(self):
         request = SimpleNamespace(headers={"X-Tenant-Id": "t_demo"}, app=object())
         with patch("app.api.trace.INTERNAL_API_TOKEN", "secret"):

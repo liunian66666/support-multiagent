@@ -20,7 +20,7 @@
 ## 状态和追踪
 
 - 会话由业务层的 MySQL/Redis 保存；跨轮 Agent 消息由 PostgreSQL checkpointer 保存。专职模型图本身无独立会话记忆，调用时读取最近消息。
-- `agent_trace_runs` 存每轮路由、专职角色、状态、耗时和最多 64 个结构化事件，包括检索证据 ID、模型 token 用量。原问题、提示词、工具参数及密钥不写入事件。
+- `agent_trace_runs` 存每轮路由、专职角色、状态、耗时和最多 64 个结构化事件，包括检索证据 ID、模型 token 用量。原问题、提示词、工具参数及密钥不写入事件。检查点调试接口也验证内部令牌与线程所属租户。
 - 客户 HTTP 回复与 WebSocket 终帧带 `trace_id`。内部接口 `GET /agent/traces/{trace_id}` 需要内部令牌及租户 ID，跨租户返回 404。
 - SSE 的用量在 `end` 帧之前写入，避免客户收到结束帧后断开导致统计遗漏。
 
@@ -28,7 +28,7 @@
 
 保留已有数据卷，只重建和启动 Agent、business 镜像。以下验证在 2026-10-21 的本地 Compose 服务上通过：
 
-- Agent 单测 76 个；FastAPI business 单测 329 个。
+- Agent 单测 77 个；FastAPI business 单测 329 个。
 - `python_business/verify_order_ownership.py`：演示买家查本人订单成功，另一买家无法取得该订单。
 - `python_business/verify_multi_agent_live.py`：本人订单、订单＋退货政策复合问题、访客 FAQ、退款执行请求移交；每轮 trace 可查、跨租户不可查。
 - `python_business/verify_handoff_live.py`：客户建单、同会话重复转人工不重复建单、商家通知仅发所属租户。

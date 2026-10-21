@@ -5,7 +5,7 @@ from app.infra.config import INTERNAL_API_TOKEN
 from app.infra.db.tenant import tenant_from_thread
 
 def _require_trusted_chat(request: Request, thread_id: str) -> str:
-    """The Go gateway is the only authenticated chat entry point."""
+    """Only the authenticated FastAPI business service may access a tenant thread."""
     tenant_id = tenant_from_thread(thread_id)
     if (not INTERNAL_API_TOKEN or
         request.headers.get("X-Internal-Token") != INTERNAL_API_TOKEN or
