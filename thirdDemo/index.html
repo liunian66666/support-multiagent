@@ -164,7 +164,7 @@
     <p>
         本页面模拟一个电商网站，演示如何通过 <strong>SDK（cs-chat.js）</strong> 接入智能客服系统。<br>
         右下角 <strong>💬 客服</strong> 按钮由 SDK 自动渲染，点击即可打开客服对话窗口。<br>
-        接入流程：服务端用 <code>app_key/app_secret</code> 换 token → 前端引入 SDK 并传入 token →
+        接入流程：演示服务端签发短期访客会话 → 前端引入 SDK 并传入客户 token →
         SDK 自动管理浮窗按钮、弹窗、WebSocket 连接、消息收发。<br>
         SDK 内部用 iframe 加载 <code>pc.html</code>，对外提供 <code>open/close/sendText/on</code> 等 API。
     </p>
@@ -186,8 +186,8 @@
         <button onclick="sendCustomMsg()">发送自定义消息</button>
     </div>
     <div class="row">
-        <span style="font-size:13px;color:#666;">当前 user_id：</span>
-        <code id="currentUid" style="background:#f6f8fa;padding:2px 8px;border-radius:4px;font-size:12px;">加载中...</code>
+        <span style="font-size:13px;color:#666;">当前身份：</span>
+        <code id="currentUid" style="background:#f6f8fa;padding:2px 8px;border-radius:4px;font-size:12px;">演示访客</code>
         <span style="font-size:13px;color:#666;margin-left:16px;">窗口状态：</span>
         <code id="openStatus" style="background:#f6f8fa;padding:2px 8px;border-radius:4px;font-size:12px;">未打开</code>
     </div>
@@ -262,7 +262,7 @@
 
 <!-- ============ 引入智能客服 SDK ============ -->
 <!-- 方式一：data-* 自动初始化（最简单） -->
-<!-- 注意：生产环境 token 应由服务端换取后注入，不要在前端暴露 app_secret -->
+<!-- 真实商家接入时，宿主服务端须先核验用户身份，再签发客户 token。 -->
 <script src="http://localhost:8080/sdk/cs-chat.js"
         data-server="http://localhost:8080"
         data-title="XX商城客服"
@@ -277,8 +277,7 @@
 
 <script>
 // ============ SDK 初始化（手动方式，推荐） ============
-// 从本服务端获取 token（main.go 中的 /get-token 接口）
-// 生产环境：token 由后端用 app_key/app_secret 换取，前端只持有短期 token
+// 从本演示服务端获取短期访客 token。真实商家应使用已有登录态签发客户 token。
 async function initCustomerService() {
     try {
         logEvent('system', '正在从服务端获取 token...');
@@ -305,10 +304,7 @@ async function initCustomerService() {
 
         logEvent('system', 'SDK 初始化完成');
 
-        // 显示 user_id
-        setTimeout(function() {
-            document.getElementById('currentUid').textContent = CSCHAT.getUserId() || '未生成';
-        }, 500);
+        document.getElementById('currentUid').textContent = '演示访客';
 
     } catch (err) {
         console.error('[CS] 初始化失败:', err);
@@ -318,8 +314,8 @@ async function initCustomerService() {
 
 // ============ SDK 事件监听 ============
 CSCHAT.on('ready', function(data) {
-    logEvent('ready', '聊天就绪 user_id=' + data.user_id + ' tenant=' + data.tenant_id);
-    document.getElementById('currentUid').textContent = data.user_id;
+    logEvent('ready', '聊天就绪');
+    document.getElementById('currentUid').textContent = '演示访客';
 });
 
 CSCHAT.on('open', function() {

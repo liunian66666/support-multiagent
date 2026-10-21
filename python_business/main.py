@@ -2122,7 +2122,6 @@ def admin_customers(page: str = "1", size: str = "20", q: str = "",
 # POST /api/agent/ws/broadcast（本轮新增，仅转发不落库），保证只有一个 WS Hub。
 # ==========================================================================
 
-GO_INTERNAL_URL = os.getenv("GO_INTERNAL_URL", "http://go:8080")
 AGENT_URL = os.getenv("CS_AGENT_URL", "http://agent:8000")
 
 TICKET_STATUS_PENDING = 0
@@ -2150,42 +2149,14 @@ ALL_PERMISSIONS = {
 
 
 def go_broadcast(target, payload, key="", tenant_id=""):
-    """对齐 Go 的 ws.WSHub 推送：借 Go 进程的 Hub 发一条消息。
-
-    Go 侧推送是进程内调用、不会失败；跨进程后可能失败，这里按 Go 的语义处理 ——
-    推送失败不影响已经落库的结果（响应仍然成功），因此只做一次重试后放弃。
-    """
-    if os.getenv("USE_PYTHON_WS_HUB", "false").lower() == "true":
-        ws_hub.broadcast_from_thread(target, payload, key=key,
-                                     tenant_id=tenant_id)
-        return
-    body = {"target": target, "payload": payload}
-    if key:
-        body["key"] = key
-    if tenant_id:
-        body["tenant_id"] = tenant_id
-    headers = {"X-Internal-Token": os.getenv("INTERNAL_API_TOKEN", "")}
-    for _ in range(2):
-        try:
-            httpx.post(GO_INTERNAL_URL + "/api/agent/ws/broadcast", json=body,
-                       headers=headers, timeout=5)
-            return
-        except httpx.HTTPError:
-            continue
+    """Deliver ticket and human-agent updates through the local Python Hub."""
+    ws_hub.broadcast_from_thread(target, payload, key=key,
+                                 tenant_id=tenant_id)
 
 
 def reload_go_extract_rules():
-    """通知 Go 失效提取规则内存缓存（并行期专用，失败不影响主流程）。"""
-    if os.getenv("USE_PYTHON_WS_HUB", "false").lower() == "true":
-        return
-    headers = {"X-Internal-Token": os.getenv("INTERNAL_API_TOKEN", "")}
-    for _ in range(2):
-        try:
-            httpx.post(GO_INTERNAL_URL + "/api/agent/extract-rules/reload",
-                       headers=headers, timeout=5)
-            return
-        except httpx.HTTPError:
-            continue
+    """Rules are read from shared storage; there is no gateway-side cache."""
+    return
 
 
 def agent_resume(thread_id, confirmed, wait_time, ticket_no, trace_id=""):
@@ -4184,39 +4155,18 @@ def admin_member_delete(id: str, request: Request,
 
 
 def go_internal(method, path, body=None, timeout=5):
-    """调 Go 内部接口（并行期专用）。失败返回 None，调用方按 best-effort 处理。"""
-    headers = {"X-Internal-Token": os.getenv("INTERNAL_API_TOKEN", "")}
-    try:
-        resp = httpx.request(method, GO_INTERNAL_URL + path, json=body,
-                             headers=headers, timeout=timeout)
-        return resp.json()
-    except (httpx.HTTPError, ValueError):
-        return None
+    """Compatibility hook retained for older contract tests; no gateway call."""
+    return None
 
 
 def reload_go_menu_caches():
-    """通知 Go 失效 menuCache + rolePermsCache（并行期专用）。"""
-    if os.getenv("USE_PYTHON_WS_HUB", "false").lower() == "true":
-        return
-    for _ in range(2):
-        if go_internal("POST", "/api/agent/menus/reload") is not None:
-            return
+    """Menus and permissions are queried from MySQL on each request."""
+    return
 
 
 def reload_go_tenants():
-    """通知 Go 重载 auth 内存缓存（并行期专用）。
-
-    Go 把 tenants 全量缓存在进程内（tenantByKey / TenantsList）用于令牌校验与登录。
-    本层写库后不重载的话会出现两个真实故障：
-      1) 新建租户用 app_key + secret 登录失败（缓存里查不到）
-      2) 已禁用租户的旧令牌在 Go 侧仍然有效
-    因此租户的增删改 / 启停 / 重置密钥之后都必须调用一次。
-    """
-    if os.getenv("USE_PYTHON_WS_HUB", "false").lower() == "true":
-        return
-    for _ in range(2):
-        if go_internal("POST", "/api/agent/tenants/reload") is not None:
-            return
+    """Authentication reads current tenant state from MySQL; no cache reload."""
+    return
 
 
 # ---------- 租户 ----------
@@ -4272,9 +4222,7 @@ def tenant_usage_map():
                 cur["kb_size_mb"] = float(u.get("kb_size_bytes") or 0) / 1024 / 1024
 
     # 并发会话以 ws Hub 实时连接数为准（与 Go 侧配额校验同口径）
-    conns = ({"code": 0, "data": ws_hub.count_all_tenants()}
-             if os.getenv("USE_PYTHON_WS_HUB", "false").lower() == "true"
-             else go_internal("GET", "/api/agent/ws/conns"))
+    conns = {"code": 0, "data": ws_hub.count_all_tenants()}
     if isinstance(conns, dict) and conns.get("code") == 0:
         for tid, n in (conns.get("data") or {}).items():
             cur = out.setdefault(tid, {"active_sessions": 0, "today_messages": 0,

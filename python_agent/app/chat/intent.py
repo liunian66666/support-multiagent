@@ -1,6 +1,6 @@
 """确定性意图路由（纯规则，零 DB/网络，从 multi_agent.py 拆出）。
 
-原项目 SQLite/Milvus 的 specialist 无法直接搬过来：订单身份归属在 Go 网关，
+原项目 SQLite/Milvus 的 specialist 无法直接搬过来：订单身份归属在 FastAPI 业务层，
 租户知识库在 Qdrant。本模块只保留 router 的判定边界，安全适配器复用现有实现。
 """
 import re

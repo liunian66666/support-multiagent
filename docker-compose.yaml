@@ -97,14 +97,13 @@ services:
     networks:
       - cs-network
 
-  # 并行迁移中的 FastAPI 业务层：客户身份、会话及只读订单。
-  # /py-api/ 供并行验收；现有 Go 聊天入口在切换前继续运行。
+  # FastAPI 业务层：客户身份、会话、只读订单、工单和实时聊天。
   business:
     build: ./python_business
     container_name: cs_business
     restart: unless-stopped
     environment:
-      # 与 mysql / go 容器对齐：统计类接口按「今天」划分日期边界，
+      # 统计类接口按「今天」划分日期边界，
       # 容器默认 UTC 会让 last7days 在 CST 00:00-08:00 区间差一天
       TZ: ${TZ:-Asia/Shanghai}
       MYSQL_HOST: mysql
@@ -113,10 +112,8 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-cs_biz_db}
       REDIS_URL: redis://redis:6379/0
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-cs_internal_token_2026_secure}
-      USE_PYTHON_WS_HUB: "true"
-      # 切流期间保留 Go 地址作为快速回退；开关开启时通知走 Python Hub。
-      # 待处理工单接管/取消转接仍需唤醒 Agent 的 HITL 中断。
-      GO_INTERNAL_URL: "http://go:8080"
+      TENANT_T_ADMIN_SECRET: ${TENANT_T_ADMIN_SECRET:?TENANT_T_ADMIN_SECRET 未配置}
+      TENANT_T_DEMO_SECRET: ${TENANT_T_DEMO_SECRET:?TENANT_T_DEMO_SECRET 未配置}
       CS_AGENT_URL: "http://agent:8000"
       # 阶段 3-4 起：本层也读写 tenants.model_api_key / embedding_api_key，
       # 必须与 go 用同一把 AES-GCM 密钥，否则彼此解不开对方的密文
@@ -130,13 +127,9 @@ services:
       DEMO_CUSTOMER_ALLOWED: buyer1,buyer2
       DEMO_CUSTOMER_DEMO_BUYER_KEY_SECRET: ${DEMO_CUSTOMER_DEMO_BUYER_KEY_SECRET:-demo_buyer_secret}
     volumes:
-      # 会话图片/视频共享卷：与 go 写同一卷，nginx 静态服务 /msg_files/
-      # （阶段 3-2 起 FastAPI 也承担 POST /api/admin/sessions/upload）
+      # 会话图片/视频由 business 写入，nginx 静态服务 /msg_files/。
       - cs_msg_files:/app/msg_files
-      # 阶段 3-10：RSA 私钥与 go 共用同一文件（./data/rsa_private.pem）。
-      # 登录公钥由前端缓存后复用：若某一端回了 /api/auth/public-key、
-      # 登录/改密却落到另一端，密文必须解得开 —— 两把密钥会让回退通道直接 401。
-      # go 先启动则由 go 生成、本端读取；文件已存在时两边都只加载。
+      # 持久化 RSA 私钥，重启后已缓存的登录公钥仍可用。
       - ./data:/app/data
     depends_on:
       mysql:
@@ -152,8 +145,27 @@ services:
     networks:
       - cs-network
 
+  business-maintenance:
+    build: ./python_business
+    container_name: cs_business_maintenance
+    restart: unless-stopped
+    command: ["python", "maintenance.py"]
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      MYSQL_HOST: mysql
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-cs_biz_db}
+      REDIS_URL: redis://redis:6379/0
+      MSG_RETENTION_DAYS: ${MSG_RETENTION_DAYS:-90}
+    depends_on:
+      business:
+        condition: service_healthy
+    networks:
+      - cs-network
+
   # ==========================================================================
-  # 业务服务：Agent + Go 网关 + Nginx
+  # 业务服务：Agent + Python FastAPI + Nginx
   # ==========================================================================
   agent:
     build: ./python_agent
@@ -200,58 +212,6 @@ services:
     networks:
       - cs-network
 
-  go:
-    build:
-      context: .
-      dockerfile: go_service/Dockerfile
-    container_name: cs_go
-    restart: unless-stopped
-    env_file:
-      - ./.env
-    environment:
-      # PROD_MODE: "true"
-      CS_MYSQL_DSN: "root:${MYSQL_ROOT_PASSWORD:-123456}@tcp(mysql:3306)/${MYSQL_DATABASE:-cs_biz_db}?charset=utf8mb4&parseTime=True&loc=Local"
-      CS_AGENT_URL: "http://agent:8000"
-      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-cs_internal_token_2026_secure}
-      # 演示客户登录（仅演示栈开启；config.yaml 默认 false）：
-      # 使用独立演示客户凭证，与管理端 app_secret 分离，泄露不影响管理端
-      CS_AUTH_DEMO_CUSTOMER_LOGIN: "${CS_AUTH_DEMO_CUSTOMER_LOGIN:-true}"
-      CS_AUTH_MERCHANT_PREVIEW_LOGIN: "${CS_AUTH_MERCHANT_PREVIEW_LOGIN:-true}"
-      CS_AUTH_DEMO_GUEST_CHAT: "${CS_AUTH_DEMO_GUEST_CHAT:-true}"
-      CS_AUTH_DEMO_GUEST_TENANT_ID: "${CS_AUTH_DEMO_GUEST_TENANT_ID:-t_demo}"
-      DEMO_CUSTOMER_DEMO_BUYER_KEY_SECRET: ${DEMO_CUSTOMER_DEMO_BUYER_KEY_SECRET:-demo_buyer_secret}
-      # Redis（强制依赖）：登录限流 / Token 黑名单 / 模型配置缓存失效广播
-      REDIS_ADDR: "redis:6379"
-      # P0-4：数据库 API Key 的 AES 加密主密钥（必须配置，缺失时生产模式拒绝启动）
-      MODEL_KEY_ENCRYPT_KEY: ${MODEL_KEY_ENCRYPT_KEY:?MODEL_KEY_ENCRYPT_KEY 未配置}
-      # P0-3：CORS 跨域白名单（逗号分隔）
-      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-}
-      # 链路追踪（可选，默认关闭）
-      OTEL_SERVICE_NAME: "customer-service-go"
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
-      OTEL_TRACES_SAMPLER: "parentbased_traceidratio"
-      OTEL_TRACES_SAMPLER_ARG: "0.1"
-    volumes:
-      # RSA 私钥持久化（登录加密；生产务必备份该目录，更换密钥会导致已缓存公钥失效）
-      - ./data:/app/data
-      # 会话图片存储卷（客服发送的图片消息；nginx 同卷静态服务 /msg_files/）
-      - cs_msg_files:/app/msg_files
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      agent:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/api/auth/tenants || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-      start_period: 30s
-    networks:
-      - cs-network
-
   nginx:
     # 多阶段构建：容器内编译 admin-app 前端 + 打包 web/ 静态资源，
     # 无需在宿主机预先执行 scripts/build_admin_app.sh（见 nginx.Dockerfile）
@@ -267,10 +227,9 @@ services:
       - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       # 知识库原文件共享卷（与 agent 同一卷，静态服务 /kb_files/）
       - cs_kb_files:/usr/share/nginx/html/kb_files
-      # 会话图片共享卷（与 go 同一卷，静态服务 /msg_files/）
+      # 会话图片共享卷（business 写入，静态服务 /msg_files/）
       - cs_msg_files:/usr/share/nginx/html/msg_files
     depends_on:
-      - go
       - business
     networks:
       - cs-network
@@ -369,7 +328,7 @@ services:
     ports:
       - "9090:9090"
     depends_on:
-      - go
+      - business
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:9090/-/healthy || exit 1"]
       interval: 10s
@@ -441,7 +400,7 @@ volumes:
   cs_grafana_data:
   # 知识库原文件共享卷（agent 写入 /app/data/kb_files，nginx 静态服务 /kb_files/）
   cs_kb_files:
-  # 会话图片共享卷（go 写入 /app/msg_files，nginx 静态服务 /msg_files/）
+  # 会话图片共享卷（business 写入 /app/msg_files，nginx 静态服务 /msg_files/）
   cs_msg_files:
 
 # ==========================================================================

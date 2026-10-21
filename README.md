@@ -7,7 +7,6 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](./LICENSE)
 [![Online Demo](https://img.shields.io/badge/Demo-在线体验-brightgreen)](https://cs.hwcom.top)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ed?logo=docker)
-![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)
 ![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python)
 ![Vue3](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs)
 
@@ -15,32 +14,23 @@
 
 </div>
 
-> 多租户智能客服系统：**Go 网关 + Python LangGraph Agent + MySQL/PostgreSQL/Qdrant + Redis**，支持第三方网站 / App / 小程序多端接入，AI 自动应答 + 人工接管完整闭环，开箱即用。
+> 多租户智能客服系统：**Python FastAPI 业务层 + Python LangGraph Agent + MySQL/PostgreSQL/Qdrant + Redis**，支持第三方网站 / App / 小程序多端接入，AI 自动应答 + 人工接管完整闭环。
 
 ---
 
 ## 本仓库说明：在原项目基础上的整合优化
 
-本仓库基于 [myrockey/ai_customer_service](https://github.com/myrockey/ai_customer_service) 的多租户客服系统，在其之上完成「电商客服 Agent 能力整合」优化。**原始项目的架构与绝大部分功能由原作者实现**，本节只记录本次优化新增与修改的部分，便于区分归属。
+本仓库基于 [myrockey/ai_customer_service](https://github.com/myrockey/ai_customer_service) 的多租户客服系统，在其之上整合电商客服 Agent，并把原 Go 业务服务迁移到 Python FastAPI。**原始项目的架构与绝大部分功能由原作者实现**；迁移历史保留在 Git 提交中，以下只列本仓库的改动。
 
 ### 本次优化内容
 
 | 优化项 | 说明 | 位置 |
 |---|---|---|
-| 统一入口身份校验 | Go 向 Agent 透传内部令牌与租户头，Agent 校验令牌有效性及 `thread_id` 租户前缀一致，阻断绕过网关直连 | `agent/client.go`、`python_agent/main.py` |
-| 订单查询真实查询与归属校验 | `orders` 表加 `tenant_id`+`customer_id` 字段并灌演示数据；`BusinessOrder` 从 fail-closed 503 改为按 `tenant_id+customer_id+order_id` 三条件查表，命中返回状态/商品/金额/下单日期，未命中（不存在/不属于该客户）返回同一提示不暴露订单存在性；Python 按 body.code 分支返回（修复 Go StatusCode 中间件把 body.code 映射到 HTTP status 导致 raise_for_status 误异常） | `handler/user.go`、`model/model.go`、`python_agent/tools.py` |
-| 客户会话令牌体系 | 用户侧身份改为服务端签发：`/api/auth/customer-token`（演示模式）签发 `kind=customer` 短期令牌并落库 `customer_sessions`，`UserAuth` 从会话记录注入 `tenant_id/customer_id/thread_id`，URL/body 传入的 `user_id` 不再作为身份来源；管理端验签 `VerifyTokenFull` 对非空 `kind` 一律拒绝，封死「客户令牌进管理端」与「刷新转换成管理令牌」两条提权路径；`/api/auth/refresh` 仅刷新管理/子账号令牌且保留 `uid`，响应身份按真实账号计算 | `pkg/auth/auth.go`、`middleware/auth.go`、`handler/customer_session.go`、`repository/customer_session.go` |
-| 演示凭证与管理凭证分离 | 演示买家通过独立登录页用 POST 提交密码，页面只保存短期客户令牌；访客可免登录咨询，订单查询要求买家登录。管理密钥与客户令牌保持隔离 | `config.yaml`、`handler/customer_session.go`、`web/chat/login.html` |
-| 迁移客服流程 FAQ | 从外部客服 Agent 项目迁入通用流程问答与回答边界，意图关键词匹配（退货/退款/订单状态/能力），常见变体问法可命中；答复标注来源，未命中时拒答而非编造商家政策 | `python_agent/support_faq.py` |
-| 转人工意图扩展 | 识别「找人工」「人工客服」「转接」「投诉」等说法并区分建单原因；意图优先级：转人工 > 具体订单号 > 流程 FAQ > LLM，避免订单请求被流程答复截胡 | `python_agent/support_faq.py`、`python_agent/main.py` |
-| 转人工流程修正 | 区分用户主动转人工与中断恢复，避免建单后重复 resume 打断会话；前端按钮文案与发送文本统一，不承诺等待时长 | `handler/ws.go`、`chat/chat.go`、`web/chat/pc.html` |
-| 知识库索引一致性修复 | 重索引后检索器自动重建（原先需重启服务才恢复）；按 `metadata.doc_id` 清理旧向量（原先删除条件未命中，导致残留与重复） | `python_agent/tools.py`、`kb_index_worker.py`、`routers_kb.py` |
-| 演示政策知识 | 为演示租户补录示例政策文档，运费、发货时效、退款到账等可检索作答；知识库未覆盖的问题明确拒答而非编造 | `python_agent/kb_seed/demo-store-policy-v1.md` |
-| 确定性答复写入检查点 | 流程 FAQ / 订单核验 / 转人工原本绕过 LangGraph，后续 LLM 读不到这次问答；现通过旁路图（与主 Agent 共享同一 checkpointer 与 thread_id）把问答追加到检查点，长对话上下文连续；工单未完结时跳过，写入失败不影响答复 | `python_agent/agent_factory.py`、`python_agent/main.py` |
-| 订单号格式扩展 | 由单一 `ORD-xxx` 演示格式扩展至电商前缀（TB/JD/PDD/DY/TMALL/1688）与显式上下文（「订单号是 xxx」「单号: xxx」），识别真实商家订单号；纯短数字与手机号不误匹配 | `python_agent/support_faq.py` |
-| 「订单号怎么找」FAQ 化 | 高频问题原先走 LLM，答法不一；现做成确定性 FAQ，分点列出购买记录/收货短信/电子发票/支付凭证四个查找位置 | `python_agent/support_faq.py` |
-| 订单查询失败分级 | 按结构化结果码决定是否转人工：单号不存在（404）、未登录（401）留在自助链路并提示用户核对/登录；仅归属不符（403）、系统不可用（5xx/超时）、身份上下文缺失才自动建单，转人工原因透出到前端 | `python_agent/app/agent/tools.py`、`python_agent/app/api/chat.py` |
-| 历史订单上下文记忆 | 用户追问「刚才那个订单现在怎样」「之前那个快递到哪了」时，从检查点历史消息复用最近订单号，避免 LLM 答非所问 | `python_agent/support_faq.py`、`python_agent/main.py` |
+| 客户身份与只读订单 | FastAPI 签发客户会话，按租户和客户归属查询演示订单；未知订单号可列出本人订单，跨客户请求不能获知订单是否存在 | `python_business/main.py`、`python_agent/app/agent/tools.py` |
+| 电商客服意图与 FAQ | 区分政策咨询、订单查询、主动转人工和退款/支付执行请求；政策回答保留知识来源，不把演示政策冒充真实商家承诺 | `python_agent/app/chat/`、`python_agent/app/api/chat.py` |
+| Python 业务层迁移 | 客户、商家、认证、工单、内部 Agent 接口及 WebSocket 均由 FastAPI 提供；新库租户初始化和每日消息归档也由 Python 完成 | `python_business/`、`deploy/init/mysql/init.sql` |
+| 前后端联通 | Nginx 将 Vue 后台、客户聊天页、SDK 的 API 与 WebSocket 统一接入 Python；商家实时接收本租户转人工工单 | `deploy/nginx.conf`、`web/`、`admin-app/` |
+| 知识库与会话 | 演示政策文档、Qdrant 检索、确定性答复写入检查点，支持会话恢复和知识来源追溯 | `python_agent/app/kb/`、`python_agent/app/chat/` |
 
 ### 能力边界（未开放的部分）
 
@@ -59,9 +49,9 @@
 复现方式：
 
 ```bash
-docker compose exec -T agent python -m unittest test_support_faq.py test_faq_bridge.py -v   # Python 9+3 项通过
-docker build --target builder -t cs-go-merge-test -f go_service/Dockerfile .
-docker run --rm cs-go-merge-test go test ./...                            # Go 通过
+docker compose run --rm --no-deps business python -m unittest discover -s tests -q
+docker compose exec -T business python verify_gateway_routes.py
+docker compose exec -T -e CHAT_BACKEND=http://nginx business python verify_realtime_live.py
 ```
 
 ---
@@ -136,7 +126,7 @@ docker compose ps
 |  | 社区版（本仓库 · 开源） | 商业版（私有化交付） |
 |--|--|--|
 | 协议 | AGPL-3.0：学习 / 自用 / 非商业 / 继续开源 **免费** | 商业授权（[COMMERCIAL.md](./COMMERCIAL.md)） |
-| 代码 | go_service / python_agent / web / admin-app / docs 全部开源 | 生产部署包（镜像 + 一键脚本 + 监控告警配置）闭源交付 |
+| 代码 | python_business / python_agent / web / admin-app / docs 全部开源 | 生产部署包（镜像 + 一键脚本 + 监控告警配置）闭源交付 |
 | 适用 | 自部署、学习研究、二次开发 | 企业内部闭源部署、对外商业 SaaS、产品化销售 |
 | 支持 | GitHub Issues | 部署支持 / 升级保障 / 定制开发（SSO、多实例等） |
 | 获取 | 直接 clone | 邮箱 2771452556@qq.com |
@@ -154,8 +144,8 @@ docker compose ps
 └───────────────┬──────────────────────────────────┘
                 ▼
 ┌──────────────────────────────────────────────────┐
-│  Go 网关 (8080 内网)  Gin：鉴权/租户隔离/限流/     │
-│  路由/工单/模型配置/用量报表/审计/消息归档          │
+│  Python FastAPI 业务层 (8001 内网)：鉴权/租户隔离/ │
+│  路由/工单/模型配置/用量报表/审计/WebSocket         │
 └───────┬──────────────────────┬──────────────────┘
         ▼                       ▼
 ┌──────────────────┐   ┌──────────────────────────┐
@@ -175,6 +165,8 @@ docker compose ps
 │          Loki(3100)/Jaeger(16686)                 │
 └──────────────────────────────────────────────────┘
 ```
+
+消息归档由独立的 Python `business-maintenance` 服务定时执行。
 
 ## 🔌 服务端口
 
@@ -197,7 +189,7 @@ customer_service_prod/
 ├── docker-compose.yaml       # 一键编排（全部服务）
 ├── .env.example              # 环境变量模板
 ├── .gitlab-ci.yml            # CI/CD 流水线（lint/test/build/deploy）
-├── go_service/               # Go 网关（internal/：handler/service/model/repository/middleware/config/pkg）
+├── python_business/          # FastAPI 业务层（认证/订单/工单/WebSocket/维护任务）
 ├── python_agent/             # Python LangGraph Agent（main/db_ops/agent_factory/routers）
 ├── admin-app/                # 管理后台前端（Vue3 + Vite，nginx 镜像构建时容器内自动编译）
 ├── web/                      # 前端构建产物 + 静态资源
@@ -234,13 +226,13 @@ customer_service_prod/
 ## ❓ 常见问题
 
 **Q：接口返回 429？**
-防爆破锁定（同一 IP+key 连续失败 5 次锁 10 分钟）。`docker restart cs_go` 可清锁。
+防爆破锁定（同一 IP+key 连续失败 5 次锁 10 分钟）。限流状态保存在 Redis，需等待过期或由管理员处理。
 
 **Q：AI 没反应？**
 检查「平台模型配置」：对话模型/向量模型是否配置、API Key 是否正确、测试连通性是否通过。
 
 **Q：修改了代码如何生效？**
-后端 Go：`docker compose up -d --build go`；前端（admin-app / chat / sdk）：`docker compose up -d --build nginx`（nginx.Dockerfile 容器内自动编译管理后台，无需宿主机安装 Node）；nginx.conf：改后 `docker exec cs_nginx nginx -s reload`。
+业务层：`docker compose up -d --build business business-maintenance`；Agent：`docker compose up -d --build agent`；前端（admin-app / chat / sdk）：`docker compose up -d --build nginx`。nginx.conf 改动后执行 `docker exec cs_nginx nginx -s reload`。
 
 **Q：知识库检索不到？**
 文档状态需为「已索引」；更换 Embedding 模型后必须到知识库页重新索引。

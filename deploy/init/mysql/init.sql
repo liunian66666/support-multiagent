@@ -1,10 +1,8 @@
 ﻿-- ============================================================================
 -- 智能客服系统 - MySQL 初始化脚本
--- 覆盖全部业务表（12 张）：model_providers / platform_config / messages /
--- tickets / tenants / audit_logs / messages_archive / ticket_logs / orders / customer_profiles
--- roles / users
--- 与 Go AutoMigrate + ensureTenantSchema 结构完全对齐，Go 启动时幂等跳过；
--- 种子租户由 Go 从 config.yaml 写入（seedTenantsFromConfig），避免密钥落库
+-- 覆盖 Python 业务层所需的表；与现有业务库的字段保持一致。
+-- 新数据库的租户由 python_business/bootstrap.py 在服务启动时写入；
+-- 密钥只从环境变量读取，数据库仅存 SHA-256 哈希。
 -- ============================================================================
 
 SET NAMES utf8mb4;
@@ -72,6 +70,7 @@ CREATE TABLE IF NOT EXISTS `messages` (
   `thread_id` varchar(255) DEFAULT NULL COMMENT '会话线程ID',
   `role` varchar(16) DEFAULT NULL COMMENT 'user/ai/human/system',
   `content` text COMMENT '消息内容',
+  `msg_type` varchar(16) DEFAULT 'text' COMMENT '消息类型',
   `created_at` datetime(3) DEFAULT NULL,
   `tenant_id` varchar(64) NOT NULL DEFAULT '' COMMENT '租户ID',
   `is_read` tinyint(1) DEFAULT 0 COMMENT '0=未读 1=已读',
@@ -144,6 +143,7 @@ CREATE TABLE IF NOT EXISTS `tenants` (
   `llm_provider_id` bigint unsigned DEFAULT 0 COMMENT '对话模型提供商ID（关联model_providers.id，普通字段）',
   `embedding_provider_id` bigint unsigned DEFAULT 0 COMMENT 'Embedding模型提供商ID（关联model_providers.id，普通字段）',
   `deleted_at` bigint(20) NOT NULL DEFAULT 0 COMMENT '软删除时间(ms)，0=未删除',
+  `rbac_seeded` tinyint(1) DEFAULT 0 COMMENT '默认角色是否已初始化',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uni_tenants_tenant_id` (`tenant_id`),
   UNIQUE KEY `uni_tenants_app_key` (`app_key`)
@@ -172,6 +172,7 @@ CREATE TABLE IF NOT EXISTS `messages_archive` (
   `thread_id` varchar(255) DEFAULT NULL COMMENT '会话线程ID',
   `role` varchar(16) DEFAULT NULL COMMENT 'user/ai/human/system',
   `content` text COMMENT '消息内容',
+  `msg_type` varchar(16) DEFAULT 'text' COMMENT '消息类型',
   `tenant_id` varchar(64) DEFAULT NULL COMMENT '租户ID',
   `is_read` tinyint(1) DEFAULT 0 COMMENT '0=未读 1=已读',
   `created_at` datetime(3) DEFAULT NULL,

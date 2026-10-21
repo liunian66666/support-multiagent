@@ -1,24 +1,8 @@
-# Go 网关下线清单
+# Go 网关下线清单（历史计划）
 
-> 2026-10-21 本轮进展：FastAPI 已增加 `/api/user/messages`、
-> `/api/user/rating`、`/api/user/upload` 兼容入口，复用已迁移的客户会话鉴权；
-> 增加内部 `/api/agent/model-config`、`/api/agent/tenant-quota`、
-> `/api/agent/session-summaries/pending`、`POST /api/agent/session-summaries`。
-> Python 业务层 321 项测试通过。**这些新入口尚未切流**：客户聊天、
-> 实时 WebSocket、并发连接计数仍由 Go 承担，Agent 的 `GO_BUSINESS_API`
-> 仍指向 Go。不得据此停用 Go 或宣称整链迁移完成。
-> 运行中 Go/Python 对照：`tenant-quota` 与 `model-config` 的完整响应字段一致
-> （校验脚本只输出差异字段名，避免泄露明文模型密钥）；摘要接口目前仅完成单测。
-
-> 状态：**步骤 1、2 已执行（2026-10-21）**——admin/biz/plat 三组共 93 条路由已从
-> `router.go` 摘除；`/api/auth/*` 剩余 6 条（public-key / token / user-token /
-> refresh / password / tenants）已迁到 FastAPI（阶段 3-10），前端
-> `api.js` 的 `PY_AUTH_PREFIXES` 已覆盖，双端令牌/密文/限流/黑名单
-> 逐字节互通（compare39 42/42 + 浏览器 23/23 + Python 314 单测）。
-> 步骤 3 ~ 5 未开始。
-> 前提：admin 组 93 条路由已 100% 迁移到 FastAPI（阶段 3-1 ~ 3-7），
-> 前端 `admin-app/src/api.js` 的 `PY_ADMIN_PREFIXES` 已覆盖全部 admin 前缀。
-> 本文回答一个问题：**剩下的 Go 什么时候能关、按什么顺序关、关之前要做什么。**
+> 本文保留迁移前的路由盘点和风险推导，以下“当前分工”是当时的状态，
+> **不代表当前部署**。2026-10-21 的实际 Python 切换及实测结果见
+> [PYTHON_MIGRATION_ACCEPTANCE.md](./PYTHON_MIGRATION_ACCEPTANCE.md)。
 
 ---
 

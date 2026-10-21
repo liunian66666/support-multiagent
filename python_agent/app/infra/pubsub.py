@@ -1,6 +1,6 @@
 """Redis 缓存失效广播订阅（多实例支持）。
 
-Go 网关保存模型配置后 PUBLISH 到 channel `cs:model:cache:invalidate`，
+FastAPI 业务层保存模型配置后 PUBLISH 到 channel `cs:model:cache:invalidate`，
 每个 Agent 实例订阅并清除本地缓存（配置/Agent图/检索器），
 实现多实例下模型切换全量即时生效。
 
