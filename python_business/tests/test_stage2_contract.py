@@ -6,6 +6,7 @@
 
 import hashlib
 import os
+import tempfile
 import time
 import unittest
 from unittest.mock import patch
@@ -147,6 +148,16 @@ class Stage2ContractTest(unittest.TestCase):
         ).status_code, 401)
         self.assertEqual(self.message_query(), [])
 
+    def test_legacy_messages_path_uses_signed_session(self):
+        response = self.client.get(
+            "/api/user/messages", params={"user_id": "t_demo:buyer2:other"},
+            headers=self.auth(),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.message_query()[-1][1][:2],
+                         ("t_demo", "t_demo:buyer1:session"))
+        self.assertEqual(self.client.get("/api/user/messages").status_code, 401)
+
     # ---------- 评价 ----------
 
     def test_rating_rejects_out_of_range_score(self):
@@ -181,6 +192,32 @@ class Stage2ContractTest(unittest.TestCase):
         # 插入参数顺序：(tenant_id, thread_id, user_key, score, tags, comment)
         self.assertEqual(len(args[4]), 255)
         self.assertEqual(len(args[5]), 500)
+
+    def test_legacy_rating_path_ignores_supplied_user_id(self):
+        response = self.client.post(
+            "/api/user/rating", headers=self.auth(),
+            json={"user_id": "t_demo:buyer2:other", "score": 5},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.writes[-1][1][:2],
+                         ("t_demo", "t_demo:buyer1:session"))
+
+    def test_customer_upload_uses_authenticated_tenant(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(main, "MSG_FILE_ROOT", directory):
+            response = self.client.post(
+                "/api/user/upload", headers=self.auth(),
+                data={"tenant_id": "t_other", "user_id": "t_demo:buyer2:other"},
+                files={"file": ("picture.png", b"image-bytes", "image/png")},
+            )
+            self.assertEqual(response.status_code, 200)
+            url = response.json()["data"]["url"]
+            self.assertTrue(url.startswith("/msg_files/t_demo/"))
+            self.assertEqual(response.json()["data"]["msg_type"], "image")
+            self.assertTrue(os.path.isfile(os.path.join(directory, *url.split("/")[2:])))
+        self.assertEqual(self.client.post(
+            "/api/user/upload", files={"file": ("picture.png", b"x")}
+        ).status_code, 401)
 
     # ---------- 工单 ----------
 
