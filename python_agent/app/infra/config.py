@@ -26,8 +26,8 @@ def get_env_or_raise(key: str) -> str:
 POSTGRES_DSN = get_env_or_raise("POSTGRES_DSN")
 QDRANT_URL = get_env_or_raise("QDRANT_URL")
 QDRANT_COLLECTION_NAME = "customer_service_knowledge"
-GO_BUSINESS_API = os.getenv("GO_BUSINESS_API", "http://127.0.0.1:8080")
-ORDER_BUSINESS_API = os.getenv("ORDER_BUSINESS_API", GO_BUSINESS_API)
+BUSINESS_API = os.getenv("BUSINESS_API", "http://business:8001")
+ORDER_BUSINESS_API = os.getenv("ORDER_BUSINESS_API", BUSINESS_API)
 
 # 内部接口鉴权 Token：调用 Go 后端 /api/agent/* 接口时必须携带
 INTERNAL_API_TOKEN = os.getenv("INTERNAL_API_TOKEN", "")

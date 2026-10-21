@@ -4,7 +4,7 @@ from typing import Optional
 
 import psycopg
 
-from app.infra.config import GO_BUSINESS_API, INTERNAL_API_TOKEN
+from app.infra.config import BUSINESS_API, INTERNAL_API_TOKEN
 
 logger = logging.getLogger("agent.db_ops")
 
@@ -25,7 +25,7 @@ async def get_tenant_quota(app, tenant_id: str) -> dict:
         if INTERNAL_API_TOKEN:
             headers["X-Internal-Token"] = INTERNAL_API_TOKEN
         resp = await app.state.http_client.get(
-            f"{GO_BUSINESS_API}/api/agent/tenant-quota",
+            f"{BUSINESS_API}/api/agent/tenant-quota",
             params={"tenant_id": tenant_id}, headers=headers, timeout=5.0)
         data = resp.json()
         if data.get("code") == 0 and data.get("data"):
@@ -69,7 +69,7 @@ async def check_concurrent_sessions(conn: psycopg.AsyncConnection, app, tenant_i
         if INTERNAL_API_TOKEN:
             headers["X-Internal-Token"] = INTERNAL_API_TOKEN
         resp = await app.state.http_client.get(
-            f"{GO_BUSINESS_API}/api/agent/tenant-concurrency",
+            f"{BUSINESS_API}/api/agent/tenant-concurrency",
             params={"tenant_id": tenant_id}, headers=headers, timeout=5.0)
         data = resp.json()
         if data.get("code") == 0 and data.get("data"):

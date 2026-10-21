@@ -9,7 +9,7 @@ import asyncio
 import logging
 import os
 
-from app.infra.config import GO_BUSINESS_API, INTERNAL_API_TOKEN
+from app.infra.config import BUSINESS_API, INTERNAL_API_TOKEN
 from app.agent.llm_config import get_tenant_model
 
 logger = logging.getLogger("agent.session_summary")
@@ -103,7 +103,7 @@ async def _process_one(app, cand: dict) -> bool:
         return False
     try:
         resp = await app.state.http_client.post(
-            f"{GO_BUSINESS_API}/api/agent/session-summaries",
+            f"{BUSINESS_API}/api/agent/session-summaries",
             headers=await _internal_headers(),
             json={"thread_id": thread_id, "tenant_id": tenant_id, "summary": summary},
             timeout=10.0,
@@ -123,7 +123,7 @@ async def _run_round(app) -> None:
     """执行一轮：拉候选 → 逐会话生成 → 回写"""
     try:
         resp = await app.state.http_client.get(
-            f"{GO_BUSINESS_API}/api/agent/session-summaries/pending",
+            f"{BUSINESS_API}/api/agent/session-summaries/pending",
             params={"limit": MAX_CANDIDATES},
             headers=await _internal_headers(),
             timeout=10.0,

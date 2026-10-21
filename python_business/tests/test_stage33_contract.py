@@ -56,6 +56,7 @@ class Stage33Test(unittest.TestCase):
         self.archived = []
         self.logs = []
         self.posts = []
+        self.ws_messages = []
         self.resume_reply = "已接管，您好"
 
         def one(sql, args=()):
@@ -117,7 +118,13 @@ class Stage33Test(unittest.TestCase):
                          side_effect=lambda sql, args: self.writes.append((sql, args))),
             patch.object(main, "cache", return_value=self.redis),
             patch.object(main.httpx, "post", side_effect=post),
-            patch.dict(os.environ, {"INTERNAL_API_TOKEN": "internal-test"}),
+            patch.object(main.ws_hub, "broadcast_from_thread",
+                         side_effect=lambda target, payload, key="", tenant_id="":
+                         self.ws_messages.append(("python", {
+                             "target": target, "payload": payload,
+                             "key": key, "tenant_id": tenant_id}))),
+            patch.dict(os.environ, {"INTERNAL_API_TOKEN": "internal-test",
+                                         "USE_PYTHON_WS_HUB": "true"}),
         )
         for item in self.patches:
             item.start()
@@ -143,7 +150,7 @@ class Stage33Test(unittest.TestCase):
         return [w for w in self.writes if "INSERT INTO audit_logs" not in w[0]]
 
     def broadcasts(self):
-        return [p for p in self.posts if p[0].endswith("/api/agent/ws/broadcast")]
+        return self.ws_messages
 
     def resumes(self):
         return [p for p in self.posts if p[0].endswith("/agent/resume")]

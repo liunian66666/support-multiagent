@@ -4,7 +4,7 @@ import logging
 from langchain.chat_models import init_chat_model
 from langchain_openai import OpenAIEmbeddings
 
-from app.infra.config import GO_BUSINESS_API, INTERNAL_API_TOKEN
+from app.infra.config import BUSINESS_API, INTERNAL_API_TOKEN
 
 logger = logging.getLogger("agent.factory")
 
@@ -155,7 +155,7 @@ async def get_tenant_model_config(app, tenant_id: str) -> dict:
         if INTERNAL_API_TOKEN:
             headers["X-Internal-Token"] = INTERNAL_API_TOKEN
         resp = await app.state.http_client.get(
-            f"{GO_BUSINESS_API}/api/agent/model-config",
+            f"{BUSINESS_API}/api/agent/model-config",
             params={"tenant_id": tenant_id},
             headers=headers,
             timeout=5.0,

@@ -113,9 +113,9 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-cs_biz_db}
       REDIS_URL: redis://redis:6379/0
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-cs_internal_token_2026_secure}
-      # 工单域跨进程依赖（阶段 3-3 起）：
-      # - Go 持有客户/管理端 WS 长连接，推送走它的内部桥 /api/agent/ws/broadcast
-      # - 待处理工单接管 / 取消转接需要唤醒 Agent 的 HITL 中断
+      USE_PYTHON_WS_HUB: "true"
+      # 切流期间保留 Go 地址作为快速回退；开关开启时通知走 Python Hub。
+      # 待处理工单接管/取消转接仍需唤醒 Agent 的 HITL 中断。
       GO_INTERNAL_URL: "http://go:8080"
       CS_AGENT_URL: "http://agent:8000"
       # 阶段 3-4 起：本层也读写 tenants.model_api_key / embedding_api_key，
@@ -177,8 +177,8 @@ services:
       # Qdrant 配置
       QDRANT_HOST: qdrant
       QDRANT_PORT: "6333"
-      # Go 业务接口：容器内用服务名直连（覆盖 .env 中 172.22.64.1/WSL 宿主 IP，生产必须）
-      GO_BUSINESS_API: http://go:8080
+      # Agent 内部配置、配额、摘要及订单均由 Python 业务层提供。
+      BUSINESS_API: http://business:8001
       ORDER_BUSINESS_API: http://business:8001
       # Redis（强制依赖）：缓存失效广播订阅 / 定时任务锁
       REDIS_URL: "${REDIS_URL:-redis://redis:6379/0}"

@@ -7,7 +7,7 @@ from app.agent.llm_config import (_tenant_model_cache, clear_model_cache,
                                   get_tenant_model)
 from app.agent.middleware import content_guard
 from app.agent.retrieval import ensure_tenant_vector, get_tenant_retriever
-from app.infra.config import GO_BUSINESS_API, INTERNAL_API_TOKEN
+from app.infra.config import BUSINESS_API, INTERNAL_API_TOKEN
 from app.infra.db.prompt import load_active_prompt
 
 logger = logging.getLogger("agent.factory")
@@ -71,7 +71,7 @@ async def _fetch_config_version(app, tenant_id: str) -> str | None:
     if INTERNAL_API_TOKEN:
         headers["X-Internal-Token"] = INTERNAL_API_TOKEN
     resp = await app.state.http_client.get(
-        f"{GO_BUSINESS_API}/api/agent/model-config",
+        f"{BUSINESS_API}/api/agent/model-config",
         params={"tenant_id": tenant_id},
         headers=headers,
         timeout=5.0,

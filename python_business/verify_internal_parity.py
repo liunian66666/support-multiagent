@@ -34,6 +34,15 @@ def main():
         ok = go.get("code") == python.get("code") and not differences
         print(f"{name}: {'match' if ok else 'mismatch'}; fields={differences}")
         failed |= not ok
+    path = "/api/agent/session-summaries/pending?limit=5"
+    go = fetch("http://go:8080", path)
+    python = fetch(os.getenv("PYTHON_BUSINESS_API", "http://business:8001"), path)
+    identity = lambda data: sorted((item["tenant_id"], item["thread_id"])
+                                   for item in data.get("data") or [])
+    ok = go.get("code") == python.get("code") and identity(go) == identity(python)
+    print(f"summary candidates: {'match' if ok else 'mismatch'}; "
+          f"counts={len(go.get('data') or [])}/{len(python.get('data') or [])}")
+    failed |= not ok
     return int(failed)
 
 

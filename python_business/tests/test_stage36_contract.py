@@ -183,10 +183,13 @@ class Stage36Test(unittest.TestCase):
             patch.object(main, "cache", side_effect=cache),
             patch.object(main, "agent_call", side_effect=lambda *a, **k: (None, "down")),
             patch.object(main, "go_internal", side_effect=self.fake_go_internal),
+            patch.object(main.ws_hub, "count_all_tenants",
+                         side_effect=lambda: self.ws_conns),
             patch.object(main, "prewarm_tenant_async", side_effect=lambda tid: None),
             patch.object(main, "cleanup_tenant_async", side_effect=lambda tid: None),
             patch.object(main, "reload_go_menu_caches", side_effect=lambda: None),
-            patch.dict(os.environ, {"INTERNAL_API_TOKEN": "internal-test"}),
+            patch.dict(os.environ, {"INTERNAL_API_TOKEN": "internal-test",
+                                         "USE_PYTHON_WS_HUB": "true"}),
         )
         for item in self.patches:
             item.start()
