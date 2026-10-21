@@ -1,0 +1,7 @@
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+PyMySQL>=1.1,<2
+redis==5.2.1
+httpx==0.28.1
+python-multipart==0.0.20
+cryptography==46.0.3

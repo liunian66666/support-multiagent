@@ -97,6 +97,61 @@ services:
     networks:
       - cs-network
 
+  # 并行迁移中的 FastAPI 业务层：客户身份、会话及只读订单。
+  # /py-api/ 供并行验收；现有 Go 聊天入口在切换前继续运行。
+  business:
+    build: ./python_business
+    container_name: cs_business
+    restart: unless-stopped
+    environment:
+      # 与 mysql / go 容器对齐：统计类接口按「今天」划分日期边界，
+      # 容器默认 UTC 会让 last7days 在 CST 00:00-08:00 区间差一天
+      TZ: ${TZ:-Asia/Shanghai}
+      MYSQL_HOST: mysql
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-cs_biz_db}
+      REDIS_URL: redis://redis:6379/0
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-cs_internal_token_2026_secure}
+      # 工单域跨进程依赖（阶段 3-3 起）：
+      # - Go 持有客户/管理端 WS 长连接，推送走它的内部桥 /api/agent/ws/broadcast
+      # - 待处理工单接管 / 取消转接需要唤醒 Agent 的 HITL 中断
+      GO_INTERNAL_URL: "http://go:8080"
+      CS_AGENT_URL: "http://agent:8000"
+      # 阶段 3-4 起：本层也读写 tenants.model_api_key / embedding_api_key，
+      # 必须与 go 用同一把 AES-GCM 密钥，否则彼此解不开对方的密文
+      MODEL_KEY_ENCRYPT_KEY: ${MODEL_KEY_ENCRYPT_KEY:?MODEL_KEY_ENCRYPT_KEY 未配置}
+      CS_AUTH_DEMO_CUSTOMER_LOGIN: "${CS_AUTH_DEMO_CUSTOMER_LOGIN:-true}"
+      CS_AUTH_DEMO_GUEST_CHAT: "${CS_AUTH_DEMO_GUEST_CHAT:-true}"
+      CS_AUTH_DEMO_GUEST_TENANT_ID: "${CS_AUTH_DEMO_GUEST_TENANT_ID:-t_demo}"
+      CS_AUTH_MERCHANT_PREVIEW_LOGIN: "${CS_AUTH_MERCHANT_PREVIEW_LOGIN:-true}"
+      DEMO_CUSTOMER_APP_KEY: demo_buyer_key
+      DEMO_CUSTOMER_TENANT_ID: t_demo
+      DEMO_CUSTOMER_ALLOWED: buyer1,buyer2
+      DEMO_CUSTOMER_DEMO_BUYER_KEY_SECRET: ${DEMO_CUSTOMER_DEMO_BUYER_KEY_SECRET:-demo_buyer_secret}
+    volumes:
+      # 会话图片/视频共享卷：与 go 写同一卷，nginx 静态服务 /msg_files/
+      # （阶段 3-2 起 FastAPI 也承担 POST /api/admin/sessions/upload）
+      - cs_msg_files:/app/msg_files
+      # 阶段 3-10：RSA 私钥与 go 共用同一文件（./data/rsa_private.pem）。
+      # 登录公钥由前端缓存后复用：若某一端回了 /api/auth/public-key、
+      # 登录/改密却落到另一端，密文必须解得开 —— 两把密钥会让回退通道直接 401。
+      # go 先启动则由 go 生成、本端读取；文件已存在时两边都只加载。
+      - ./data:/app/data
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    networks:
+      - cs-network
+
   # ==========================================================================
   # 业务服务：Agent + Go 网关 + Nginx
   # ==========================================================================
@@ -124,6 +179,7 @@ services:
       QDRANT_PORT: "6333"
       # Go 业务接口：容器内用服务名直连（覆盖 .env 中 172.22.64.1/WSL 宿主 IP，生产必须）
       GO_BUSINESS_API: http://go:8080
+      ORDER_BUSINESS_API: http://business:8001
       # Redis（强制依赖）：缓存失效广播订阅 / 定时任务锁
       REDIS_URL: "${REDIS_URL:-redis://redis:6379/0}"
     depends_on:
@@ -132,6 +188,8 @@ services:
       qdrant:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      business:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/docs', timeout=3)\""]
@@ -213,6 +271,7 @@ services:
       - cs_msg_files:/usr/share/nginx/html/msg_files
     depends_on:
       - go
+      - business
     networks:
       - cs-network
 

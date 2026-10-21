@@ -117,7 +117,30 @@ class OrderLookupCodeTest(unittest.IsolatedAsyncioTestCase):
         tools._app = _app(_Resp(404, {"code": 404}))
         with patch.object(tools, "INTERNAL_API_TOKEN", "tok"):
             text = await tools.query_order_readonly("10001")
-        self.assertEqual(text, (await tools.lookup_order("10001")).text)
+            self.assertEqual(text, (await tools.lookup_order("10001")).text)
+
+    async def test_list_owned_orders_uses_trusted_session(self):
+        calls = []
+        async def get(url, **kwargs):
+            calls.append((url, kwargs))
+            return _Resp(200, {"code": 0, "data": {"orders": [
+                {"order_id": "ORD-2024-001", "item": "课程", "status": "已完成",
+                 "create_date": "2024-01-15"}]}})
+        tools._app = SimpleNamespace(state=SimpleNamespace(http_client=SimpleNamespace(get=get)))
+        with patch.object(tools, "INTERNAL_API_TOKEN", "tok"):
+            result = await tools.list_owned_orders()
+        self.assertEqual(result.code, ORDER_OK)
+        self.assertIn("ORD-2024-001", result.text)
+        self.assertEqual(calls[0][1]["params"],
+                         {"tenant_id": "t_demo", "thread_id": "t_demo:guest"})
+        self.assertNotIn("customer_id", calls[0][1]["params"])
+
+    async def test_guest_cannot_list_orders(self):
+        tools._app = _app(_Resp(401, {"code": 401}))
+        with patch.object(tools, "INTERNAL_API_TOKEN", "tok"):
+            result = await tools.list_owned_orders()
+        self.assertEqual(result.code, ORDER_UNAUTHENTICATED)
+        self.assertIn("登录", result.text)
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ from app.chat.order import (ORDER_FORBIDDEN, ORDER_NOT_FOUND, ORDER_OK,
                             ORDER_UNAUTHENTICATED, ORDER_UNAVAILABLE,
                             ORDER_UNVERIFIED)
 from app.infra.cache import _kb_cache_get, _kb_cache_set
-from app.infra.config import GO_BUSINESS_API, INTERNAL_API_TOKEN  # [ours] +INTERNAL_API_TOKEN（内部接口鉴权）
+from app.infra.config import INTERNAL_API_TOKEN, ORDER_BUSINESS_API
 from app.infra.db_pool import _pool_conn
 
 # 模块级 app 引用，由 main.py 注入
@@ -137,7 +137,7 @@ async def lookup_order(order_id: str) -> OrderLookup:
         return OrderLookup(ORDER_UNVERIFIED, "订单身份无法核验。")
     try:
         resp = await _app.state.http_client.get(
-            f"{GO_BUSINESS_API}/api/agent/order",
+            f"{ORDER_BUSINESS_API}/api/agent/order",
             params={"order_id": order_id, "tenant_id": tid, "thread_id": thread_id},
             headers={"X-Internal-Token": INTERNAL_API_TOKEN}, timeout=5,
         )
@@ -169,6 +169,45 @@ async def lookup_order(order_id: str) -> OrderLookup:
         if _logger:
             _logger.warning("order lookup unavailable tenant=%s", tid)
         return OrderLookup(ORDER_UNAVAILABLE, "订单系统暂时不可用，无法核验订单状态。")
+
+
+async def list_owned_orders() -> OrderLookup:
+    """只通过受信服务端会话列出本人订单；用户输入不能指定客户身份。"""
+    tid = (_tenant_var.get() if _tenant_var is not None else "") or ""
+    thread_id = (_thread_var.get() if _thread_var is not None else "") or ""
+    if not INTERNAL_API_TOKEN or not tid or not thread_id.startswith(tid + ":"):
+        return OrderLookup(ORDER_UNVERIFIED, "订单身份无法核验。")
+    try:
+        resp = await _app.state.http_client.get(
+            f"{ORDER_BUSINESS_API}/api/agent/orders",
+            params={"tenant_id": tid, "thread_id": thread_id},
+            headers={"X-Internal-Token": INTERNAL_API_TOKEN}, timeout=5,
+        )
+        if resp.status_code >= 500:
+            return OrderLookup(ORDER_UNAVAILABLE, "订单系统暂时不可用，请稍后重试。")
+        data = resp.json()
+        code = data.get("code")
+        if code == 401:
+            return OrderLookup(ORDER_UNAUTHENTICATED,
+                               "查看本人订单请先登录客户账号；常见问题仍可免登录咨询。")
+        if code == 404:
+            return OrderLookup(ORDER_NOT_FOUND, "无法核验客户会话，请重新登录后查询订单。")
+        if code != 0:
+            return OrderLookup(ORDER_UNVERIFIED, "订单身份无法核验。")
+        orders = (data.get("data") or {}).get("orders") or []
+        if not orders:
+            return OrderLookup(ORDER_OK, "当前账号暂无可查询的订单。")
+        lines = ["以下是您最近的订单，请回复要查询的订单号："]
+        for order in orders[:20]:
+            lines.append(
+                f"- {order.get('order_id', '')}｜{order.get('item', '')}｜"
+                f"{order.get('status', '')}｜{order.get('create_date', '')}"
+            )
+        return OrderLookup(ORDER_OK, "\n".join(lines))
+    except Exception:
+        if _logger:
+            _logger.warning("order list unavailable tenant=%s", tid)
+        return OrderLookup(ORDER_UNAVAILABLE, "订单系统暂时不可用，请稍后重试。")
 
 
 async def query_order_readonly(order_id: str) -> str:

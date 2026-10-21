@@ -304,3 +304,77 @@ func HandleAdminWS() gin.HandlerFunc {
 		}
 	}
 }
+
+// AgentWSBroadcast 内部接口：POST /api/agent/ws/broadcast（InternalAuth）
+//
+// 并行迁移期 FastAPI 业务层已接管部分工单写操作，但客户/管理端的 WebSocket 长连接
+// 仍由本进程的 Hub 持有，因此由 FastAPI 完成落库后回调本接口转发推送，
+// 保证「只有一个 WS Hub、只有一份推送语义」。
+//
+// body: {"target":"user"|"admins"|"admins_tenant","key":"<thread_id>",
+//        "tenant_id":"<tid>","payload":{"type":"...",...}}
+func AgentWSBroadcast(c *gin.Context) {
+	var body struct {
+		Target   string                 `json:"target"`
+		Key      string                 `json:"key"`
+		TenantID string                 `json:"tenant_id"`
+		Payload  map[string]interface{} `json:"payload"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || body.Payload == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误"})
+		return
+	}
+	switch body.Target {
+	case "user":
+		if body.Key == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误：key 不能为空"})
+			return
+		}
+		ws.WSHub.SendToUser(body.Key, body.Payload)
+	case "admins":
+		ws.WSHub.SendToAdmins(body.Payload)
+	case "admins_tenant":
+		ws.WSHub.SendToAdminsByTenant(body.TenantID, body.Payload)
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误：target 非法"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "ok"})
+}
+
+// AgentExtractRulesReload 内部接口：POST /api/agent/extract-rules/reload
+// 并行期专用 —— 提取规则改由 FastAPI 层写入后，Go 侧进程内缓存不会自动感知，
+// 由 FastAPI 在写入后调用本接口主动失效，保证两边读到同一份规则。
+func AgentExtractRulesReload(c *gin.Context) {
+	repository.InvalidateExtractRulesCache()
+	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "ok"})
+}
+
+// AgentMenusReload 内部接口：POST /api/agent/menus/reload
+// 并行期专用 —— 菜单与角色权限改由 FastAPI 层写入后，Go 侧的 menuCache /
+// rolePermsCache 不会自动感知，由 FastAPI 在写入后调用本接口主动失效。
+func AgentMenusReload(c *gin.Context) {
+	repository.InvalidateMenuCaches()
+	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "ok"})
+}
+
+// AgentWSConns 内部接口：GET /api/agent/ws/conns
+// 返回各租户当前 WebSocket 连接数，供 FastAPI 侧拼装租户列表的 active_sessions
+// （Go 的 fetchTenantUsage 用 ws hub 实时连接数覆盖 Agent 统计值，口径必须一致）。
+func AgentWSConns(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": ws.WSHub.CountAllTenantConns()})
+}
+
+// AgentTenantsReload 内部接口：POST /api/agent/tenants/reload
+// 并行期专用 —— 租户的增删改/启停/重置密钥改由 FastAPI 层写入后，Go 侧的
+// auth 内存缓存（tenantByKey / TenantsList）仍是旧快照，会导致：
+//   1) 新建租户的 app_key 登录失败（缓存里没有）
+//   2) 已禁用租户的旧 token 仍能通过校验
+// 由 FastAPI 在写完租户后调用本接口强制重载。
+func AgentTenantsReload(c *gin.Context) {
+	if err := auth.RefreshTenants(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "ok"})
+}

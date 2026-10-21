@@ -18,7 +18,7 @@ window.CODE_EXAMPLES = {
 <script src="https://你的客服域名/sdk/cs-chat.js" data-manual="true"></script>
 <script>
   // 从你的服务端获取【客户会话令牌】：宿主后端先校验访客登录态，
-  // 再调用客服系统签发客户会话（演示模式：/api/auth/customer-token；
+  // 再调用客服系统签发客户会话（演示模式：/py-api/api/auth/customer-token；
   // 生产模式：校验商家登录凭证后签发同结构会话）。app_secret 只存在服务端。
   async function initCustomerService() {
     const resp = await fetch('/api/get-cs-token');

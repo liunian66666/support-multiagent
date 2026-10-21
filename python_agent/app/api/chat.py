@@ -70,7 +70,7 @@ async def agent_chat(req: ChatRequest, request: Request):
     thread_var.set(thread_id)
     pending_ticket_var.set(req.has_pending_ticket)
     route = route_message(user_message, tenant_id, pending_ticket=req.has_pending_ticket)
-    if route.specialist not in {"handoff", "order"} and has_order_reference(user_message):
+    if route.specialist not in {"handoff", "order", "order_list"} and has_order_reference(user_message):
         previous_order = await _last_order_id_from_history(request.app, thread_id)
         if previous_order:
             route = Route("order", order_id=previous_order)
@@ -110,6 +110,17 @@ async def agent_chat(req: ChatRequest, request: Request):
         return AgentResp(success=True, is_interrupt=True, interrupt_data={
             "reason": reason, "direct_handoff": True,
         })
+    if route.specialist == "order_list":
+        result = await tools.list_owned_orders()
+        if not req.has_pending_ticket:
+            await _record_to_checkpoint(request.app, thread_id, user_message, result.text)
+            if should_auto_handoff(result.code):
+                return AgentResp(success=True, is_interrupt=True, interrupt_data={
+                    "reason": order_handoff_reason(result.code, "订单列表"),
+                    "direct_handoff": True, "code": result.code,
+                })
+        return AgentResp(success=True, is_interrupt=False,
+                         content=result.text + SERVICE_FOOTER)
     if route.specialist == "order":
         oid = route.order_id
         result = await tools.lookup_order(oid)
@@ -209,7 +220,7 @@ async def agent_chat_stream(req: ChatRequest, request: Request):
         thread_var.set(thread_id)
         pending_ticket_var.set(req.has_pending_ticket)
         route = route_message(user_message, tenant_id, pending_ticket=req.has_pending_ticket)
-        if route.specialist not in {"handoff", "order"} and has_order_reference(user_message):
+        if route.specialist not in {"handoff", "order", "order_list"} and has_order_reference(user_message):
             previous_order = await _last_order_id_from_history(request.app, thread_id)
             if previous_order:
                 route = Route("order", order_id=previous_order)
@@ -249,6 +260,17 @@ async def agent_chat_stream(req: ChatRequest, request: Request):
                 f"已为您转接人工客服（原因：{reason}），请稍候。",
             )
             yield f"data: {_json.dumps({'type':'interrupt','data':info}, ensure_ascii=False)}\n\n"
+            return
+        if route.specialist == "order_list":
+            result = await tools.list_owned_orders()
+            if not req.has_pending_ticket:
+                await _record_to_checkpoint(request.app, thread_id, user_message, result.text)
+                if should_auto_handoff(result.code):
+                    info = {"reason": order_handoff_reason(result.code, "订单列表"),
+                            "direct_handoff": True, "code": result.code}
+                    yield f"data: {_json.dumps({'type':'interrupt','data':info}, ensure_ascii=False)}\n\n"
+                    return
+            yield f"data: {_json.dumps({'type':'end','content':result.text + SERVICE_FOOTER}, ensure_ascii=False)}\n\n"
             return
         if route.specialist == "order":
             oid = route.order_id

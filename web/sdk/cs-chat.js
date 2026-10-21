@@ -6,7 +6,7 @@
  * 宿主签发的 token 通过 postMessage 交给 iframe；演示环境可直接免登录咨询。
  *
  * 快速开始（生产：宿主后端核验已有买家登录态，再通过正式身份接入接口
- * 签发客户会话令牌后传入；演示用 /api/auth/customer-token 不用于真实客户）：
+ * 签发客户会话令牌后传入；演示用 /py-api/api/auth/customer-token 不用于真实客户）：
  *   <script src="https://你的域名/sdk/cs-chat.js"
  *           data-server="https://你的域名"
  *           data-token="宿主后端签发的客户会话令牌"

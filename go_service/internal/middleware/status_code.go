@@ -17,6 +17,7 @@ type statusWriter struct {
 	gin.ResponseWriter
 	buf        *bytes.Buffer
 	written    bool   // 是否已直接写入底层（非 200 或超限）
+	passthrough bool  // 透传模式：不缓冲不改写，后续 Write 直接写底层（gin 错误页场景）
 	statusCode int    // handler 写入的状态码
 	limit      int64
 }
@@ -32,7 +33,7 @@ func (w *statusWriter) WriteHeader(code int) {
 }
 
 func (w *statusWriter) Write(b []byte) (int, error) {
-	if w.written {
+	if w.written || w.passthrough {
 		return w.ResponseWriter.Write(b)
 	}
 	if int64(w.buf.Len()+len(b)) > w.limit {
@@ -99,6 +100,22 @@ func StatusCode() gin.HandlerFunc {
 			Code float64 `json:"code"`
 		}
 		if err := json.Unmarshal(w.buf.Bytes(), &payload); err != nil {
+			// 非 JSON 体：按底层真实状态透传。
+			// 注意 gin 的 NoRoute/405 流程：serveError 先直接写 c.writermem.status
+			// （不经本包装器的 WriteHeader），整个中间件链在 serveError 内部的
+			// c.Next() 中运行，默认错误页正文在链退栈之后才写入。若此处一律按
+			// 200 flush，会把无路由 404 误改写为 200 空体，且 gin 随后认为响应
+			// 已写入而跳过错误页。因此：
+			//   - 底层非 200 且正文未到（gin 稍后补写）→ 进透传模式，不 flush
+			//   - 底层非 200 且已有正文 → 按底层状态连正文一起落盘
+			if st := w.ResponseWriter.Status(); st != http.StatusOK {
+				if w.buf.Len() == 0 {
+					w.passthrough = true
+					return
+				}
+				w.flushAs(st)
+				return
+			}
 			w.flushAs(http.StatusOK)
 			return
 		}

@@ -230,6 +230,9 @@ function qp(name){
 
 var CONFIG = {
   server: qp('server') || (location.protocol + '//' + location.host),
+  // 阶段1：客户身份与会话由 FastAPI 业务层签发/校验；不可用时回退 Go 旧入口
+  // （两端令牌格式一致，会话同表，因此回退不会产生两套身份）
+  authBase: '/py-api',
   // 宿主/SDK 直接签发 token 传入时使用（生产接入路径）
   token: qp('token'),
   // 旧版商家测试链接：管理密钥只用于换取受限预览会话。
@@ -345,6 +348,69 @@ function clearStoredSession(){
   try { sessionStore().removeItem(sessionStorageKey()); } catch(e) {}
 }
 
+// 判定「这个响应能不能当业务响应来读」——决定 authFetch 要不要回退。
+// 不能只看状态码：新层未部署时 nginx 会走 SPA 兜底，返回 200 HTML；
+// 而新层存在但缺某个路由时，FastAPI 返回 404 {"detail":"Not Found"}。
+// 所以按响应形态判：
+//   · 5xx                              → 不可用（新层内部故障）
+//   · 非 application/json（含兜底 HTML）→ 不可用（新层不存在）
+//   · 404/405 且 body 无 code 字段      → 不可用（框架级 404，新层缺该路由）
+//   · 带 code 的 4xx（401/403/404 等）  → 算可用，交给调用方处理，绝不回退
+// 最后一条是边界：业务 404（订单不存在）、401（身份被拒）都是「新层正常工作」的结论，
+// 一旦回退就会被旧入口再答一次，等于掩盖真实语义。
+async function looksLikeBusinessResponse(response){
+  if (response.status >= 500) return false;
+  var type = (response.headers.get('content-type') || '').toLowerCase();
+  if (type.indexOf('application/json') < 0) return false;
+  if (response.status === 404 || response.status === 405){
+    try {
+      var body = await response.clone().json();
+      return !!body && typeof body === 'object' && body.code !== undefined;
+    } catch(e) { return false; }
+  }
+  return true;
+}
+
+// 阶段1：认证/业务请求先走 FastAPI 业务层，新层不可用时回退 Go 旧入口。
+// 回退只发生在「新层没应答」的情况；新层给了业务结论就照用，不换来源。
+async function authFetch(path, options){
+  var bases = [CONFIG.authBase, ''];
+  var failure = null;
+  for (var i = 0; i < bases.length; i++){
+    var isLegacy = (i === bases.length - 1);
+    try {
+      var response = await fetch(bases[i] + path, options);
+      if (isLegacy) return response;
+      if (await looksLikeBusinessResponse(response)) return response;
+      failure = new Error('新层不可用 ' + path + ' status=' + response.status);
+    } catch(e) { failure = e; }
+  }
+  throw failure || new Error('认证服务不可用');
+}
+
+// 恢复本地会话前先向服务端确认：过期/登出/会话已删则清掉，避免带着废令牌连 WS。
+// 新层不可用（兜底 HTML / 5xx）视为临时故障，保留原会话 —— WS 握手时还会再校验一次。
+async function validateCustomerSession(stored){
+  try {
+    var resp = await fetch(CONFIG.authBase + '/api/customer/session', {
+      headers: {'Authorization': 'Bearer ' + stored.token},
+      cache: 'no-store'
+    });
+    if (!(await looksLikeBusinessResponse(resp))) return stored;
+    if (resp.status === 401) return null;
+    if (!resp.ok) return stored;
+    var body = await resp.json();
+    if (body.code !== 0 || !body.data) return null;
+    stored.tenant_id = body.data.tenant_id;
+    stored.customer_id = body.data.customer_id;
+    stored.thread_id = body.data.thread_id;
+    stored.is_guest = !!body.data.is_guest;
+    return stored;
+  } catch(e) {
+    return stored;
+  }
+}
+
 async function ensureSession(){
   if (session) return session;
   if (authToken) {
@@ -356,18 +422,22 @@ async function ensureSession(){
   // 刷新恢复：优先用 localStorage 里的原会话（token 未过期则历史原样找回）
   var stored = loadStoredSession();
   if (stored) {
-    authToken = stored.token;
-    session = {
-      token: stored.token, tenant_id: stored.tenant_id,
-      customer_id: stored.customer_id, thread_id: stored.thread_id,
-      fromStorage: true, is_guest: !!stored.is_guest
-    };
-    updateLoginButton();
-    return session;
+    var checked = await validateCustomerSession(stored);
+    if (checked) {
+      authToken = checked.token;
+      session = {
+        token: checked.token, tenant_id: checked.tenant_id,
+        customer_id: checked.customer_id, thread_id: checked.thread_id,
+        fromStorage: true, is_guest: !!checked.is_guest
+      };
+      updateLoginButton();
+      return session;
+    }
+    clearStoredSession();  // 服务端判定失效：过期/已登出/会话不存在
   }
   if (CONFIG.app_key && CONFIG.app_secret) {
     showConnStatus('正在建立商家预览会话...');
-    var previewResp = await fetch(CONFIG.server + '/api/auth/merchant-preview-token', {
+    var previewResp = await authFetch('/api/auth/merchant-preview-token', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({app_key: CONFIG.app_key, app_secret: CONFIG.app_secret})
@@ -389,7 +459,7 @@ async function ensureSession(){
   }
   if (CONFIG.customer_key && CONFIG.customer_secret) {
     showConnStatus('正在登录...');
-    var resp = await fetch(CONFIG.server + '/api/auth/customer-token', {
+    var resp = await authFetch('/api/auth/customer-token', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
@@ -421,7 +491,7 @@ async function ensureSession(){
   }
   if (CONFIG.app_key) throw new Error('预览会话已过期，请重新打开商家测试链接');
   showConnStatus('正在连接访客客服...');
-  var guestResp = await fetch(CONFIG.server + '/api/auth/guest-token', {method:'POST'});
+  var guestResp = await authFetch('/api/auth/guest-token', {method:'POST'});
   var guestData = await guestResp.json();
   if (guestData.code !== 0) throw new Error(guestData.msg || '访客客服暂不可用');
   session = {
@@ -554,6 +624,7 @@ function handleWSMessage(data){
   switch(data.type){
     case 'history':
       renderHistory(data.messages || []);
+      refreshTicketNotice();
       postToParent('cs_ready', {thread_id: data.thread_id || (session && session.thread_id), customer_id: session && session.customer_id, tenant_id: session && session.tenant_id});
       break;
     case 'chat_reply':
@@ -708,6 +779,25 @@ function addImageMessage(url, isHuman, time, noScroll){
   if (!noScroll) scrollToBottom();
 }
 
+// 阶段2：刷新后回显进行中的工单（工单只在建单那一刻经 WS 提示过，刷新即丢失）
+var ticketNoticeDone = false;
+async function refreshTicketNotice(){
+  if (ticketNoticeDone) return;
+  ticketNoticeDone = true;
+  try {
+    var token = await ensureToken();
+    var resp = await authFetch('/api/customer/ticket', {
+      headers: {'Authorization': 'Bearer ' + token}
+    });
+    if (!resp || resp.status !== 200) return;
+    var data = await resp.json();
+    var t = data && data.data;
+    if (!t || t.status_text === 'closed' || t.status_text === 'cancelled') return;
+    addSystemMessage('🎫 您有一张进行中的工单（' + t.ticket_no + '），当前状态：' +
+      (t.status_text === 'handling' ? '客服已接管' : '等待客服接入'));
+  } catch(e) { /* 工单状态回显失败不影响聊天 */ }
+}
+
 function addSystemMessage(text, noScroll){
   var body = document.getElementById('chatBody');
   var div = document.createElement('div');
@@ -771,6 +861,12 @@ function endStreaming(fullText){
     streamingEl.id = '';
     streamingEl = null;
     scrollToBottom();
+  } else if (fullText) {
+    // 快答/缓存链路可能一个 chat_chunk 都不发，只给整段 chat_end：
+    // 没有流式元素时必须直接落一条完整消息，否则气泡永远空白。
+    streamingText = fullText;
+    hideTyping();
+    addAIMessage(fullText);
   }
   postToParent('cs_message', {role: 'ai', content: streamingText});
 }
@@ -848,7 +944,8 @@ async function submitRating(){
   btn.disabled = true;
   try {
     var token = await ensureToken();
-    var resp = await fetch(CONFIG.server + '/api/user/rating', {
+    // 阶段2：评价改由 FastAPI 业务层处理；不可用时 authFetch 回退旧入口
+    var resp = await authFetch('/api/customer/rating', {
       method: 'POST',
       headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token},
       body: JSON.stringify({

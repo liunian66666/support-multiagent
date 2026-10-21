@@ -185,6 +185,13 @@ func invalidateMenuCache() {
 	menuCacheLoaded = false
 }
 
+// InvalidateMenuCaches 清空菜单缓存与角色权限缓存（并行期供 FastAPI 层在写菜单后调用）。
+// 菜单一变，menus.perm 推导出的角色权限集合也随之失效，两者必须一起清。
+func InvalidateMenuCaches() {
+	invalidateMenuCache()
+	invalidateRolePermsCache()
+}
+
 // cachedMenus 返回缓存的全量菜单与启用菜单（懒加载，线程安全）
 func cachedMenus() (list, active []model.Menu, err error) {
 	menuCacheMu.Lock()

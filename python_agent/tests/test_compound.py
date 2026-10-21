@@ -81,8 +81,22 @@ class ExecutionTest(unittest.IsolatedAsyncioTestCase):
             result = await execute_compound(self.app, "t_demo", "t_demo:buyer1",
                                             "查订单 ORD-2024-001 状态并结合退货政策说明下一步", plan)
         self.assertEqual(model.ainvoke.await_count, 1)
+        self.assertIn("订单核验：订单 ORD-2024-001 状态：已签收", result.content)
         self.assertIn("知识来源：[K1] 退货政策", result.content)
         self.assertNotIn("ORD-2024-001", self.retriever.ainvoke.call_args.args[0])
+
+    async def test_empty_model_reply_keeps_verified_order_and_evidence(self):
+        model = SimpleNamespace(ainvoke=AsyncMock(return_value=AIMessage(content="")))
+        with patch("app.services.compound.tools.lookup_order", new_callable=AsyncMock,
+                   return_value=OrderLookup("OK", "订单 ORD-2024-001 状态：已发货。")), \
+                patch("app.services.compound.tools._record_kb_hits", new_callable=AsyncMock), \
+                patch("app.services.compound.get_tenant_model", new_callable=AsyncMock,
+                      return_value=model):
+            plan = plan_compound("查订单 ORD-2024-001 状态并结合退货政策说明下一步")
+            result = await execute_compound(self.app, "t_demo", "t_demo:buyer1", "问题", plan)
+        self.assertIn("订单核验：订单 ORD-2024-001 状态：已发货", result.content)
+        self.assertIn("[K1] 退货政策：签收后七天内可申请退货", result.content)
+        self.assertIn("知识来源：[K1] 退货政策", result.content)
 
     async def test_missing_order_id_never_calls_order(self):
         model = SimpleNamespace(ainvoke=AsyncMock(return_value=AIMessage(content="政策见 [K1]。")))

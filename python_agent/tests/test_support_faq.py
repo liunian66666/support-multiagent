@@ -31,6 +31,7 @@ class SupportFaqContractTest(unittest.TestCase):
         for query in (
             "退款多久到账", "满多少包邮", "退货运费谁出",
             "支持货到付款吗", "发货时效是什么",
+            "退款政策怎么规定", "如何查询退款规则", "帮我查询退款政策",
         ):
             self.assertIsNone(lookup(query, "t_demo"), query)
 

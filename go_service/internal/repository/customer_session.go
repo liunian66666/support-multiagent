@@ -34,6 +34,14 @@ var FindOrderForCustomer = func(tenantID, customerID, orderID string) (model.Ord
 	return order, err
 }
 
+// ListOrdersForCustomer 只返回当前租户、当前客户的最近订单，限制条数避免无限量读取。
+var ListOrdersForCustomer = func(tenantID, customerID string) ([]model.Order, error) {
+	var orders []model.Order
+	err := config.DB.Where("tenant_id = ? AND customer_id = ?", tenantID, customerID).
+		Order("id DESC").Limit(20).Find(&orders).Error
+	return orders, err
+}
+
 // CreateCustomerSession 落库客户会话（演示客户登录用；测试可注入 fake）
 var CreateCustomerSession = func(sess *model.CustomerSession) error {
 	return config.DB.Create(sess).Error

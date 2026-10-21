@@ -54,6 +54,13 @@ func GetExtractRules() []model.ExtractRule {
 	return loadExtractRules()
 }
 
+// InvalidateExtractRulesCache 清空进程内规则缓存，下次读取重新查库。
+// 并行期专用：规则由 FastAPI 层写入后，Go 侧缓存不会自动感知，
+// 需要调用内部接口 /api/agent/extract-rules/reload 主动失效。
+func InvalidateExtractRulesCache() {
+	extractRulesCache.Store([]model.ExtractRule(nil))
+}
+
 // SaveExtractRules 更新提取规则（先删旧规则再写新规则），并刷新缓存
 func SaveExtractRules(rules []model.ExtractRule) error {
 	err := config.DB.Where("config_key LIKE ?", "cs_extract_rule_%").Delete(&model.PlatformConfig{}).Error

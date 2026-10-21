@@ -21,6 +21,7 @@ func withOrderMocks(t *testing.T) func() {
 	t.Helper()
 	origSession := repository.FindCustomerSessionByThread
 	origOrder := repository.FindOrderForCustomer
+	origList := repository.ListOrdersForCustomer
 	repository.FindCustomerSessionByThread = func(threadID, tenantID string) (model.CustomerSession, error) {
 		if tenantID == "t_demo" && threadID == "t_demo:buyer1:20261019" {
 			return model.CustomerSession{
@@ -46,9 +47,75 @@ func withOrderMocks(t *testing.T) func() {
 		}
 		return model.Order{}, errors.New("record not found")
 	}
+	repository.ListOrdersForCustomer = func(tenantID, customerID string) ([]model.Order, error) {
+		if tenantID == "t_demo" && customerID == "t_demo:buyer1" {
+			return []model.Order{
+				{OrderID: "ORD-2024-002", Item: "Python 实战课程", Status: "配送中"},
+				{OrderID: "ORD-2024-001", Item: "VIP 年费会员", Status: "已完成"},
+			}, nil
+		}
+		return []model.Order{}, nil
+	}
 	return func() {
 		repository.FindCustomerSessionByThread = origSession
 		repository.FindOrderForCustomer = origOrder
+		repository.ListOrdersForCustomer = origList
+	}
+}
+
+func doOrderListReq(t *testing.T, query, internalToken string) *httptest.ResponseRecorder {
+	t.Helper()
+	old := config.GlobalConfig.InternalAPIToken
+	config.GlobalConfig.InternalAPIToken = "test-internal-token"
+	defer func() { config.GlobalConfig.InternalAPIToken = old }()
+	if internalToken == "" {
+		internalToken = "test-internal-token"
+	}
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/api/agent/orders", BusinessOrders)
+	req := httptest.NewRequest(http.MethodGet, "/api/agent/orders?"+query, nil)
+	req.Header.Set("X-Internal-Token", internalToken)
+	out := httptest.NewRecorder()
+	r.ServeHTTP(out, req)
+	return out
+}
+
+func TestBusinessOrdersOwnerOnly(t *testing.T) {
+	defer withOrderMocks(t)()
+	owner := doOrderListReq(t, "tenant_id=t_demo&thread_id=t_demo%3Abuyer1%3A20261019", "")
+	if owner.Code != http.StatusOK || !contains(owner.Body.String(), "ORD-2024-001") ||
+		!contains(owner.Body.String(), "ORD-2024-002") {
+		t.Fatalf("owner list: status=%d body=%s", owner.Code, owner.Body.String())
+	}
+	if out := doOrderListReq(t, "tenant_id=t_demo&thread_id=t_demo%3Abuyer1%3A20261019", "wrong"); out.Code != http.StatusForbidden {
+		t.Fatalf("wrong internal token: status=%d", out.Code)
+	}
+	if out := doOrderListReq(t, "tenant_id=t_other&thread_id=t_demo%3Abuyer1%3A20261019", ""); out.Code != http.StatusForbidden {
+		t.Fatalf("cross tenant: status=%d", out.Code)
+	}
+	if out := doOrderListReq(t, "tenant_id=t_demo&thread_id=t_demo%3Abuyer2%3A20261019", ""); contains(out.Body.String(), "ORD-2024-001") {
+		t.Fatalf("unknown customer leaked orders: %s", out.Body.String())
+	}
+}
+
+func TestBusinessOrdersGuestAndPreviewCannotRead(t *testing.T) {
+	defer withOrderMocks(t)()
+	called := false
+	repository.ListOrdersForCustomer = func(_, _ string) ([]model.Order, error) {
+		called = true
+		return nil, nil
+	}
+	for _, kind := range []string{"guest", "preview"} {
+		repository.FindCustomerSessionByThread = func(threadID, tenantID string) (model.CustomerSession, error) {
+			return model.CustomerSession{TenantID: tenantID, CustomerID: tenantID + ":buyer1", ThreadID: threadID,
+				IsGuest: kind == "guest", IsPreview: kind == "preview"}, nil
+		}
+		out := doOrderListReq(t, "tenant_id=t_demo&thread_id=t_demo%3Abuyer1%3A20261019", "")
+		if called || contains(out.Body.String(), "orders") ||
+			(kind == "guest" && !contains(out.Body.String(), "查询个人订单请先登录")) {
+			t.Fatalf("%s session read orders: %s", kind, out.Body.String())
+		}
 	}
 }
 

@@ -38,7 +38,8 @@ func BusinessOrder(c *gin.Context) {
 	// customer_id 从服务端会话记录反查：thread_id → customer_sessions → customer_id。
 	// 旧格式 thread_id（无会话记录，如历史演示会话）fail-closed，不可查询订单。
 	sess, err := repository.FindCustomerSessionByThread(threadID, tenantID)
-	if err != nil {
+	if err != nil || sess.TenantID != tenantID || sess.ThreadID != threadID ||
+		!strings.HasPrefix(sess.CustomerID, tenantID+":") {
 		c.JSON(http.StatusOK, gin.H{
 			"code": 404, "msg": "未找到订单或订单不属于您，请确认订单号或转人工客服。",
 		})
@@ -72,6 +73,48 @@ func BusinessOrder(c *gin.Context) {
 			"create_date": order.CreateDate,
 		},
 	})
+}
+
+// BusinessOrders lists only orders owned by the customer resolved from a server-side session.
+// Preview and guest sessions cannot read personal order data.
+func BusinessOrders(c *gin.Context) {
+	tenantID := c.Query("tenant_id")
+	threadID := c.Query("thread_id")
+	if config.GlobalConfig.InternalAPIToken == "" ||
+		c.GetHeader("X-Internal-Token") != config.GlobalConfig.InternalAPIToken ||
+		tenantID == "" || !strings.HasPrefix(threadID, tenantID+":") {
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "订单查询身份校验失败"})
+		return
+	}
+	sess, err := repository.FindCustomerSessionByThread(threadID, tenantID)
+	if err != nil || sess.TenantID != tenantID || sess.ThreadID != threadID ||
+		!strings.HasPrefix(sess.CustomerID, tenantID+":") || sess.IsPreview {
+		c.JSON(http.StatusOK, gin.H{"code": 404, "msg": "无法核验客户会话，请重新登录。"})
+		return
+	}
+	if sess.IsGuest {
+		c.JSON(http.StatusOK, gin.H{"code": 401, "msg": "查询个人订单请先登录客户账号。"})
+		return
+	}
+	orders, err := repository.ListOrdersForCustomer(tenantID, sess.CustomerID)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"code": 503, "msg": "订单系统暂时不可用"})
+		return
+	}
+	type orderSummary struct {
+		OrderID    string `json:"order_id"`
+		Item       string `json:"item"`
+		Status     string `json:"status"`
+		CreateDate string `json:"create_date"`
+	}
+	items := make([]orderSummary, 0, len(orders))
+	for _, order := range orders {
+		items = append(items, orderSummary{
+			OrderID: order.OrderID, Item: order.Item,
+			Status: order.Status, CreateDate: order.CreateDate,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"orders": items}})
 }
 
 // ============ 公开租户列表（用户端租户选择下拉） ============

@@ -76,11 +76,9 @@ class RouteOrderQueryTest(unittest.TestCase):
         self.assertEqual(route.specialist, "order")
         self.assertEqual(route.order_id, "10001")
 
-    def test_order_query_without_id_asks_explicitly(self):
+    def test_order_query_without_id_lists_owned_orders(self):
         route = route_message("查询一下我的订单", "t_demo")
-        self.assertEqual(route.specialist, "faq_fast")
-        self.assertIn("订单号", route.answer)
-        self.assertNotIn("未接通", route.answer)
+        self.assertEqual(route.specialist, "order_list")
 
 
 if __name__ == "__main__":

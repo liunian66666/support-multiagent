@@ -6,7 +6,7 @@
 import re
 from dataclasses import dataclass
 
-from app.chat.faq import handoff_reason, is_handoff, lookup, order_id
+from app.chat.faq import handoff_reason, is_handoff, is_policy_question, lookup, order_id
 
 
 @dataclass(frozen=True)
@@ -19,13 +19,15 @@ class Route:
 
 _ACTION = re.compile(r"(?:给我|帮我|我要|现在|立即|直接).{0,12}(?:退款|扣款|付款|支付|退货)|^请(?:立即|直接)?(?:退款|退货|支付|付款)|(?:退款|扣款|付款|支付).{0,10}(?:这单|该订单|订单号)")
 _FAQ = re.compile(r"政策|规则|运费|发票|课程|价格|配送|退换|退款|退货|物流|保修|售后|知识库|有什么|是什么|多久|如何|怎么")
+_DIRECT_ACTION = re.compile(r"(?:给我|帮我|我要|现在|立即|直接|请)(?:立刻|立即|直接)?(?:申请|发起|办理)?(?:退款|扣款|付款|支付|退货)")
+_ORDER_LIST = re.compile(r"我的订单|我(?:有|都有哪些|有哪些).*订单|订单号(?:忘了|忘记|不知道|不记得|找不到)|(?:忘了|忘记|不知道|不记得|找不到)订单号")
 
 
 def route_message(message: str, tenant_id: str, *, pending_ticket: bool = False) -> Route:
     """Route only by the trusted tenant and current message; never infer identity."""
     if is_handoff(message) and not pending_ticket:
         return Route("handoff", reason=handoff_reason(message))
-    if _ACTION.search(message):
+    if _ACTION.search(message) and not (is_policy_question(message) and not _DIRECT_ACTION.search(message)):
         if pending_ticket:
             return Route("faq_fast", answer="您已提交人工客服，正在等待接入。客服接入后会继续核验退款或支付请求。")
         # No refund/payment mutation specialist is exposed until business APIs,
@@ -34,6 +36,8 @@ def route_message(message: str, tenant_id: str, *, pending_ticket: bool = False)
     oid = order_id(message)
     if oid:
         return Route("order", order_id=oid)
+    if _ORDER_LIST.search(message):
+        return Route("order_list")
     answer = lookup(message, tenant_id)
     if answer:
         return Route("faq_fast", answer=answer)

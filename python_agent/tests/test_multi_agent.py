@@ -24,6 +24,16 @@ class RoutingTest(unittest.TestCase):
         route = route_message("查订单 ORD-2024-001 的状态", "t_demo")
         self.assertEqual((route.specialist, route.order_id), ("order", "ORD-2024-001"))
 
+    def test_unknown_order_number_lists_owned_orders(self):
+        for query in ("我的订单", "查询一下我的订单", "我不记得订单号"):
+            with self.subTest(query=query):
+                self.assertEqual(route_message(query, "t_demo").specialist, "order_list")
+
+    def test_refund_policy_never_becomes_mutation(self):
+        for query in ("退款政策怎么规定", "帮我查询退款政策"):
+            with self.subTest(query=query):
+                self.assertEqual(route_message(query, "t_demo").specialist, "faq")
+
     def test_refund_action_with_order_never_becomes_order_lookup(self):
         route = route_message("请给我退款，订单号 ORD-2024-001", "t_demo")
         self.assertEqual(route.specialist, "handoff")
