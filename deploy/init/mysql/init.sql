@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS `model_providers` (
 INSERT INTO `model_providers` (`provider_key`, `provider_name`, `default_model`, `default_api_base`, `provider_type`, `sort_order`, `status`) VALUES
 ('deepseek', 'DeepSeek', 'deepseek-chat', 'https://api.deepseek.com/v1', 'chat', 1, 1),
 ('openai', 'OpenAI', 'gpt-4o-mini', 'https://api.openai.com/v1', 'chat', 2, 1),
-('qwen', '通义千问', 'qwen-turbo', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'chat', 3, 1),
+('qwen', '通义千问', 'qwen3.8-flash', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'chat', 3, 1),
 ('moonshot', '月之暗面', 'moonshot-v1-8k', 'https://api.moonshot.cn/v1', 'chat', 4, 1),
 ('agnes', 'AGNES', 'agnes-2.5-flash', 'https://api.agnes-ai.cn/v1', 'chat', 5, 1),
 ('dashscope', '阿里云百炼', 'qwen3.7-text-embedding-flash', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'embedding', 1, 1)
