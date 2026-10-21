@@ -3,6 +3,7 @@ from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.agent import tools
+from app.agent.builder import _check_config_version
 from app.agent.llm_config import get_tenant_model
 from app.agent.middleware import content_guard
 
@@ -18,13 +19,22 @@ _FAQ_PROMPT = (
 
 async def faq_agent(app, tenant_id: str):
     """A separate model agent with only the tenant KB tool (no write tools)."""
+    state = getattr(app, "state", None)
+    if state is not None:
+        await _check_config_version(app, tenant_id)
+        cache = getattr(state, "faq_agents", None)
+        if cache is not None and tenant_id in cache:
+            return cache[tenant_id]
     model = await get_tenant_model(app, tenant_id)
-    return create_agent(
+    agent = create_agent(
         model=model,
         tools=[tools.search_kb],
         middleware=[content_guard],
         system_prompt=_FAQ_PROMPT,
     )
+    if state is not None and getattr(state, "faq_agents", None) is not None:
+        state.faq_agents[tenant_id] = agent
+    return agent
 
 
 async def recent_messages(app, thread_id: str, limit: int = 12) -> list:

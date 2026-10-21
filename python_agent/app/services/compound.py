@@ -11,6 +11,7 @@ from app.agent.llm_config import get_tenant_model
 from app.agent.retrieval import ensure_tenant_vector, get_tenant_retriever
 from app.chat.order import ORDER_OK, order_handoff_reason, should_auto_handoff
 from app.chat.plan import ReadTask, TaskPlan
+from app.services import trace
 
 logger = logging.getLogger("agent.compound")
 
@@ -31,6 +32,9 @@ async def _read_kb(app, tenant_id: str, thread_id: str, task: ReadTask) -> dict:
         return {"kind": "kb", "status": "unavailable", "topic": task.query}
     docs = await retriever.ainvoke(task.query)
     await tools._record_kb_hits(tenant_id, thread_id, task.query, docs)
+    trace.record("evidence", "kb_retrieval", count=len(docs),
+                 evidence_ids=[str((getattr(d, "metadata", {}) or {}).get("doc_id", ""))
+                               for d in docs[:3]])
     evidence = []
     for doc in docs[:3]:
         metadata = getattr(doc, "metadata", {}) or {}
@@ -62,6 +66,8 @@ async def execute_compound(app, tenant_id: str, thread_id: str, question: str,
     results = await asyncio.gather(*(
         _run_task(app, tenant_id, thread_id, task) for task in plan.tasks
     ))
+    trace.record("delegate", "parallel_reads", roles=[r.get("kind", "") for r in results],
+                 result_codes=[r.get("code", r.get("status", "")) for r in results])
     order = next((r for r in results if r["kind"] == "order"), None)
     if order and should_auto_handoff(order.get("code")) and not has_pending_ticket:
         oid = order["order_id"]

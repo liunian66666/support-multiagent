@@ -5862,12 +5862,13 @@ async def stream_agent_reply(customer, content, pending, client):
                     ticket = await asyncio.to_thread(handling_ticket, customer)
                     await asyncio.to_thread(save_message, customer.thread_id, "ai",
                                             answer, "text", ticket["id"] if ticket else None)
-                    await client.send({"type": "chat_end", "msg": answer})
+                    await client.send({"type": "chat_end", "msg": answer,
+                                       "trace_id": trace_id})
                     completed = True
                     success = True
                     break
                 elif kind == "error":
-                    await client.send({"type": "error",
+                    await client.send({"type": "error", "trace_id": trace_id,
                                        "msg": "调用agent失败:" + str(event.get("msg") or "未知错误")})
                     completed = True
                     break
@@ -5896,6 +5897,7 @@ async def stream_agent_reply(customer, content, pending, client):
                     await client.send({"type": "ticket",
                                        "ticket_no": ticket["ticket_no"],
                                        "reused": reused, "reason": reason,
+                                       "trace_id": trace_id,
                                        "msg": "已提交人工客服，请等待处理"})
                     if not data.get("direct_handoff"):
                         try:
@@ -6038,12 +6040,13 @@ def process_http_chat(customer, content, trace_id):
                     pass
         return {"code": 0, "msg": "已提交人工客服，请等待处理",
                 "is_human_wait": True, "ticket_no": ticket["ticket_no"],
-                "reason": reason}
+                "reason": reason, "trace_id": data.get("trace_id") or trace_id}
     answer = data.get("content") or ""
     ticket = handling_ticket(customer)
     save_message(customer.thread_id, "ai", answer, "text",
                  ticket["id"] if ticket else None)
-    return {"code": 0, "msg": answer}
+    return {"code": 0, "msg": answer,
+            "trace_id": data.get("trace_id") or trace_id}
 
 
 @app.post("/api/user/chat")

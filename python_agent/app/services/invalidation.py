@@ -30,12 +30,17 @@ def clear_tenant_caches(app, tenant_id: str | None, scope: str = "all") -> dict:
     except Exception as e:
         logger.warning("清 kb_cache 失败: %s", e)
     agents = getattr(app.state, "tenant_agents", {})
+    faq_agents = getattr(app.state, "faq_agents", {})
+    intake_agents = getattr(app.state, "intake_agents", {})
     retr = getattr(app.state, "tenant_retrievers", {})
     if tenant_id:
         n_agents = n_retr = 0
         if scope in ("chat", "all") and tenant_id in agents:
             agents.pop(tenant_id, None)
             n_agents = 1
+        if scope in ("chat", "all"):
+            faq_agents.pop(tenant_id, None)
+            intake_agents.pop(tenant_id, None)
         if scope in ("embedding", "all"):
             if tenant_id in retr:
                 retr.pop(tenant_id, None)
@@ -49,6 +54,8 @@ def clear_tenant_caches(app, tenant_id: str | None, scope: str = "all") -> dict:
         n_agents = len(agents)
         n_retr = len(retr)
         agents.clear()
+        faq_agents.clear()
+        intake_agents.clear()
         retr.clear()
         logger.info("✅ caches cleared: config, agents=%d, retrievers=%d (all tenants)",
                     n_agents, n_retr)

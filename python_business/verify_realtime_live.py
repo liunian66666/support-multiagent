@@ -53,6 +53,9 @@ async def main():
             if event.get("type") == "chat_chunk":
                 chunks += 1
             elif event.get("type") == "chat_end":
+                if not event.get("trace_id"):
+                    print("guest FAQ: missing trace_id in final WebSocket frame")
+                    return 1
                 print(f"guest FAQ: chat_end, chunks={chunks}, chars={len(event.get('msg') or '')}")
                 return 0
             elif event.get("type") in ("ticket", "error", "quota"):

@@ -27,6 +27,7 @@ class AgentResp(BaseModel):
     is_interrupt: bool
     interrupt_data: Optional[dict] = None
     content: Optional[str] = None
+    trace_id: Optional[str] = None
 
 
 class SessionCleanupReq(BaseModel):

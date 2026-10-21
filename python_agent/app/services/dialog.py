@@ -1,7 +1,7 @@
 """对话编排的共用服务层（严格来说属于应用服务，允许碰检查点与 DB）。
 
-当前承载：检查点回写、token 用量记账（从 main.py 拆出）。
-模型调用前的意图分流仍在 app/api/chat.py 的两个端点内，后续阶段收敛到本模块。
+当前承载：检查点回写、token 用量记账。对话决策统一由 services/supervisor.py
+负责，API 的 JSON/SSE 入口只适配各自传输格式。
 """
 import logging
 
@@ -9,7 +9,8 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from app.agent.llm_config import (current_chat_prices, current_model_name,
                                   current_model_source)
-from app.infra.db.usage import record_token_usage
+from app.infra.db.usage import extract_usage_metadata, record_token_usage
+from app.services import trace
 
 logger = logging.getLogger("agent")
 
@@ -22,6 +23,12 @@ async def _record_usage_after_chat(request, conn, tenant_id: str, thread_id: str
                              source=await current_model_source(request.app, tenant_id),
                              chat_input_cache_price=in_cache, chat_input_price=in_miss,
                              chat_output_price=out_price)
+    usage = extract_usage_metadata(messages)
+    if usage:
+        trace.record("usage", "model", model=usage["model"],
+                     input_tokens=usage["input_tokens"],
+                     output_tokens=usage["output_tokens"],
+                     total_tokens=usage["total_tokens"])
 
 
 async def _record_to_checkpoint(app, thread_id: str, question: str, answer: str):

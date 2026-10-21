@@ -16,6 +16,7 @@ from app.chat.order import (ORDER_FORBIDDEN, ORDER_NOT_FOUND, ORDER_OK,
 from app.infra.cache import _kb_cache_get, _kb_cache_set
 from app.infra.config import INTERNAL_API_TOKEN, ORDER_BUSINESS_API
 from app.infra.db_pool import _pool_conn
+from app.services import trace
 
 # 模块级 app 引用，由 main.py 注入
 _app = None
@@ -75,6 +76,7 @@ async def search_kb(query: str) -> str:
     # P2-2：先查缓存
     cached = _kb_cache_get(tid, query)
     if cached is not None:
+        trace.record("tool", "search_kb", cache="hit")
         _logger.debug(f"[KB Cache HIT] tenant={tid}, query={query[:30]}")
         return cached
 
@@ -94,12 +96,14 @@ async def search_kb(query: str) -> str:
                 _logger.warning(f"[KB Retriever] rebuild failed tenant={tid}: {str(e)[:120]}")
             retriever = None
     if retriever is None:
+        trace.record("tool", "search_kb", status="unavailable")
         return "知识库暂未就绪，请稍后再试。"
     try:
         docs = await retriever.ainvoke(query)
     except Exception as e:
         # 检索期降级：embedding 调用失败（key 错误/服务不可用）不抛穿对话，如实告知
         _logger.warning(f"[KB Degrade] tenant={tid} 检索失败，降级为纯LLM: {str(e)[:150]}")
+        trace.record("tool", "search_kb", status="error")
         return "知识库暂未就绪，请稍后再试。"
     if not docs:
         result = "未找到相关信息，建议转接人工客服。"
@@ -108,6 +112,9 @@ async def search_kb(query: str) -> str:
 
     # KB 闭环：检索结果落库（命中明细 / 未命中查询）
     await _record_kb_hits(tid, thread_id, query, docs)
+    trace.record("evidence", "search_kb", count=len(docs),
+                 evidence_ids=[str((getattr(d, "metadata", {}) or {}).get("doc_id", ""))
+                               for d in docs[:3]])
 
     # P2-2：写入缓存
     _kb_cache_set(tid, query, result)

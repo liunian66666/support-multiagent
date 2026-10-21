@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.agent.faq_agent import faq_agent, recent_messages
+from app.agent.intake_agent import intake_agent
 from app.chat.intent import route_message
 from app.agent import tools
 
@@ -53,6 +54,19 @@ class RoutingTest(unittest.TestCase):
 
 
 class SpecialistTest(unittest.IsolatedAsyncioTestCase):
+    async def test_intake_agent_has_no_business_tools(self):
+        app = SimpleNamespace(state=SimpleNamespace(intake_agents={}))
+        with patch("app.agent.intake_agent._check_config_version", new_callable=AsyncMock), \
+                patch("app.agent.intake_agent.get_tenant_model", new_callable=AsyncMock,
+                      return_value=object()), \
+                patch("app.agent.intake_agent.create_agent") as create:
+            first = await intake_agent(app, "t_demo")
+            second = await intake_agent(app, "t_demo")
+        self.assertIs(first, second)
+        self.assertEqual(create.call_count, 1)
+        self.assertEqual(create.call_args.kwargs["tools"], [])
+        self.assertNotIn("checkpointer", create.call_args.kwargs)
+
     async def test_faq_agent_has_only_kb_tool(self):
         app = SimpleNamespace()
         with patch("app.agent.faq_agent.get_tenant_model", new_callable=AsyncMock) as model, patch("app.agent.faq_agent.create_agent") as create:

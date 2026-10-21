@@ -1,5 +1,7 @@
 # 多 Agent 架构梳理与设计（ai_customer_service × support-agent）
 
+> 当前已实现的角色、权限、接口与实测结果请看 [MULTI_AGENT_IMPLEMENTATION.md](MULTI_AGENT_IMPLEMENTATION.md)。本文保留为历史设计讨论，其中关于 Go 网关及“当前”状态的描述已经过时。
+
 > **2026-10-19 结构重构提示**：`python_agent/` 已改为 `app/` 分包结构，本文正文沿用重构前的文件名与行号。
 > 新旧路径对照：`main.py`(12 端点) → `app/api/{chat,session,tenant,usage,platform}.py` + `app/lifespan.py` + `app/server.py`；
 > `multi_agent.py` → `app/chat/intent.py` + `app/agent/faq_agent.py`；`agent_factory.py` → `app/agent/{builder,middleware,llm_config,retrieval,faq_bridge}.py`；

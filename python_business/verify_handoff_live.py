@@ -67,6 +67,20 @@ async def main_check():
                                (ticket_frame["ticket_no"],))
                 assert row and row["tenant_id"] == "t_demo"
                 assert row["thread_id"].startswith("t_demo:")
+                await customer_socket.send(json.dumps(
+                    {"type": "chat", "msg": "转人工客服"}, ensure_ascii=False))
+                terminal = ""
+                for _ in range(80):
+                    repeated = json.loads(await asyncio.wait_for(customer_socket.recv(), 30))
+                    terminal = repeated.get("type")
+                    assert terminal != "ticket", "repeated handoff created a ticket frame"
+                    if terminal in {"chat_end", "human_notice", "error", "quota"}:
+                        break
+                assert terminal in {"chat_end", "human_notice"}, terminal
+                count = main.one("SELECT COUNT(*) AS n FROM tickets WHERE tenant_id = %s "
+                                 "AND thread_id = %s",
+                                 ("t_demo", row["thread_id"]))
+                assert count and count["n"] == 1, "repeated handoff created another ticket"
                 request = urllib.request.Request(
                     BASE + "/api/admin/tickets/" + str(notice["ticket"]["id"]),
                     headers={"Authorization": "Bearer " + admin},
@@ -75,7 +89,7 @@ async def main_check():
                     detail = json.load(response)
                 assert detail.get("code") == 0
                 assert detail["data"]["ticket_no"] == ticket_frame["ticket_no"]
-                print("customer handoff, scoped notice and merchant ticket API: passed")
+                print("customer handoff, ticket reuse, scoped notice and merchant ticket API: passed")
 
 
 if __name__ == "__main__":

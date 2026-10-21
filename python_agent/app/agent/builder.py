@@ -15,7 +15,7 @@ logger = logging.getLogger("agent.factory")
 # def build_agent(app, system_prompt: str):
 #     """用指定提示词构建平台默认 Agent，并保存到 app.state.agent。
 #
-#     当前聊天入口使用按租户创建的 get_tenant_agent；此函数暂未被调用。
+#     新聊天入口使用 FAQ/Intake 专职图；旧图仅用于历史审批中断的恢复。
 #     """
 #     agent = create_agent(
 #         model=app.state.model,
@@ -29,7 +29,7 @@ logger = logging.getLogger("agent.factory")
 
 
 async def get_tenant_agent(app, tenant_id: str):
-    """获取租户专属 Agent（懒构建：集合/知识库/retriever/Prompt/Agent 均按租户隔离）"""
+    """旧检查点恢复所需的租户图；新聊天不向该全工具图委派。"""
     # 配置签名懒检查：Redis 广播丢失时的最终一致兜底（TTL 内跳过，失败不阻断）
     sig_version = await _check_config_version(app, tenant_id)
     if tenant_id in app.state.tenant_agents:
@@ -103,6 +103,8 @@ async def _check_config_version(app, tenant_id: str) -> str | None:
                     tenant_id, _agent_sigs.get(tenant_id, "(none)"), remote)
         clear_model_cache(tenant_id, "all")
         app.state.tenant_agents.pop(tenant_id, None)
+        getattr(app.state, "faq_agents", {}).pop(tenant_id, None)
+        getattr(app.state, "intake_agents", {}).pop(tenant_id, None)
         app.state.tenant_retrievers.pop(tenant_id, None)
     return remote
 

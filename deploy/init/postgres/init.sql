@@ -129,6 +129,22 @@ CREATE TABLE IF NOT EXISTS token_usage (
 
 CREATE INDEX IF NOT EXISTS idx_token_usage_tenant_date ON token_usage (tenant_id, created_at);
 
+-- One bounded decision trace per Agent request; contains metadata, not raw prompts.
+CREATE TABLE IF NOT EXISTS agent_trace_runs (
+    trace_id varchar(64) PRIMARY KEY,
+    tenant_id varchar(64) NOT NULL,
+    thread_id varchar(255) NOT NULL,
+    route varchar(32) NOT NULL DEFAULT '',
+    specialist varchar(32) NOT NULL DEFAULT '',
+    status varchar(24) NOT NULL,
+    duration_ms integer NOT NULL DEFAULT 0,
+    events jsonb NOT NULL DEFAULT '[]'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    finished_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_agent_trace_tenant_time
+    ON agent_trace_runs (tenant_id, created_at DESC);
+
 -- ============================================================================
 -- LangGraph Checkpoint 表（由 LangGraph 自动创建，这里预留）
 -- ============================================================================

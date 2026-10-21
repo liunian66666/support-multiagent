@@ -22,6 +22,7 @@ from app.infra.config import (POSTGRES_DSN, QDRANT_URL, SESSION_CLEANUP_INTERVAL
                               TEXT_SPLITTER_CHUNK_SIZE)
 from app.infra.db.prompt import load_active_prompt, seed_default_prompt
 from app.infra.db.session import verify_agent_tables
+from app.infra.db.trace import ensure_trace_table
 from app.infra import pubsub as redis_pubsub
 from app.services.invalidation import clear_tenant_caches
 from app.workers.cleanup import session_cleanup_loop
@@ -42,6 +43,8 @@ async def lifespan(app: FastAPI):
     app.state.tenant_stores = {}
     app.state.tenant_retrievers = {}
     app.state.tenant_agents = {}
+    app.state.faq_agents = {}
+    app.state.intake_agents = {}
     app.state.agent = None
     app.state.model = None
     app.state.tools = None
@@ -75,6 +78,7 @@ async def lifespan(app: FastAPI):
         # 扩展表：会话元数据 / Prompt / 知识库文档（含租户维度）
         async with app.state.db_pool.connection() as conn:
             await verify_agent_tables(conn)
+            await ensure_trace_table(conn)
             await seed_default_prompt(conn)
             global_prompt = await load_active_prompt(conn, "")
         logger.info("✅ global prompt loaded (len=%d)", len(global_prompt))

@@ -21,6 +21,7 @@ from app.api.platform import router as platform_router  # noqa: E402
 from app.api.prompt import router as prompt_router  # noqa: E402
 from app.api.session import router as session_router  # noqa: E402
 from app.api.tenant import router as tenant_router  # noqa: E402
+from app.api.trace import router as trace_router  # noqa: E402
 from app.api.usage import router as usage_router  # noqa: E402
 from app.infra.context import pending_ticket_var, tenant_var, thread_var  # noqa: E402
 from app.lifespan import lifespan  # noqa: E402
@@ -36,6 +37,7 @@ app.include_router(prompt_router)
 app.include_router(kb_router)
 app.include_router(cache_router)
 app.include_router(chat_router)
+app.include_router(trace_router)
 app.include_router(session_router)
 app.include_router(tenant_router)
 app.include_router(usage_router)
