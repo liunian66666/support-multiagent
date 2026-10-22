@@ -200,7 +200,7 @@ support-multiagent/
 └── thirdDemo/                # 第三方接入最小示例（Python + SDK）
 ```
 
-> `deploy/` 下的 `production/`、`backup/`、`observability/` 及部署脚本属商业版内容，不随开源仓库发布，详见 [COMMERCIAL.md](./COMMERCIAL.md)。
+> `deploy/` 下的 `production/`、`backup/`、`observability/` 属生产环境部署配置，已在 `.gitignore` 中排除，不在本仓库分发。
 
 ## 📚 文档导航
 
@@ -239,22 +239,25 @@ support-multiagent/
 **Q：怎么查看某轮对话的执行轨迹？**
 对话返回的 `trace_id` 对应 PostgreSQL `agent_trace_runs` 表，也可通过内部接口 `GET /agent/traces/{trace_id}` 查询（需 `X-Internal-Token` 与 `X-Tenant-Id`）。
 
-## 📜 授权与商业化
+## 📄 开源协议与致谢
 
-|  | 社区版（本仓库 · 开源） | 商业版（私有化交付） |
-|--|--|--|
-| 协议 | AGPL-3.0：学习 / 自用 / 非商业 / 继续开源 **免费** | 商业授权（[COMMERCIAL.md](./COMMERCIAL.md)） |
-| 代码 | python_business / python_agent / web / admin-app / docs 全部开源 | 生产部署包（镜像 + 一键脚本 + 监控告警配置）闭源交付 |
-| 适用 | 自部署、学习研究、二次开发 | 企业内部闭源部署、对外商业 SaaS、产品化销售 |
-| 支持 | GitHub Issues | 部署支持 / 升级保障 / 定制开发（SSO、多实例等） |
-| 获取 | 直接 clone | 邮箱 2771452556@qq.com |
+本仓库以 **[AGPL-3.0](./LICENSE)** 分发，与上游项目保持一致。
 
-> 支持开源作者：点 ⭐ Star、提 Issue、提交 PR 都是最好的支持 🙌
+| 范围 | 归属 |
+|---|---|
+| 原始项目架构，以及多租户隔离、RBAC、知识库、工单、Prompt 版本管理等基础功能 | © [myrockey/ai_customer_service](https://github.com/myrockey/ai_customer_service) 原作者 |
+| Go → Python 业务层迁移、业务层模块化拆分、电商客服 Agent 整合、多专家路由、决策轨迹 | 本仓库维护者 |
+
+**本仓库不提供商业授权。** 上游项目的商业版（生产部署包、监控告警配置等）由原作者提供，与本仓库无关；如需闭源商用，请遵守 AGPL-3.0 或自行联系上游作者获取授权。
+
+> AGPL-3.0 核心约束：基于本项目的修改若以网络服务形式对外提供，须公开完整源码。
+
+如果这个项目对你有帮助，欢迎点 ⭐ Star 或提 Issue 🙌
 
 ---
 
 <div align="center">
 
-**© 2026 智能客服系统** · [AGPL-3.0](./LICENSE) · [商用授权](./COMMERCIAL.md) · 技术支持：2771452556@qq.com
+**© 2026** · [AGPL-3.0](./LICENSE) · 基础架构归属 [myrockey/ai_customer_service](https://github.com/myrockey/ai_customer_service) 原作者
 
 </div>
