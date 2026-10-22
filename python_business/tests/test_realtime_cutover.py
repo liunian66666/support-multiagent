@@ -11,7 +11,9 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-import main
+import main_compat as main
+from patch_business import patch_business
+from business.customer import routes as customer_routes
 from realtime import Hub
 
 
@@ -40,12 +42,17 @@ class RealtimeCutoverTest(unittest.TestCase):
 
         self.patches = [
             patch.dict(os.environ, {"INTERNAL_API_TOKEN": "internal-test"}),
-            patch.object(main, "one", side_effect=one),
-            patch.object(main, "many", return_value=[]),
-            patch.object(main, "write", side_effect=lambda sql, args:
+            patch_business(main, "one", side_effect=one),
+            patch_business(main, "many", return_value=[]),
+            patch_business(main, "write", side_effect=lambda sql, args:
                          self.writes.append((sql, args))),
-            patch.object(main, "cache", return_value=FakeRedis()),
-            patch.object(main, "ws_hub", Hub()),
+            patch_business(main, "cache", return_value=FakeRedis()),
+            patch.object(customer_routes, "one", side_effect=one),
+            patch.object(customer_routes, "many", return_value=[]),
+            patch.object(customer_routes, "write", side_effect=lambda sql, args:
+                         self.writes.append((sql, args))),
+            patch.object(customer_routes, "cache", return_value=FakeRedis()),
+            patch_business(main, "ws_hub", Hub()),
         ]
         for item in self.patches:
             item.start()
@@ -89,7 +96,7 @@ class RealtimeCutoverTest(unittest.TestCase):
                     socket.receive_json()
 
     def test_admin_broadcast_only_reaches_matching_tenant(self):
-        with patch.object(main, "admin_tenant", return_value={
+        with patch_business(main, "admin_tenant", return_value={
             "tenant_id": "t_demo", "app_secret_hash": "hash",
             "is_platform_admin": 0,
         }):
@@ -117,10 +124,10 @@ class RealtimeCutoverTest(unittest.TestCase):
             await client.send({"type": "chat_chunk", "chunk": "您好"})
             await client.send({"type": "chat_end", "msg": "您好"})
 
-        with patch.object(main, "handling_ticket", return_value=None), \
-                patch.object(main, "pending_ticket", return_value=False), \
-                patch.object(main, "save_message"), \
-                patch.object(main, "stream_agent_reply", side_effect=fake_stream):
+        with patch_business(main, "handling_ticket", return_value=None), \
+                patch_business(main, "pending_ticket", return_value=False), \
+                patch_business(main, "save_message"), \
+                patch_business(main, "stream_agent_reply", side_effect=fake_stream):
             with TestClient(main.app) as client:
                 with client.websocket_connect(
                     "/ws/chat?token=" + self.customer_token()
@@ -140,9 +147,9 @@ class RealtimeCutoverTest(unittest.TestCase):
             def json(self):
                 return {"success": True, "content": "退货说明"}
 
-        with patch.object(main, "handling_ticket", return_value=None), \
-                patch.object(main, "pending_ticket", return_value=False), \
-                patch.object(main, "save_message") as save, \
+        with patch_business(main, "handling_ticket", return_value=None), \
+                patch_business(main, "pending_ticket", return_value=False), \
+                patch_business(main, "save_message") as save, \
                 patch.object(main.httpx, "post", return_value=AgentResponse()) as agent:
             with TestClient(main.app) as client:
                 response = client.post(
@@ -211,10 +218,10 @@ class RealtimeCutoverTest(unittest.TestCase):
         customer = main.Customer("t_demo", "t_demo:buyer1",
                                  "t_demo:buyer1:session", "session-id", False, False)
         with patch.object(main.httpx, "AsyncClient", Transport), \
-                patch.object(main, "ensure_customer_ticket", return_value=(ticket, False)) as create, \
-                patch.object(main, "save_message") as save, \
-                patch.object(main, "assign_last_user_message") as assign, \
-                patch.object(main, "agent_resume") as resume:
+                patch_business(main, "ensure_customer_ticket", return_value=(ticket, False)) as create, \
+                patch_business(main, "save_message") as save, \
+                patch_business(main, "assign_last_user_message") as assign, \
+                patch_business(main, "agent_resume") as resume:
             completed = asyncio.run(main.stream_agent_reply(
                 customer, "转人工", False, Client()))
         self.assertTrue(completed)

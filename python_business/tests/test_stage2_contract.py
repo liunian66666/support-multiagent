@@ -4,7 +4,6 @@
 访客与商家预览各自只能读到自己的会话内容。
 """
 
-import hashlib
 import os
 import tempfile
 import time
@@ -13,7 +12,9 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-import main
+import main_compat as main
+from patch_business import patch_business
+from business.customer import routes as customer_routes
 
 
 class FakeRedis:
@@ -71,10 +72,14 @@ class Stage2ContractTest(unittest.TestCase):
             return list(self.message_rows)
 
         self.patches = (
-            patch.object(main, "one", side_effect=one),
-            patch.object(main, "many", side_effect=many),
-            patch.object(main, "write", side_effect=lambda sql, args: self.writes.append((sql, args))),
-            patch.object(main, "cache", return_value=self.redis),
+            patch_business(main, "one", side_effect=one),
+            patch_business(main, "many", side_effect=many),
+            patch_business(main, "write", side_effect=lambda sql, args: self.writes.append((sql, args))),
+            patch_business(main, "cache", return_value=self.redis),
+            patch.object(customer_routes, "one", side_effect=one),
+            patch.object(customer_routes, "many", side_effect=many),
+            patch.object(customer_routes, "write", side_effect=lambda sql, args: self.writes.append((sql, args))),
+            patch.object(customer_routes, "cache", return_value=self.redis),
         )
         for item in self.patches:
             item.start()
@@ -204,7 +209,7 @@ class Stage2ContractTest(unittest.TestCase):
 
     def test_customer_upload_uses_authenticated_tenant(self):
         with tempfile.TemporaryDirectory() as directory, \
-                patch.object(main, "MSG_FILE_ROOT", directory):
+                patch_business(main, "MSG_FILE_ROOT", directory):
             response = self.client.post(
                 "/api/user/upload", headers=self.auth(),
                 data={"tenant_id": "t_other", "user_id": "t_demo:buyer2:other"},

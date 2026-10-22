@@ -15,12 +15,12 @@ import os
 import tempfile
 import time
 import unittest
-from contextlib import contextmanager
-from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-import main
+import main_compat as main
+from business.admin import auth as auth_module
+from patch_business import patch_business
 
 SECRET_HASH = hashlib.sha256(b"probe-secret").hexdigest()
 PLATFORM_HASH = hashlib.sha256(b"plat-secret").hexdigest()
@@ -144,28 +144,28 @@ class AuthDomainTest(unittest.TestCase):
             self.reloaded.append(True)
 
         self.patches = (
-            patch.object(main, "one", side_effect=one),
-            patch.object(main, "many", side_effect=many),
-            patch.object(main, "write", side_effect=write),
-            patch.object(main, "cache", side_effect=cache),
-            patch.object(main, "ensure_tenant_roles", side_effect=ensure_roles),
-            patch.object(main, "get_user_roles", side_effect=get_roles),
-            patch.object(main, "user_perms", side_effect=perms),
-            patch.object(main, "reload_go_tenants", side_effect=reload),
+            patch_business(main, "one", side_effect=one),
+            patch_business(main, "many", side_effect=many),
+            patch_business(main, "write", side_effect=write),
+            patch_business(main, "cache", side_effect=cache),
+            patch_business(main, "ensure_tenant_roles", side_effect=ensure_roles),
+            patch_business(main, "get_user_roles", side_effect=get_roles),
+            patch_business(main, "user_perms", side_effect=perms),
+            patch_business(main, "reload_go_tenants", side_effect=reload),
         )
         for item in self.patches:
             item.start()
         self.addCleanup(lambda: [item.stop() for item in reversed(self.patches)])
         # RSA：指向临时文件，避免读写真实 /app/data；每个用例一把新密钥
-        main.RSA_KEY_PATH = os.path.join(self.tmp.name, "rsa_test.pem")
-        main._RSA_KEY = None
+        auth_module.RSA_KEY_PATH = os.path.join(self.tmp.name, "rsa_test.pem")
+        auth_module._RSA_KEY = None
         self.addCleanup(self._reset_rsa)
         self.client = TestClient(main.app)
 
     def _reset_rsa(self):
-        main._RSA_KEY = None
-        main.RSA_KEY_PATH = os.getenv("RSA_PRIVATE_KEY_PATH",
-                                      "/app/data/rsa_private.pem")
+        auth_module._RSA_KEY = None
+        auth_module.RSA_KEY_PATH = os.getenv("RSA_PRIVATE_KEY_PATH",
+                                              "/app/data/rsa_private.pem")
     # ----------  fixtures ----------
 
     def platform_tenant(self, **over):

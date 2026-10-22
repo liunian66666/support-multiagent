@@ -16,7 +16,8 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-import main
+import main_compat as main
+from patch_business import patch_business
 
 SECRET_HASH = hashlib.sha256(b"demo-secret").hexdigest()
 
@@ -141,11 +142,11 @@ class Stage35Test(unittest.TestCase):
                 return 0
 
         self.patches = (
-            patch.object(main, "one", side_effect=one),
-            patch.object(main, "many", side_effect=many),
-            patch.object(main, "write", side_effect=write),
-            patch.object(main, "transaction", side_effect=transaction),
-            patch.object(main, "cache", return_value=FakeCache()),
+            patch_business(main, "one", side_effect=one),
+            patch_business(main, "many", side_effect=many),
+            patch_business(main, "write", side_effect=write),
+            patch_business(main, "transaction", side_effect=transaction),
+            patch_business(main, "cache", return_value=FakeCache()),
             patch.dict(os.environ, {"INTERNAL_API_TOKEN": "internal-test"}),
         )
         for item in self.patches:

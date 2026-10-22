@@ -16,7 +16,8 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-import main
+import main_compat as main
+from patch_business import patch_business
 
 SECRET_HASH = hashlib.sha256(b"demo-secret").hexdigest()
 THREAD = "t_demo:buyer1:20261020125832_4c57acdd"
@@ -121,11 +122,11 @@ class Stage32Test(unittest.TestCase):
             return []
 
         self.patches = (
-            patch.object(main, "one", side_effect=one),
-            patch.object(main, "many", side_effect=many),
-            patch.object(main, "write",
+            patch_business(main, "one", side_effect=one),
+            patch_business(main, "many", side_effect=many),
+            patch_business(main, "write",
                          side_effect=lambda sql, args: self.writes.append((sql, args))),
-            patch.object(main, "cache", return_value=self.redis),
+            patch_business(main, "cache", return_value=self.redis),
             patch.dict(os.environ, {"INTERNAL_API_TOKEN": "internal-test"}),
         )
         for item in self.patches:

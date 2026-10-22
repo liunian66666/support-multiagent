@@ -96,21 +96,21 @@ def order_id(text: str) -> str | None:
         return None
     # 1. 显式上下文优先：「订单号是 ABC123」「单号: 12345678」「订单编号 1234567890」（空格/冒号/是为分隔）
     explicit = re.search(r"(?:订单号|单号|订单编号)[\s:=：是为]*(?P<oid>[A-Za-z0-9-]{4,40})", text, re.IGNORECASE)
-    if explicit:
+    if explicit and not explicit.group("oid").endswith("-"):
         return explicit.group("oid")
     # 2. [ours] 「订单」直接接单号（用户常说「查询订单10001」而不带「号」字）
     # 纯数字要求 ≥5 位，避免把「订单2024年发货吗」里的年份当成单号
     ctx = re.search(r"订单[\s:=：是为]*(?P<oid>[A-Za-z0-9-]{4,40})", text, re.IGNORECASE)
-    if ctx and not (ctx.group("oid").isdigit() and len(ctx.group("oid")) < 5):
+    if ctx and not ctx.group("oid").endswith("-") and not (ctx.group("oid").isdigit() and len(ctx.group("oid")) < 5):
         return ctx.group("oid")
     # 3. 电商前缀（识别性强，不要求上下文）
-    m = re.search(r"\b(?:TB|JD|PDD|DY|TMALL|1688)[-]?\d{6,20}\b", text, re.IGNORECASE)
+    m = re.search(r"(?<![A-Za-z0-9-])(?:TB|JD|PDD|DY|TMALL|1688)-?\d{6,20}(?![A-Za-z0-9-])", text, re.IGNORECASE)
     if m:
         return m.group(0)
     # 3. 演示格式 ORD-（要求订单/快递/物流/包裹/单号上下文，避免误匹配）
     if re.search(r"订单|order|快递|物流|包裹|单号", text, re.IGNORECASE):
-        m = re.search(r"\bORD-[A-Za-z0-9-]{3,64}\b", text, re.IGNORECASE)
-        if m:
+        m = re.search(r"(?<![A-Za-z0-9-])ORD-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*(?![A-Za-z0-9-])", text, re.IGNORECASE)
+        if m and 3 <= len(m.group(0)) - 4 <= 64:
             return m.group(0)
     return None
 

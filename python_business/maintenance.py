@@ -4,7 +4,8 @@ import logging
 import os
 import time
 
-from main import archive_old_messages, cache
+from business.admin.ops import archive_old_messages
+from business.infra.storage import cache
 
 
 logging.basicConfig(level=logging.INFO)

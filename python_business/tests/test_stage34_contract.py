@@ -17,7 +17,8 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-import main
+import main_compat as main
+from patch_business import patch_business
 
 SECRET_HASH = hashlib.sha256(b"demo-secret").hexdigest()
 
@@ -112,13 +113,13 @@ class Stage34Test(unittest.TestCase):
         self_outer = self
 
         self.patches = (
-            patch.object(main, "one", side_effect=one),
-            patch.object(main, "many", side_effect=many),
-            patch.object(main, "write",
+            patch_business(main, "one", side_effect=one),
+            patch_business(main, "many", side_effect=many),
+            patch_business(main, "write",
                          side_effect=lambda sql, args: self.writes.append((sql, args))),
-            patch.object(main, "cache", return_value=FakeCache()),
-            patch.object(main, "agent_call", side_effect=agent_call),
-            patch.object(main, "reload_go_extract_rules",
+            patch_business(main, "cache", return_value=FakeCache()),
+            patch_business(main, "agent_call", side_effect=agent_call),
+            patch_business(main, "reload_go_extract_rules",
                          side_effect=lambda: self.reloads.append(1)),
             patch.dict(os.environ, {"INTERNAL_API_TOKEN": "internal-test"}),
         )
@@ -185,7 +186,7 @@ class Stage34Test(unittest.TestCase):
                 raise main.pymysql.MySQLError("统计炸了")
             return original(sql, args)
 
-        with patch.object(main, "one", side_effect=boom):
+        with patch_business(main, "one", side_effect=boom):
             response = self.client.get("/api/admin/ops/dashboard", headers=self.auth())
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response.json()["msg"], "统计失败: 统计炸了")
@@ -370,8 +371,8 @@ class Stage34Test(unittest.TestCase):
 
         self_outer = self
         conn = FakeConn()
-        with patch.object(main, "many", side_effect=many), \
-                patch.object(main, "db", return_value=conn):
+        with patch_business(main, "many", side_effect=many), \
+                patch_business(main, "db", return_value=conn):
             response = self.client.post("/api/admin/messages/archive", headers=self.auth())
         self.assertEqual(response.json()["data"], {"archived": 1})
         insert = self.writes_matching("INSERT INTO messages_archive")[0][1]

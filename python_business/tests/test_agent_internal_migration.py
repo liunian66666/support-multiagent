@@ -7,7 +7,8 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-import main
+import main_compat as main
+from patch_business import patch_business
 
 
 class AgentInternalMigrationTest(unittest.TestCase):
@@ -19,7 +20,7 @@ class AgentInternalMigrationTest(unittest.TestCase):
         self.addCleanup(self.env.stop)
 
     def test_quota_requires_internal_token_and_scopes_query(self):
-        with patch.object(main, "one", return_value={
+        with patch_business(main, "one", return_value={
             "max_concurrent_sessions": 3, "daily_message_limit": 25,
             "max_kb_docs": 4, "max_kb_size_mb": 20,
         }) as query:
@@ -48,11 +49,11 @@ class AgentInternalMigrationTest(unittest.TestCase):
                "embedding_api_base": "https://emb.example",
                "chat_input_cache_price": 1, "chat_input_price": 2,
                "chat_output_price": 3, "embedding_price": 4}
-        with patch.object(main, "tenant_config_row", return_value=row), \
-                patch.object(main, "decrypt_api_key", side_effect=lambda key: key), \
-                patch.object(main, "resolve_chat_config", return_value=(
+        with patch_business(main, "tenant_config_row", return_value=row), \
+                patch_business(main, "decrypt_api_key", side_effect=lambda key: key), \
+                patch_business(main, "resolve_chat_config", return_value=(
                     "dashscope", "chat-model", "https://chat.example", "chat-key")), \
-                patch.object(main, "resolve_emb_config", return_value=(
+                patch_business(main, "resolve_emb_config", return_value=(
                     "dashscope", "emb-model", "https://emb.example", "emb-key")):
             self.assertEqual(self.client.get(
                 "/api/agent/model-config", params={"tenant_id": "t_demo"}
@@ -71,7 +72,7 @@ class AgentInternalMigrationTest(unittest.TestCase):
         self.assertEqual(data["embedding"]["api_key"], "emb-key")
 
     def test_summary_save_rejects_cross_tenant_thread(self):
-        with patch.object(main, "write") as save:
+        with patch_business(main, "write") as save:
             response = self.client.post(
                 "/api/agent/session-summaries", headers=self.headers,
                 json={"tenant_id": "t_demo", "thread_id": "other:buyer:session",
@@ -89,7 +90,7 @@ class AgentInternalMigrationTest(unittest.TestCase):
                              ("t_demo", "t_demo:buyer:session", "safe"))
 
     def test_summary_candidates_keep_tenant_in_message_lookup(self):
-        with patch.object(main, "many", side_effect=[
+        with patch_business(main, "many", side_effect=[
             [{"thread_id": "t_demo:buyer:session", "tenant_id": "t_demo"}],
             [{"role": "ai", "content": "reply"},
              {"role": "user", "content": "question"}],

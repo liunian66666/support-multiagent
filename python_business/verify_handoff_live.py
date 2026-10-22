@@ -8,7 +8,7 @@ import urllib.request
 
 import websockets
 
-import main
+from business.infra.storage import one
 
 
 BASE = "http://nginx"
@@ -62,7 +62,7 @@ async def main_check():
                     raise AssertionError("ticket leaked to a different tenant")
                 except asyncio.TimeoutError:
                     pass
-                row = main.one("SELECT tenant_id, thread_id FROM tickets "
+                row = one("SELECT tenant_id, thread_id FROM tickets "
                                "WHERE ticket_no = %s LIMIT 1",
                                (ticket_frame["ticket_no"],))
                 assert row and row["tenant_id"] == "t_demo"
@@ -77,7 +77,7 @@ async def main_check():
                     if terminal in {"chat_end", "human_notice", "error", "quota"}:
                         break
                 assert terminal in {"chat_end", "human_notice"}, terminal
-                count = main.one("SELECT COUNT(*) AS n FROM tickets WHERE tenant_id = %s "
+                count = one("SELECT COUNT(*) AS n FROM tickets WHERE tenant_id = %s "
                                  "AND thread_id = %s",
                                  ("t_demo", row["thread_id"]))
                 assert count and count["n"] == 1, "repeated handoff created another ticket"

@@ -18,7 +18,8 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-import main
+import main_compat as main
+from patch_business import patch_business
 
 SECRET_HASH = hashlib.sha256(b"demo-secret").hexdigest()
 
@@ -176,18 +177,18 @@ class Stage36Test(unittest.TestCase):
             return fake_cache
 
         self.patches = (
-            patch.object(main, "one", side_effect=one),
-            patch.object(main, "many", side_effect=many),
-            patch.object(main, "write", side_effect=write),
-            patch.object(main, "transaction", side_effect=transaction),
-            patch.object(main, "cache", side_effect=cache),
-            patch.object(main, "agent_call", side_effect=lambda *a, **k: (None, "down")),
-            patch.object(main, "go_internal", side_effect=self.fake_go_internal),
+            patch_business(main, "one", side_effect=one),
+            patch_business(main, "many", side_effect=many),
+            patch_business(main, "write", side_effect=write),
+            patch_business(main, "transaction", side_effect=transaction),
+            patch_business(main, "cache", side_effect=cache),
+            patch_business(main, "agent_call", side_effect=lambda *a, **k: (None, "down")),
+            patch_business(main, "go_internal", side_effect=self.fake_go_internal),
             patch.object(main.ws_hub, "count_all_tenants",
                          side_effect=lambda: self.ws_conns),
-            patch.object(main, "prewarm_tenant_async", side_effect=lambda tid: None),
-            patch.object(main, "cleanup_tenant_async", side_effect=lambda tid: None),
-            patch.object(main, "reload_go_menu_caches", side_effect=lambda: None),
+            patch_business(main, "prewarm_tenant_async", side_effect=lambda tid: None),
+            patch_business(main, "cleanup_tenant_async", side_effect=lambda tid: None),
+            patch_business(main, "reload_go_menu_caches", side_effect=lambda: None),
             patch.dict(os.environ, {"INTERNAL_API_TOKEN": "internal-test",
                                          "USE_PYTHON_WS_HUB": "true"}),
         )
@@ -300,7 +301,7 @@ class Stage36Test(unittest.TestCase):
         self.tenants = [tenant_row()]
         self.messages_count_rows = [{"tenant_id": "t_demo", "cnt": 7}]
         self.ws_conns = {"t_demo": 4}
-        with patch.object(main, "agent_call", side_effect=lambda *a, **k: (
+        with patch_business(main, "agent_call", side_effect=lambda *a, **k: (
                 b'{"code":0,"data":{"t_demo":{"active_sessions":99,"kb_docs":3,'
                 b'"kb_size_bytes":2097152}}}', None)):
             item = self.client.get("/api/admin/tenants",

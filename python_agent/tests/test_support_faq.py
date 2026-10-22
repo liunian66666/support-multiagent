@@ -63,6 +63,8 @@ class SupportFaqContractTest(unittest.TestCase):
     def test_order_id_only_with_order_context(self):
         # 演示格式
         self.assertEqual(order_id("查询订单 ORD-2024-001"), "ORD-2024-001")
+        self.assertEqual(order_id("ORD-2024-003订单的状态，以及怎么退货？"), "ORD-2024-003")
+        self.assertEqual(order_id("查TB202410180001物流"), "TB202410180001")
         self.assertEqual(order_id("快递 ORD-2024-001 到哪了"), "ORD-2024-001")
         # 电商前缀
         self.assertEqual(order_id("帮我查 TB202410180001"), "TB202410180001")
@@ -80,6 +82,7 @@ class SupportFaqContractTest(unittest.TestCase):
         self.assertIsNone(order_id("订单2024年还发货吗"))
         # 无上下文或无格式
         self.assertIsNone(order_id("ORD-2024-001"))
+        self.assertIsNone(order_id("查询订单 ORD-2024-"))
         self.assertIsNone(order_id("帮我查一下我的快递"))
         self.assertIsNone(order_id("我等了 30 分钟还没发货"))  # 纯短数字不误匹配
         self.assertIsNone(order_id("13800138000"))  # 手机号不误匹配

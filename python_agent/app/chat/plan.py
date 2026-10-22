@@ -14,7 +14,7 @@ _TOPICS = (
     ("发票", re.compile(r"发票")),
     ("课程商品", re.compile(r"课程|商品|价格")),
 )
-_ID = re.compile(r"\b(?:ORD-[A-Za-z0-9-]+|(?:TB|JD|PDD|DY|TMALL|1688)[-]?\d{6,20})\b", re.I)
+_ID = re.compile(r"(?<![A-Za-z0-9-])(?:ORD-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*|(?:TB|JD|PDD|DY|TMALL|1688)-?\d{6,20})(?![A-Za-z0-9-])", re.I)
 _MULTI_PART = re.compile(r"和|以及|并且|分别|同时|还有|另外|再结合|同时问")
 
 

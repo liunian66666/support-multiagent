@@ -37,3 +37,14 @@ data/
 
 # 一次性临时脚本（不跟踪）
 scripts/_*.sh
+
+# 数据库导出产物（本地备份，不入库）
+orders_backup.sql
+*.sql.bak
+
+# IDE 配置（DataGrip/JetBrains，含本地数据源连接）
+.idea/
+*.iml
+
+# AI 助手工作目录
+.workbuddy-ai/

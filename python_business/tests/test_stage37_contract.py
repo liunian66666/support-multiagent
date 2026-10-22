@@ -26,7 +26,8 @@ from unittest.mock import patch
 import httpx
 from fastapi.testclient import TestClient
 
-import main
+import main_compat as main
+from patch_business import patch_business
 
 SECRET_HASH = hashlib.sha256(b"demo-secret").hexdigest()
 
@@ -134,11 +135,11 @@ class Stage37Test(unittest.TestCase):
                 return 1
 
         self.patches = (
-            patch.object(main, "one", side_effect=one),
-            patch.object(main, "write", side_effect=write),
-            patch.object(main, "cache", side_effect=lambda: FakeCache()),
-            patch.object(main, "decrypt_api_key", side_effect=decrypt),
-            patch.object(main, "tenant_config_row", side_effect=tenant_config_row),
+            patch_business(main, "one", side_effect=one),
+            patch_business(main, "write", side_effect=write),
+            patch_business(main, "cache", side_effect=lambda: FakeCache()),
+            patch_business(main, "decrypt_api_key", side_effect=decrypt),
+            patch_business(main, "tenant_config_row", side_effect=tenant_config_row),
             patch.object(main.httpx, "Client", FakeClient),
             patch.dict(os.environ,
                        {"INTERNAL_API_TOKEN": "internal-test",
@@ -266,8 +267,8 @@ class Stage37Test(unittest.TestCase):
 
     def test_subaccount_without_perm_is_forbidden(self):
         """子账号（uid>0）没有 prompt:view → 真实 403 无权限执行该操作。"""
-        with patch.object(main, "one", side_effect=self._subaccount_one), \
-             patch.object(main, "user_perms", return_value=set()):
+        with patch_business(main, "one", side_effect=self._subaccount_one), \
+             patch_business(main, "user_perms", return_value=set()):
             resp = self.client.get("/api/admin/prompts", headers=self.auth(uid=7))
         self.assertEqual(403, resp.status_code)
         self.assertEqual("无权限执行该操作", resp.json()["msg"])

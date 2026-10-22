@@ -26,7 +26,7 @@
 
 | 优化项 | 说明 | 位置 |
 |---|---|---|
-| 客户身份与只读订单 | FastAPI 签发客户会话，按租户和客户归属查询演示订单；未知订单号可列出本人订单，跨客户请求不能获知订单是否存在 | `python_business/main.py`、`python_agent/app/agent/tools.py` |
+| 客户身份与只读订单 | FastAPI 签发客户会话，按租户和客户归属查询演示订单；未知订单号可列出本人订单，跨客户请求不能获知订单是否存在 | `python_business/business/customer/routes.py`、`python_agent/app/agent/tools.py` |
 | 电商客服意图与 FAQ | 区分政策咨询、订单查询、主动转人工和退款/支付执行请求；政策回答保留知识来源，不把演示政策冒充真实商家承诺 | `python_agent/app/chat/`、`python_agent/app/api/chat.py` |
 | Python 业务层迁移 | 客户、商家、认证、工单、内部 Agent 接口及 WebSocket 均由 FastAPI 提供；新库租户初始化和每日消息归档也由 Python 完成 | `python_business/`、`deploy/init/mysql/init.sql` |
 | 前后端联通 | Nginx 将 Vue 后台、客户聊天页、SDK 的 API 与 WebSocket 统一接入 Python；商家实时接收本租户转人工工单 | `deploy/nginx.conf`、`web/`、`admin-app/` |
@@ -189,7 +189,7 @@ customer_service_prod/
 ├── docker-compose.yaml       # 一键编排（全部服务）
 ├── .env.example              # 环境变量模板
 ├── .gitlab-ci.yml            # CI/CD 流水线（lint/test/build/deploy）
-├── python_business/          # FastAPI 业务层（认证/订单/工单/WebSocket/维护任务）
+├── python_business/          # FastAPI 业务层（main.py 为入口，business/ 按功能拆分）
 ├── python_agent/             # Python LangGraph Agent（main/db_ops/agent_factory/routers）
 ├── admin-app/                # 管理后台前端（Vue3 + Vite，nginx 镜像构建时容器内自动编译）
 ├── web/                      # 前端构建产物 + 静态资源

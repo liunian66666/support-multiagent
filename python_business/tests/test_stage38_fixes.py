@@ -18,11 +18,11 @@ import time
 import unittest
 from contextlib import contextmanager
 from datetime import datetime
-from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-import main
+import main_compat as main
+from patch_business import patch_business
 
 SECRET_HASH = hashlib.sha256(b"demo-secret").hexdigest()
 
@@ -115,17 +115,17 @@ class FixesTest(unittest.TestCase):
                 return 0
 
         self.patches = (
-            patch.object(main, "one", side_effect=one),
-            patch.object(main, "many", side_effect=many),
-            patch.object(main, "write", side_effect=write),
-            patch.object(main, "transaction", side_effect=transaction),
-            patch.object(main, "cache", side_effect=lambda: FakeCache()),
-            patch.object(main, "ensure_tenant_roles", side_effect=ensure_roles),
-            patch.object(main, "go_broadcast", side_effect=lambda *a, **k: None),
-            patch.object(main, "reload_go_extract_rules", side_effect=lambda: None),
-            patch.object(main, "save_message", side_effect=lambda *a, **k: None),
-            patch.object(main, "adjust_handling", side_effect=lambda *a, **k: None),
-            patch.object(main, "go_internal", side_effect=lambda *a, **k: None),
+            patch_business(main, "one", side_effect=one),
+            patch_business(main, "many", side_effect=many),
+            patch_business(main, "write", side_effect=write),
+            patch_business(main, "transaction", side_effect=transaction),
+            patch_business(main, "cache", side_effect=lambda: FakeCache()),
+            patch_business(main, "ensure_tenant_roles", side_effect=ensure_roles),
+            patch_business(main, "go_broadcast", side_effect=lambda *a, **k: None),
+            patch_business(main, "reload_go_extract_rules", side_effect=lambda: None),
+            patch_business(main, "save_message", side_effect=lambda *a, **k: None),
+            patch_business(main, "adjust_handling", side_effect=lambda *a, **k: None),
+            patch_business(main, "go_internal", side_effect=lambda *a, **k: None),
         )
         for item in self.patches:
             item.start()
