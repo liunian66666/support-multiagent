@@ -11,7 +11,7 @@ from app.agent.faq_agent import recent_messages
 from app.agent.intake_agent import intake_agent as get_intake_specialist
 from app.api.deps import _require_trusted_chat
 from app.chat.reply import finalize_faq_reply, _friendly_llm_error, demo_faq_prefix, mark_demo_faq_reply
-from app.infra.config import PROD_MODE, SERVICE_FOOTER
+from app.infra.config import SERVICE_FOOTER
 from app.infra.context import pending_ticket_var, tenant_var, thread_var, trace_id_var
 from app.infra.db.quota import check_concurrent_sessions
 from app.infra.db.session import touch_session_retry
@@ -68,6 +68,12 @@ async def _agent_chat_impl(req: ChatRequest, request: Request):
     tenant_var.set(tenant_id)
     thread_var.set(thread_id)
     pending_ticket_var.set(req.has_pending_ticket)
+    # [ours] S6 治理：JSON 通道补并发配额（与 SSE/resume 对齐；默认上限 0=不限制，
+    # 未配置配额的租户行为不变）
+    async with _pool_conn(request.app) as conn:
+        quota_err = await check_concurrent_sessions(conn, request.app, tenant_id)
+    if quota_err:
+        return AgentResp(success=False, is_interrupt=False, content=quota_err["msg"])
     decision = await decide_turn(request.app, tenant_id, thread_id, user_message,
                                  pending_ticket=req.has_pending_ticket)
     logger.info("support specialist=%s source=%s tenant=%s",
@@ -326,8 +332,8 @@ async def agent_resume(req: ResumeRequest, request: Request):
         )
     except Exception as e:
         logger.exception("/agent/resume error")
-        err_msg = "resume服务内部异常" if PROD_MODE else f"resume error:{str(e)}"
-        return AgentResp(success=False, is_interrupt=False, content=err_msg)
+        # [ours] S6 治理：统一错误文案，不回吐 str(e)（内部异常细节不外泄给业务/前端）
+        return AgentResp(success=False, is_interrupt=False, content="resume服务内部异常")
 
 
 # 调试接口，查询checkpoint数据表（异步版本）

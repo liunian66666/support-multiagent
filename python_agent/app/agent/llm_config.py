@@ -1,5 +1,6 @@
 """平台/租户模型配置与模型实例缓存（BYOK，从 agent_factory.py 拆出）。"""
 import logging
+import os
 
 from langchain.chat_models import init_chat_model
 from langchain_openai import OpenAIEmbeddings
@@ -7,6 +8,17 @@ from langchain_openai import OpenAIEmbeddings
 from app.infra.config import BUSINESS_API, INTERNAL_API_TOKEN
 
 logger = logging.getLogger("agent.factory")
+
+
+def _llm_max_retries() -> int:
+    """[ours] S6 治理：LLM SDK 层重试次数（429/5xx/超时由 SDK 指数退避）。
+
+    默认 0 = 与历史行为逐字节一致；运维在 compose 设 LLM_MAX_RETRIES=2 开启。
+    """
+    try:
+        return max(0, int(os.getenv("LLM_MAX_RETRIES", "0")))
+    except ValueError:
+        return 0
 
 _tenant_model_cache: dict = {}
 # 配置缓存有效期（秒），避免每次对话都请求 Go 后端
@@ -97,7 +109,7 @@ async def get_platform_model(app):
             temperature=0,
             max_tokens=1024,
             timeout=30,
-            max_retries=0,
+            max_retries=_llm_max_retries(),  # [ours] S6：env 化，默认 0 行为不变
             api_key=api_key,
             base_url=api_base,
         )
@@ -256,7 +268,7 @@ async def get_tenant_model(app, tenant_id: str):
             temperature=0,
             max_tokens=1024,
             timeout=30,
-            max_retries=0,
+            max_retries=_llm_max_retries(),  # [ours] S6：env 化，默认 0 行为不变
             api_key=api_key,
             base_url=api_base,
         )

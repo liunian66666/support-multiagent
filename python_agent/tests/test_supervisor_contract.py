@@ -53,7 +53,15 @@ class EntryParityTest(unittest.IsolatedAsyncioTestCase):
         decision = TurnDecision(Route("faq_fast", answer="满 99 元包邮"), None,
                                 req.user_message, "rule")
         shortcut = SpecialistResult("faq_rule", content="满 99 元包邮")
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def fake_pool(app):  # 配额/触点在本用例被 patch 掉，只需空连接占位
+            yield SimpleNamespace()
         with patch("app.api.chat._require_trusted_chat", return_value="t_demo"), \
+                patch("app.api.chat._pool_conn", fake_pool), \
+                patch("app.api.chat.check_concurrent_sessions", new_callable=AsyncMock,
+                      return_value=None), \
                 patch("app.api.chat.decide_turn", new_callable=AsyncMock,
                       return_value=decision) as decide, \
                 patch("app.api.chat.execute_shortcut", new_callable=AsyncMock,
