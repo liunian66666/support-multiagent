@@ -58,7 +58,10 @@ class RecallSwitchTest(unittest.IsolatedAsyncioTestCase):
         async def fake_pool(*a, **k):
             return pool
 
-        with patch("app.services.experience_recall._mode", return_value=mode), \
+        async def fake_mode(app, tenant_id):
+            return mode
+
+        with patch("app.services.experience_recall._mode", fake_mode), \
                 patch("app.services.experience_recall"
                       ".list_recallable_experiences", fake_pool), \
                 patch.object(trace, "record", fake_record):
@@ -86,12 +89,47 @@ class RecallSwitchTest(unittest.IsolatedAsyncioTestCase):
         from app.services import trace
         async def boom(*a, **k):
             raise RuntimeError("pg down")
-        with patch("app.services.experience_recall._mode", return_value="inject"), \
+
+        async def fake_mode(app, tenant_id):
+            return "inject"
+
+        with patch("app.services.experience_recall._mode", fake_mode), \
                 patch("app.services.experience_recall"
                       ".list_recallable_experiences", boom), \
                 patch.object(trace, "record"):
             self.assertEqual(
                 await recall_for_turn(None, "t_a", "faq", "退货"), [])
+
+
+class StrategyModeTest(unittest.IsolatedAsyncioTestCase):
+    """[ours] S5 三级开关：已发布策略 recall_mode 优先级最高；缺省回落 env。"""
+
+    async def _mode(self, env_mode, strategy):
+        from app.services import experience_recall as er
+
+        async def fake_strategy(app, tenant_id):
+            if isinstance(strategy, Exception):
+                raise strategy
+            return strategy
+
+        with patch.object(er, "MODE", env_mode), \
+                patch.object(er, "get_active_strategy", fake_strategy):
+            return await er._mode(None, "t_a")
+
+    async def test_published_strategy_overrides_env(self):
+        got = await self._mode("shadow", {"id": 3, "params": {"recall_mode": "inject"},
+                                          "recall_mode": "inject"})
+        self.assertEqual(got, "inject")
+
+    async def test_no_strategy_falls_back_to_env(self):
+        self.assertEqual(await self._mode("shadow", None), "shadow")
+
+    async def test_bad_strategy_mode_falls_back(self):
+        got = await self._mode("shadow", {"id": 3, "params": {"recall_mode": "launch"}})
+        self.assertEqual(got, "shadow")
+
+    async def test_strategy_query_failure_fail_open(self):
+        self.assertEqual(await self._mode("shadow", RuntimeError("pg down")), "shadow")
 
 
 class DistillParseTest(unittest.TestCase):

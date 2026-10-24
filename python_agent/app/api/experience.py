@@ -9,7 +9,13 @@ import os
 
 from fastapi import APIRouter, HTTPException, Request
 
-from app.infra.db.experience import save_feedback_event, set_experience_status
+from app.infra.db.experience import (create_strategy_version,
+                                     get_active_strategy,
+                                     list_strategy_versions,
+                                     publish_strategy_version,
+                                     rollback_strategy_version,
+                                     save_feedback_event,
+                                     set_experience_status)
 
 router = APIRouter()
 
@@ -75,3 +81,76 @@ async def review_experience(request: Request):
         raise HTTPException(status_code=404, detail="经验不存在或不属于该租户")
     return {"code": 0, "data": {"experience_id": experience_id,
                                 "review_status": action}}
+
+
+# ---------------------------------------------------------------------------
+# [ours] S5 策略版本：候选→发布→回滚（一键，生效路径唯一）
+# ---------------------------------------------------------------------------
+
+@router.post("/agent/experience/strategy")
+async def create_strategy(request: Request):
+    """登记候选策略版本（配对评测达标前只是快照，不影响线上）。"""
+    tenant_id = request.headers.get("X-Tenant-Id", "")
+    _guard(request, tenant_id)
+    body = await request.json()
+    if not isinstance(body, dict) or not isinstance(body.get("params"), dict):
+        raise HTTPException(status_code=400, detail="params(对象) 必填")
+    try:
+        version_id = await create_strategy_version(
+            request.app, tenant_id, body["params"],
+            parent_version=body.get("parent_version"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"code": 0, "data": {"version_id": version_id}}
+
+
+@router.get("/agent/experience/strategy")
+async def list_strategies(request: Request):
+    tenant_id = request.headers.get("X-Tenant-Id", "")
+    _guard(request, tenant_id)
+    rows = await list_strategy_versions(request.app, tenant_id)
+    for r in rows:
+        for key in ("published_at", "created_at"):
+            if r.get(key) is not None:
+                r[key] = r[key].isoformat()
+    return {"code": 0, "data": {"versions": rows}}
+
+
+@router.post("/agent/experience/strategy/publish")
+async def publish_strategy(request: Request):
+    """人工发布 candidate 版本；原 published 转 superseded（同事务）。"""
+    tenant_id = request.headers.get("X-Tenant-Id", "")
+    _guard(request, tenant_id)
+    return await _transition_strategy(request, tenant_id, publish_strategy_version)
+
+
+@router.post("/agent/experience/strategy/rollback")
+async def rollback_strategy(request: Request):
+    """一键回滚：重新发布历史版本（≤1 分钟生效——策略缓存 TTL 30s）。"""
+    tenant_id = request.headers.get("X-Tenant-Id", "")
+    _guard(request, tenant_id)
+    return await _transition_strategy(request, tenant_id, rollback_strategy_version)
+
+
+async def _transition_strategy(request: Request, tenant_id: str, fn):
+    body = await request.json()
+    if not isinstance(body, dict) or not isinstance(body.get("version_id"), int):
+        raise HTTPException(status_code=400, detail="version_id(int) 必填")
+    done = await fn(request.app, tenant_id, body["version_id"],
+                    actor=str(body.get("actor") or "internal"))
+    if not done:
+        raise HTTPException(status_code=404,
+                            detail="版本不存在、不属于该租户、或当前状态不允许该迁移")
+    return {"code": 0, "data": {"version_id": done["id"],
+                                "eval_status": "published"}}
+
+
+@router.get("/agent/experience/strategy/active")
+async def active_strategy(request: Request):
+    """当前生效策略（召回开关第三级的真实读取值，审计/看板用）。"""
+    tenant_id = request.headers.get("X-Tenant-Id", "")
+    _guard(request, tenant_id)
+    # 绕过缓存读最新值不适合热路径，但审计接口必须读到发布后的立即状态：
+    # 复用 get_active_strategy（30s 窗口可接受，发布接口本身同进程会即时失效）
+    strategy = await get_active_strategy(request.app, tenant_id)
+    return {"code": 0, "data": strategy}

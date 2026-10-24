@@ -204,6 +204,137 @@ async def set_experience_status(app, tenant_id: str, experience_id: int,
             return await cur.fetchone() is not None
 
 
+# ---------------------------------------------------------------------------
+# [ours] S5 策略版本：候选→发布→回滚（strategy_versions 的读写面）
+# ---------------------------------------------------------------------------
+
+_STRATEGY_STATES = ("candidate", "shadowing", "published", "superseded", "rolled_back")
+_RECALL_MODES = ("off", "shadow", "inject")
+# 已发布策略的进程内缓存（召回热路径每轮都查，30s 收敛窗口足够）
+_strategy_cache: dict = {}
+_STRATEGY_TTL = 30.0
+
+
+def _invalidate_strategy_cache(tenant_id: str) -> None:
+    _strategy_cache.pop(tenant_id, None)
+
+
+async def create_strategy_version(app, tenant_id: str, params: dict,
+                                  parent_version: int | None = None,
+                                  eval_status: str = "candidate") -> int:
+    """新建策略版本（默认 candidate，不进召回）。返回新版本 id。"""
+    if not isinstance(params, dict):
+        raise ValueError("params 必须为对象")
+    mode = params.get("recall_mode", "off")
+    if mode not in _RECALL_MODES:
+        raise ValueError(f"recall_mode 必须是 {'|'.join(_RECALL_MODES)}")
+    if eval_status not in _STRATEGY_STATES:
+        raise ValueError("非法 eval_status")
+    async with app.state.db_pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("""
+                INSERT INTO strategy_versions
+                    (tenant_id, parent_version, params_snapshot, eval_status)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id
+            """, (tenant_id, parent_version, Jsonb(params), eval_status))
+            return (await cur.fetchone())[0]
+
+
+async def list_strategy_versions(app, tenant_id: str, limit: int = 20):
+    async with app.state.db_pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("""
+                SELECT id, parent_version, params_snapshot, eval_status,
+                       published_by, published_at, created_at
+                FROM strategy_versions
+                WHERE tenant_id = %s
+                ORDER BY id DESC
+                LIMIT %s
+            """, (tenant_id, limit))
+            rows = await cur.fetchall()
+    return [dict(zip(("id", "parent_version", "params", "eval_status",
+                      "published_by", "published_at", "created_at"), r))
+            for r in rows]
+
+
+async def get_active_strategy(app, tenant_id: str) -> dict | None:
+    """当轮生效策略：published 行（最新一次发布），带 30s TTL 进程缓存。
+
+    召回热路径调用；查询失败返回 None（fail-open 到 env 级开关）。
+    """
+    import time
+    now = time.time()
+    cached = _strategy_cache.get(tenant_id)
+    if cached and now - cached[0] < _STRATEGY_TTL:
+        return cached[1]
+    payload = None
+    try:
+        async with app.state.db_pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("""
+                    SELECT id, params_snapshot
+                    FROM strategy_versions
+                    WHERE tenant_id = %s AND eval_status = 'published'
+                    ORDER BY published_at DESC NULLS LAST, id DESC
+                    LIMIT 1
+                """, (tenant_id,))
+                row = await cur.fetchone()
+        if row:
+            params = row[1] if isinstance(row[1], dict) else {}
+            payload = {"id": row[0], "params": params,
+                       "recall_mode": params.get("recall_mode", "off")}
+    except Exception:
+        return None  # 不缓存失败结果，下一轮重试
+    _strategy_cache[tenant_id] = (now, payload)
+    return payload
+
+
+async def _transition(app, tenant_id: str, target_id: int,
+                      allow_from: tuple, actor: str) -> dict | None:
+    """单事务状态迁移：目标行 allow_from→published；原 published→superseded。
+
+    返回发布后的行；目标不存在/租户不符/状态不符返回 None。
+    """
+    async with app.state.db_pool.connection() as conn:
+        async with conn.transaction():
+            async with conn.cursor() as cur:
+                await cur.execute("""
+                    SELECT id, eval_status FROM strategy_versions
+                    WHERE id = %s AND tenant_id = %s FOR UPDATE
+                """, (target_id, tenant_id))
+                row = await cur.fetchone()
+                if not row or row[1] not in allow_from:
+                    return None
+                await cur.execute("""
+                    UPDATE strategy_versions SET eval_status = 'superseded'
+                    WHERE tenant_id = %s AND eval_status = 'published' AND id <> %s
+                """, (tenant_id, target_id))
+                await cur.execute("""
+                    UPDATE strategy_versions
+                    SET eval_status = 'published', published_by = %s,
+                        published_at = now()
+                    WHERE id = %s RETURNING id, params_snapshot
+                """, (actor, target_id))
+                done = await cur.fetchone()
+    _invalidate_strategy_cache(tenant_id)
+    return {"id": done[0], "params": done[1]} if done else None
+
+
+async def publish_strategy_version(app, tenant_id: str, version_id: int,
+                                   actor: str = "") -> dict | None:
+    """发布候选策略（配对评测达标后人工触发）。只有 candidate 可发布。"""
+    return await _transition(app, tenant_id, version_id, ("candidate",), actor)
+
+
+async def rollback_strategy_version(app, tenant_id: str, version_id: int,
+                                    actor: str = "") -> dict | None:
+    """回滚：把历史版本（superseded/rolled_back）重新发布，当前发布行转 superseded，
+    生效路径与发布同一条 SQL，保证"一键回滚"与发布语义一致。"""
+    return await _transition(app, tenant_id, version_id,
+                             ("superseded", "rolled_back"), actor)
+
+
 async def save_feedback_event(app, event: dict):
     """幂等写入一条反馈事件；event_id 冲突视为已同步（Outbox 重试安全）。
 

@@ -3,7 +3,7 @@
 
 设计口径（设计方案 §4.4）：
 - 开关三级：全局 env EXPERIENCE_RECALL_MODE（off|shadow|inject，默认 off）
-  → 租户配置（后续 S4 接租户表）→ 策略版本（S4 发布后生效）。
+  → 租户 env 覆盖 → 已发布策略版本 recall_mode（S5 接通，最高优先级）。
   影子期 = shadow：召回并记录 experience_hit 事件，但不改动任何 prompt，
   线上应答与现行为逐字节一致（注入路径零流量）。
 - 匹配面：route 相容 + applicability.keywords 命中用户消息（简单可解释，
@@ -15,7 +15,7 @@
 import logging
 import os
 
-from app.infra.db.experience import list_recallable_experiences
+from app.infra.db.experience import get_active_strategy, list_recallable_experiences
 from app.services import trace
 
 logger = logging.getLogger("agent.experience_recall")
@@ -25,13 +25,30 @@ _MAX_INJECT = 2  # 单轮最多注入条数，控制 prompt 膨胀与错误经�
 _RECALL_POOL = 20
 
 
-def _mode(tenant_id: str) -> str:
-    """三级开关的当前实现：全局 env；租户级/策略级覆盖在 S4 接入。"""
+def _env_mode(tenant_id: str) -> str:
+    """开关前两级：全局 env → 租户 env 覆盖（EXPERIENCE_RECALL_MODE_<tenant>）。"""
     m = MODE
     tenant_override = os.getenv(f"EXPERIENCE_RECALL_MODE_{tenant_id}", "").strip().lower()
     if tenant_override in ("off", "shadow", "inject"):
         m = tenant_override
     return m if m in ("off", "shadow", "inject") else "off"
+
+
+async def _mode(app, tenant_id: str) -> str:
+    """三级开关：全局 env → 租户 env → **已发布策略版本**（S5，最高优先级）。
+
+    无已发布策略时行为与 S3 逐字节一致；策略查询自身 fail-open。
+    """
+    m = _env_mode(tenant_id)
+    try:
+        strategy = await get_active_strategy(app, tenant_id)
+    except Exception:
+        strategy = None
+    if strategy:
+        smode = (strategy.get("params") or {}).get("recall_mode", "")
+        if smode in ("off", "shadow", "inject"):
+            return smode
+    return m
 
 
 def _keywords_of(item: dict) -> list:
@@ -66,7 +83,7 @@ async def recall_for_turn(app, tenant_id: str, route: str, message: str) -> list
 
     返回命中列表（可能为空）。任何异常吞掉返回 []（fail-open）。
     """
-    mode = _mode(tenant_id)
+    mode = await _mode(app, tenant_id)
     if mode == "off":
         return []
     try:
