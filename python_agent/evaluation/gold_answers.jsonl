@@ -1,7 +1,50 @@
-{"id":"faq-shipping","category":"answer_policy","customer":"guest","query":"单笔订单满多少元包邮？","required":[],"forbidden":["已找到以下知识库片段","当前主项目尚未接通","知识来源：","[K1]"]}
-{"id":"faq-invoice","category":"answer_policy","customer":"guest","query":"能开增值税专用发票吗？","required":["发票"],"forbidden":["已找到以下知识库片段","当前主项目尚未接通","知识来源："]}
-{"id":"faq-no-cod","category":"answer_no_policy","customer":"guest","query":"店铺支持货到付款吗？","required":[],"forbidden":["肯定支持货到付款","已找到以下知识库片段","当前主项目尚未接通","没有查询店铺政策的能力"]}
-{"id":"faq-digital-return","category":"answer_applicability","customer":"guest","query":"数据分析数字课程已学习一半还能退吗？","required":[],"forbidden":["已找到以下知识库片段","当前主项目尚未接通"]}
-{"id":"faq-sealed","category":"answer_applicability","customer":"guest","query":"未拆封能退吗？","required":[],"forbidden":["当前主项目尚未接通"]}
-{"id":"faq-opened","category":"answer_applicability","customer":"guest","query":"已经拆封能退吗？","required":[],"forbidden":["当前主项目尚未接通"]}
-{"id":"compound-course-order","category":"answer_compound","customer":"buyer1","query":"ORD-2024-003订单的状态，以及怎么退货？","required":["ORD-2024-003","待发货"],"forbidden":["已找到以下知识库片段","当前主项目尚未接通","知识来源：","[K1]"]}
+{"id": "faq-shipping", "category": "answer_policy", "customer": "guest", "query": "单笔订单满多少元包邮？", "required": [], "forbidden": ["已找到以下知识库片段", "当前主项目尚未接通", "知识来源：", "[K1]"]}
+{"id": "faq-invoice", "category": "answer_policy", "customer": "guest", "query": "能开增值税专用发票吗？", "required": ["发票"], "forbidden": ["已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "faq-no-cod", "category": "answer_no_policy", "customer": "guest", "query": "店铺支持货到付款吗？", "required": [], "forbidden": ["肯定支持货到付款", "已找到以下知识库片段", "当前主项目尚未接通", "没有查询店铺政策的能力"]}
+{"id": "faq-digital-return", "category": "answer_applicability", "customer": "guest", "query": "数据分析数字课程已学习一半还能退吗？", "required": [], "forbidden": ["已找到以下知识库片段", "当前主项目尚未接通"]}
+{"id": "faq-sealed", "category": "answer_applicability", "customer": "guest", "query": "未拆封能退吗？", "required": [], "forbidden": ["当前主项目尚未接通"]}
+{"id": "faq-opened", "category": "answer_applicability", "customer": "guest", "query": "已经拆封能退吗？", "required": [], "forbidden": ["当前主项目尚未接通"]}
+{"id": "compound-course-order", "category": "answer_compound", "customer": "buyer1", "query": "ORD-2024-003订单的状态，以及怎么退货？", "required": ["ORD-2024-003", "待发货"], "forbidden": ["已找到以下知识库片段", "当前主项目尚未接通", "知识来源：", "[K1]"]}
+{"id": "ans-ship-48h", "category": "answer_policy", "customer": "guest", "query": "现货商品付款后多久发货？", "required": ["48 小时"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-ship-holiday", "category": "answer_policy", "customer": "guest", "query": "节假日下单发货会延迟吗？", "required": ["节假日顺延"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-ship-presale", "category": "answer_policy", "customer": "guest", "query": "预售商品什么时候发货？", "required": ["商品页标注"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-ship-tracking", "category": "answer_policy", "customer": "guest", "query": "发货后物流信息在哪查？", "required": ["订单页面"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-ship-pickup-time", "category": "answer_policy", "customer": "guest", "query": "发货后多久能查到揽收？", "required": ["24 小时"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-fee-99", "category": "answer_policy", "customer": "guest", "query": "多少钱包邮？", "required": ["99 元包邮"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-fee-under99", "category": "answer_policy", "customer": "guest", "query": "不够包邮金额运费多少？", "required": ["8 元"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-fee-xinjiang", "category": "answer_policy", "customer": "guest", "query": "新疆收货运费怎么算？", "required": ["新疆"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-fee-tibet", "category": "answer_policy", "customer": "guest", "query": "西藏能享受包邮吗？", "required": ["西藏"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-fee-display", "category": "answer_policy", "customer": "guest", "query": "下单时能看到运费吗？", "required": ["应付运费"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-ret-quality-freight", "category": "answer_policy", "customer": "guest", "query": "质量问题退换货运费谁出？", "required": ["质量问题"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-ret-nr-freight", "category": "answer_policy", "customer": "guest", "query": "无理由退货运费谁承担？", "required": ["买家承担"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-ret-window", "category": "answer_policy", "customer": "guest", "query": "退换货时限是多久？", "required": ["签收后 7 天"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-ret-condition", "category": "answer_policy", "customer": "guest", "query": "退货商品有什么要求？", "required": ["吊牌完整"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-ref-initiate", "category": "answer_policy", "customer": "guest", "query": "退款多久发起？", "required": ["1 个工作日"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-ref-channel", "category": "answer_policy", "customer": "guest", "query": "退款会退到哪里？", "required": ["原路退回"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-ref-balance", "category": "answer_policy", "customer": "guest", "query": "余额退款到账要多久？", "required": ["实时到账"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-ref-card", "category": "answer_policy", "customer": "guest", "query": "银行卡退款多久到账？", "required": ["1 至 3 个工作日"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-ref-progress", "category": "answer_policy", "customer": "guest", "query": "在哪看退款进度？", "required": ["订单详情页"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-ref-accelerate", "category": "answer_policy", "customer": "guest", "query": "客服能加急退款到账吗？", "required": ["不能人工加速"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-inv-type", "category": "answer_policy", "customer": "guest", "query": "你们开什么类型的发票？", "required": ["电子普通发票"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-inv-special", "category": "answer_policy", "customer": "guest", "query": "能开专票吗？", "required": ["增值税专用发票"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-inv-fill", "category": "answer_policy", "customer": "guest", "query": "开票信息怎么填？", "required": ["抬头"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-inv-time", "category": "answer_policy", "customer": "guest", "query": "发票多久能开好？", "required": ["3 个工作日"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-inv-email", "category": "answer_policy", "customer": "guest", "query": "发票发送到哪里？", "required": ["邮箱"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-hr-hours", "category": "answer_policy", "customer": "guest", "query": "人工客服几点到几点在线？", "required": ["21:00"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-hr-offhours", "category": "answer_policy", "customer": "guest", "query": "客服下班了还能联系吗？", "required": ["留言"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-hr-wait", "category": "answer_policy", "customer": "guest", "query": "转人工大概要等多久？", "required": ["等待"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-na-coupon", "category": "answer_no_policy", "customer": "guest", "query": "有优惠券吗？", "required": [], "forbidden": ["[K1]", "可以领取优惠券", "已找到以下知识库片段", "当前主项目尚未接通", "有优惠券可以领", "知识来源："]}
+{"id": "ans-na-points", "category": "answer_no_policy", "customer": "guest", "query": "消费能积分吗？", "required": [], "forbidden": ["[K1]", "可以积分", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源：", "能获得积分"]}
+{"id": "ans-na-gift", "category": "answer_no_policy", "customer": "guest", "query": "下单送赠品吗？", "required": [], "forbidden": ["[K1]", "会送赠品", "已找到以下知识库片段", "当前主项目尚未接通", "有赠品", "知识来源："]}
+{"id": "ans-na-installment", "category": "answer_no_policy", "customer": "guest", "query": "支持花呗分期吗？", "required": [], "forbidden": ["[K1]", "可以分期", "已找到以下知识库片段", "当前主项目尚未接通", "支持花呗", "知识来源："]}
+{"id": "ans-na-warranty", "category": "answer_no_policy", "customer": "guest", "query": "商品保修几年？", "required": [], "forbidden": ["[K1]", "保修 1 年", "保修两年", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-na-price-protect", "category": "answer_no_policy", "customer": "guest", "query": "降价能退差价吗？", "required": [], "forbidden": ["[K1]", "可以申请价保", "可以退差价", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-na-redpacket", "category": "answer_no_policy", "customer": "guest", "query": "好评返现怎么领？", "required": [], "forbidden": ["[K1]", "好评返 5 元", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源：", "返现红包"]}
+{"id": "ans-na-reissue", "category": "answer_no_policy", "customer": "guest", "query": "少发货了能补发吗？", "required": [], "forbidden": ["[K1]", "会安排补发", "可以给您补发", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-na-address", "category": "answer_no_policy", "customer": "guest", "query": "发货后能改地址吗？", "required": [], "forbidden": ["[K1]", "可以修改收货地址", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源：", "能改地址"]}
+{"id": "ans-na-insurance", "category": "answer_no_policy", "customer": "guest", "query": "订单有运费险吗？", "required": [], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "有运费险", "知识来源：", "附带运费险"]}
+{"id": "ans-na-overseas", "category": "answer_no_policy", "customer": "guest", "query": "能寄到国外吗？", "required": [], "forbidden": ["[K1]", "可以邮寄到国外", "已找到以下知识库片段", "当前主项目尚未接通", "支持海外配送", "知识来源："]}
+{"id": "ans-order-001", "category": "answer_order_lookup", "customer": "buyer1", "query": "订单ORD-2024-001现在什么状态？", "required": ["ORD-2024-001", "已完成"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-order-002", "category": "answer_order_lookup", "customer": "buyer1", "query": "帮我查一下ORD-2024-002的物流状态", "required": ["ORD-2024-002", "配送中"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-app-vip-return", "category": "answer_applicability", "customer": "guest", "query": "VIP会员服务没效果可以七天无理由退吗？", "required": [], "forbidden": ["[K1]", "吊牌完整即可退货", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-app-cannot-pay", "category": "answer_process", "customer": "guest", "query": "帮我把这个订单付了", "required": [], "forbidden": ["[K1]", "已为您完成支付", "已找到以下知识库片段", "当前主项目尚未接通", "支付成功", "知识来源："]}

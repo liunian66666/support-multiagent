@@ -1,24 +1,100 @@
-{"id":"shipping-threshold","category":"policy","tenant_id":"t_demo","query":"满多少元包邮？","gold_docs":["8b0a0bf7d19d41b8b519b2c2a00fb54e"],"gold_evidence_terms":["99 元包邮"]}
-{"id":"shipping-region","category":"policy","tenant_id":"t_demo","query":"新疆地区运费怎么算？","gold_docs":["8b0a0bf7d19d41b8b519b2c2a00fb54e"],"gold_evidence_terms":["新疆"]}
-{"id":"return-shipping","category":"policy","tenant_id":"t_demo","query":"质量问题退货的运费谁承担？","gold_docs":["8b0a0bf7d19d41b8b519b2c2a00fb54e"],"gold_evidence_terms":["质量问题","运费"]}
-{"id":"return-window","category":"policy","tenant_id":"t_demo","query":"签收几天内能申请退货？","gold_docs":["8b0a0bf7d19d41b8b519b2c2a00fb54e"],"gold_evidence_terms":["签收后 7 天"]}
-{"id":"invoice-timing","category":"policy","tenant_id":"t_demo","query":"电子发票多久开出？","gold_docs":["8b0a0bf7d19d41b8b519b2c2a00fb54e"],"gold_evidence_terms":["3 个工作日"]}
-{"id":"human-handoff","category":"process","tenant_id":"t_demo","query":"想转人工客服应该怎么做？","gold_docs":["c111e8bd171b4bfe8abf54fd7ce3ca30"],"gold_evidence_terms":["转人工"]}
-{"id":"return-intake","category":"process","tenant_id":"t_demo","query":"退货咨询前客服需要核验哪些信息？","gold_docs":["c111e8bd171b4bfe8abf54fd7ce3ca30"],"gold_evidence_terms":["退货咨询","订单号"]}
-{"id":"unsupported-crypto","category":"no_answer","tenant_id":"t_demo","query":"比特币能否支付课程学费？","gold_docs":[]}
-{"id":"unsupported-flight","category":"no_answer","tenant_id":"t_demo","query":"明天北京到上海的航班几点起飞？","gold_docs":[]}
-{"id":"presale-dispatch","category":"policy","tenant_id":"t_demo","query":"预售商品何时发货？","gold_docs":["8b0a0bf7d19d41b8b519b2c2a00fb54e"],"gold_evidence_terms":["预售商品"]}
-{"id":"refund-bank","category":"policy","tenant_id":"t_demo","query":"退款退到银行卡一般多久到账？","gold_docs":["8b0a0bf7d19d41b8b519b2c2a00fb54e"],"gold_evidence_terms":["银行卡","1 至 3"]}
-{"id":"invoice-vat","category":"policy","tenant_id":"t_demo","query":"能开增值税专用发票吗？","gold_docs":["8b0a0bf7d19d41b8b519b2c2a00fb54e"],"gold_evidence_terms":["增值税专用发票"]}
-{"id":"human-hours","category":"policy","tenant_id":"t_demo","query":"人工客服几点上班？","gold_docs":["8b0a0bf7d19d41b8b519b2c2a00fb54e"],"gold_evidence_terms":["9:00"]}
-{"id":"refund-process","category":"process","tenant_id":"t_demo","query":"退款咨询客服需要先核对什么？","gold_docs":["c111e8bd171b4bfe8abf54fd7ce3ca30"],"gold_evidence_terms":["退款与支付","归属核验"]}
-{"id":"unsupported-cod","category":"no_answer","tenant_id":"t_demo","query":"支持货到付款吗？","gold_docs":[]}
-{"id":"unsupported-installments","category":"no_answer","tenant_id":"t_demo","query":"买课程支持花呗分期吗？","gold_docs":[]}
-{"id":"unsupported-return-address","category":"no_answer","tenant_id":"t_demo","query":"退货地址和收件人电话是什么？","gold_docs":[]}
-{"id":"unsupported-course-schedule","category":"no_answer","tenant_id":"t_demo","query":"数据分析课程下周几开课？","gold_docs":[]}
-{"id":"unsupported-trial","category":"no_answer","tenant_id":"t_demo","query":"Python课程可以免费试听几节？","gold_docs":[]}
-{"id":"unsupported-vip-points","category":"no_answer","tenant_id":"t_demo","query":"VIP会员消费能积多少积分？","gold_docs":[]}
-{"id":"unsupported-crypto-refund","category":"no_answer","tenant_id":"t_demo","query":"退款可以退到比特币钱包吗？","gold_docs":[]}
-{"id":"unsupported-order-status","category":"no_answer","tenant_id":"t_demo","query":"订单ORD-2024-003是否已经发货？","gold_docs":[]}
-{"id":"unsupported-food-shelf-life","category":"no_answer","tenant_id":"t_demo","query":"店铺零食保质期多久？","gold_docs":[]}
-{"id":"unsupported-digital-course-return","category":"no_answer","tenant_id":"t_demo","query":"数据分析数字课程已学习一半还能退吗？","gold_docs":[]}
+{"id": "shipping-threshold", "category": "policy", "tenant_id": "t_demo", "query": "满多少元包邮？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["99 元包邮"]}
+{"id": "shipping-region", "category": "policy", "tenant_id": "t_demo", "query": "新疆地区运费怎么算？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["新疆"]}
+{"id": "return-shipping", "category": "policy", "tenant_id": "t_demo", "query": "质量问题退货的运费谁承担？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["质量问题", "运费"]}
+{"id": "return-window", "category": "policy", "tenant_id": "t_demo", "query": "签收几天内能申请退货？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["签收后 7 天"]}
+{"id": "invoice-timing", "category": "policy", "tenant_id": "t_demo", "query": "电子发票多久开出？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["3 个工作日"]}
+{"id": "human-handoff", "category": "process", "tenant_id": "t_demo", "query": "想转人工客服应该怎么做？", "gold_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30"], "gold_evidence_terms": ["转人工"]}
+{"id": "return-intake", "category": "process", "tenant_id": "t_demo", "query": "退货咨询前客服需要核验哪些信息？", "gold_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30"], "gold_evidence_terms": ["退货咨询", "订单号"]}
+{"id": "unsupported-crypto", "category": "no_answer", "tenant_id": "t_demo", "query": "比特币能否支付课程学费？", "gold_docs": []}
+{"id": "unsupported-flight", "category": "no_answer", "tenant_id": "t_demo", "query": "明天北京到上海的航班几点起飞？", "gold_docs": []}
+{"id": "presale-dispatch", "category": "policy", "tenant_id": "t_demo", "query": "预售商品何时发货？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["预售商品"]}
+{"id": "refund-bank", "category": "policy", "tenant_id": "t_demo", "query": "退款退到银行卡一般多久到账？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["银行卡", "1 至 3"]}
+{"id": "invoice-vat", "category": "policy", "tenant_id": "t_demo", "query": "能开增值税专用发票吗？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["增值税专用发票"]}
+{"id": "human-hours", "category": "policy", "tenant_id": "t_demo", "query": "人工客服几点上班？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["9:00"]}
+{"id": "refund-process", "category": "process", "tenant_id": "t_demo", "query": "退款咨询客服需要先核对什么？", "gold_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30"], "gold_evidence_terms": ["退款与支付", "归属核验"]}
+{"id": "unsupported-cod", "category": "no_answer", "tenant_id": "t_demo", "query": "支持货到付款吗？", "gold_docs": []}
+{"id": "unsupported-installments", "category": "no_answer", "tenant_id": "t_demo", "query": "买课程支持花呗分期吗？", "gold_docs": []}
+{"id": "unsupported-return-address", "category": "no_answer", "tenant_id": "t_demo", "query": "退货地址和收件人电话是什么？", "gold_docs": []}
+{"id": "unsupported-course-schedule", "category": "no_answer", "tenant_id": "t_demo", "query": "数据分析课程下周几开课？", "gold_docs": []}
+{"id": "unsupported-trial", "category": "no_answer", "tenant_id": "t_demo", "query": "Python课程可以免费试听几节？", "gold_docs": []}
+{"id": "unsupported-vip-points", "category": "no_answer", "tenant_id": "t_demo", "query": "VIP会员消费能积多少积分？", "gold_docs": []}
+{"id": "unsupported-crypto-refund", "category": "no_answer", "tenant_id": "t_demo", "query": "退款可以退到比特币钱包吗？", "gold_docs": []}
+{"id": "unsupported-order-status", "category": "no_answer", "tenant_id": "t_demo", "query": "订单ORD-2024-003是否已经发货？", "gold_docs": []}
+{"id": "unsupported-food-shelf-life", "category": "no_answer", "tenant_id": "t_demo", "query": "店铺零食保质期多久？", "gold_docs": []}
+{"id": "unsupported-digital-course-return", "category": "no_answer", "tenant_id": "t_demo", "query": "数据分析数字课程已学习一半还能退吗？", "gold_docs": []}
+{"id": "ship-physical-hours", "category": "policy", "tenant_id": "t_demo", "query": "现货商品付款后多久发货？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["48 小时"]}
+{"id": "ship-holiday-delay", "category": "policy", "tenant_id": "t_demo", "query": "节假日下单什么时候发货？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["节假日顺延"]}
+{"id": "ship-presale", "category": "policy", "tenant_id": "t_demo", "query": "预售商品按什么时间发货？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["预售商品"]}
+{"id": "ship-tracking-sync", "category": "policy", "tenant_id": "t_demo", "query": "物流单号在哪里查看？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["订单页面"]}
+{"id": "ship-tracking-time", "category": "policy", "tenant_id": "t_demo", "query": "发货后多久能查到物流揽收记录？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["揽收"]}
+{"id": "ship-fee-under99", "category": "policy", "tenant_id": "t_demo", "query": "订单不满99元运费是多少？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["8 元"]}
+{"id": "ship-full99", "category": "policy", "tenant_id": "t_demo", "query": "单笔订单实付多少钱可以包邮？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["99 元包邮"]}
+{"id": "ship-region-tibet", "category": "policy", "tenant_id": "t_demo", "query": "西藏地区运费怎么计算？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["西藏"]}
+{"id": "ship-region-inner-mongolia", "category": "policy", "tenant_id": "t_demo", "query": "内蒙古部分地区运费如何？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["内蒙古"]}
+{"id": "ship-fee-display", "category": "policy", "tenant_id": "t_demo", "query": "下单时运费会显示出来吗？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["应付运费"]}
+{"id": "ship-remote-exclude", "category": "policy", "tenant_id": "t_demo", "query": "包邮政策对偏远地区适用吗？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["偏远地区除外"]}
+{"id": "ret-quality-freight", "category": "policy", "tenant_id": "t_demo", "query": "质量问题退换货的运费谁出？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["质量问题"]}
+{"id": "ret-quality-roundtrip", "category": "policy", "tenant_id": "t_demo", "query": "质量问题换货运费谁承担？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["往返运费由店铺承担"]}
+{"id": "ret-no-reason-freight", "category": "policy", "tenant_id": "t_demo", "query": "七天无理由退货的寄回运费谁付？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["买家承担"]}
+{"id": "ret-window", "category": "policy", "tenant_id": "t_demo", "query": "退换货需要在签收几天内发起？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["签收后 7 天"]}
+{"id": "ret-tag-requirement", "category": "policy", "tenant_id": "t_demo", "query": "退回商品需要保持什么状态？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["吊牌完整"]}
+{"id": "ret-resale-impact", "category": "policy", "tenant_id": "t_demo", "query": "影响二次销售的商品还能退吗？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["二次销售"]}
+{"id": "ret-no-reason-days", "category": "policy", "tenant_id": "t_demo", "query": "支持七天无理由退货吗？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["七天无理由"]}
+{"id": "ref-initiate", "category": "policy", "tenant_id": "t_demo", "query": "验收通过后多久发起退款？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["1 个工作日"]}
+{"id": "ref-channel", "category": "policy", "tenant_id": "t_demo", "query": "退款退到哪个账户？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["原路退回"]}
+{"id": "ref-balance-time", "category": "policy", "tenant_id": "t_demo", "query": "余额类退款多久到账？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["实时到账"]}
+{"id": "ref-card-time", "category": "policy", "tenant_id": "t_demo", "query": "银行卡退款多久到账？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["银行卡 1 至 3 个工作日"]}
+{"id": "ref-view-progress", "category": "policy", "tenant_id": "t_demo", "query": "在哪里查看退款进度？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["订单详情页"]}
+{"id": "ref-no-accelerate", "category": "policy", "tenant_id": "t_demo", "query": "客服能帮忙加快退款到账吗？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["不能人工加速"]}
+{"id": "ref-verify-gate", "category": "policy", "tenant_id": "t_demo", "query": "退款发起的前提条件是什么？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["验收通过后"]}
+{"id": "inv-supported", "category": "policy", "tenant_id": "t_demo", "query": "支持开具哪种发票？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["电子普通发票"]}
+{"id": "inv-no-special", "category": "policy", "tenant_id": "t_demo", "query": "能开增值税专用发票吗？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["暂不支持增值税专用发票"]}
+{"id": "inv-fill", "category": "policy", "tenant_id": "t_demo", "query": "发票抬头和税号在哪里填写？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["抬头"]}
+{"id": "inv-timing", "category": "policy", "tenant_id": "t_demo", "query": "发票多久开出？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["3 个工作日"]}
+{"id": "inv-email", "category": "policy", "tenant_id": "t_demo", "query": "发票会发送到哪里？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["预留邮箱"]}
+{"id": "hr-service-window", "category": "policy", "tenant_id": "t_demo", "query": "在线人工客服的服务时间是什么？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["9:00"]}
+{"id": "hr-offhours", "category": "policy", "tenant_id": "t_demo", "query": "非服务时段怎么联系客服？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["下一个服务时段"]}
+{"id": "hr-no-promise-wait", "category": "policy", "tenant_id": "t_demo", "query": "转人工需要等多久？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["可能需要等待"]}
+{"id": "hr-no-promise-duration", "category": "policy", "tenant_id": "t_demo", "query": "客服会承诺响应时长吗？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["不承诺具体响应时长"]}
+{"id": "pr-return-collect", "category": "process", "tenant_id": "t_demo", "query": "发起退货前客服要收集哪些信息？", "gold_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30"], "gold_evidence_terms": ["退货原因"]}
+{"id": "pr-order-verify-first", "category": "process", "tenant_id": "t_demo", "query": "展示订单信息前需要先核验什么？", "gold_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30"], "gold_evidence_terms": ["归属"]}
+{"id": "pr-verify-fail", "category": "process", "tenant_id": "t_demo", "query": "身份核验失败时客服会怎么处理？", "gold_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30"], "gold_evidence_terms": ["不推测订单状态"]}
+{"id": "pr-refund-not-execute", "category": "process", "tenant_id": "t_demo", "query": "客服能直接给我退款吗？", "gold_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30"], "gold_evidence_terms": ["不执行退款"]}
+{"id": "pr-pay-not-execute", "category": "process", "tenant_id": "t_demo", "query": "客服可以替我完成支付吗？", "gold_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30"], "gold_evidence_terms": ["支付操作"]}
+{"id": "pr-handoff-takeover", "category": "process", "tenant_id": "t_demo", "query": "转人工之后由谁处理？", "gold_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30"], "gold_evidence_terms": ["人工客服接管"]}
+{"id": "pr-handoff-no-promise", "category": "process", "tenant_id": "t_demo", "query": "转人工后会承诺多久回复吗？", "gold_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30"], "gold_evidence_terms": ["不得承诺等待时长"]}
+{"id": "pr-handoff-create-ticket", "category": "process", "tenant_id": "t_demo", "query": "明确要求转人工时会发生什么？", "gold_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30"], "gold_evidence_terms": ["创建工单"]}
+{"id": "pr-process-not-policy", "category": "process", "tenant_id": "t_demo", "query": "流程文档能当店铺承诺用吗？", "gold_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30"], "gold_evidence_terms": ["不构成退换货资格"]}
+{"id": "na-warranty", "category": "no_answer", "tenant_id": "t_demo", "query": "手机保修期是几年？", "gold_docs": [], "gold_evidence_terms": ["保修"]}
+{"id": "na-installment", "category": "no_answer", "tenant_id": "t_demo", "query": "支持花呗分期付款吗？", "gold_docs": [], "gold_evidence_terms": ["分期"]}
+{"id": "na-gift", "category": "no_answer", "tenant_id": "t_demo", "query": "下单会送赠品吗？", "gold_docs": [], "gold_evidence_terms": ["赠品"]}
+{"id": "na-membership", "category": "no_answer", "tenant_id": "t_demo", "query": "店铺有会员积分制度吗？", "gold_docs": [], "gold_evidence_terms": ["会员"]}
+{"id": "na-price-protect", "category": "no_answer", "tenant_id": "t_demo", "query": "降价了可以申请价保退差价吗？", "gold_docs": [], "gold_evidence_terms": ["价保"]}
+{"id": "na-cod", "category": "no_answer", "tenant_id": "t_demo", "query": "支持货到付款吗？", "gold_docs": [], "gold_evidence_terms": ["货到付款"]}
+{"id": "na-lazy-station", "category": "no_answer", "tenant_id": "t_demo", "query": "可以不送货直接放驿站吗？", "gold_docs": [], "gold_evidence_terms": ["驿站"]}
+{"id": "na-redpacket", "category": "no_answer", "tenant_id": "t_demo", "query": "评价返现的红包怎么领？", "gold_docs": [], "gold_evidence_terms": ["红包"]}
+{"id": "na-reissue", "category": "no_answer", "tenant_id": "t_demo", "query": "商品少发了可以补发吗？", "gold_docs": [], "gold_evidence_terms": ["补发"]}
+{"id": "na-address-edit", "category": "no_answer", "tenant_id": "t_demo", "query": "发货后还能修改收货地址吗？", "gold_docs": [], "gold_evidence_terms": ["修改收货地址"]}
+{"id": "na-coupon", "category": "no_answer", "tenant_id": "t_demo", "query": "有店铺优惠券可以领吗？", "gold_docs": [], "gold_evidence_terms": ["优惠券"]}
+{"id": "na-app", "category": "no_answer", "tenant_id": "t_demo", "query": "有没有手机App可以下单？", "gold_docs": [], "gold_evidence_terms": ["App"]}
+{"id": "ship-physical-48", "category": "policy", "tenant_id": "t_demo", "query": "付完款现货多久能寄出？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["现货商品"]}
+{"id": "ship-tracking-24h", "category": "policy", "tenant_id": "t_demo", "query": "物流信息一般几天内能查到？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["24 小时内"]}
+{"id": "ret-quality-who-pays", "category": "policy", "tenant_id": "t_demo", "query": "东西有问题，退回来的邮费谁出？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["由店铺承担"]}
+{"id": "ret-buyer-pays", "category": "policy", "tenant_id": "t_demo", "query": "无理由退货为什么要我出运费？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["退回运费由买家承担"]}
+{"id": "ret-condition", "category": "policy", "tenant_id": "t_demo", "query": "退货对商品本身有什么要求？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["不影响二次销售"]}
+{"id": "ref-after-inspection", "category": "policy", "tenant_id": "t_demo", "query": "退的货检查完几天开始退款？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["退货验收"]}
+{"id": "inv-remark-fill", "category": "policy", "tenant_id": "t_demo", "query": "开票信息下单时怎么给？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["备注中填写"]}
+{"id": "inv-after-finish", "category": "policy", "tenant_id": "t_demo", "query": "发票是下单就开还是完成后开？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["订单完成后"]}
+{"id": "hr-morning-open", "category": "policy", "tenant_id": "t_demo", "query": "客服晚上几点下班？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["至 21:00"]}
+{"id": "hr-leave-message", "category": "policy", "tenant_id": "t_demo", "query": "客服下班了留言有用吗？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["可留言"]}
+{"id": "hr-peak-wait", "category": "policy", "tenant_id": "t_demo", "query": "为什么转人工要排队？", "gold_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e"], "gold_evidence_terms": ["高峰期"]}
+{"id": "pr-return-order-no", "category": "process", "tenant_id": "t_demo", "query": "退货为什么要先报订单号？", "gold_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30"], "gold_evidence_terms": ["订单号"]}
+{"id": "pr-identity-check", "category": "process", "tenant_id": "t_demo", "query": "查订单前为什么要验证身份？", "gold_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30"], "gold_evidence_terms": ["客户身份"]}
+{"id": "pr-refund-handoff", "category": "process", "tenant_id": "t_demo", "query": "要退款但机器人办不了怎么办？", "gold_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30"], "gold_evidence_terms": ["相关诉求可转人工"]}
+{"id": "pr-refund-approval", "category": "process", "tenant_id": "t_demo", "query": "退款功能开放需要什么条件？", "gold_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30"], "gold_evidence_terms": ["独立审批"]}
+{"id": "pr-handoff-request", "category": "process", "tenant_id": "t_demo", "query": "我不想跟机器人聊，怎么转人工？", "gold_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30"], "gold_evidence_terms": ["明确要求"]}
+{"id": "pr-scope-limit", "category": "process", "tenant_id": "t_demo", "query": "流程说明里写的内容算商家承诺吗？", "gold_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30"], "gold_evidence_terms": ["咨询流程"]}
+{"id": "pr-freight-clause", "category": "process", "tenant_id": "t_demo", "query": "运费条款应该查政策还是流程文档？", "gold_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30"], "gold_evidence_terms": ["到账时间、运费"]}
+{"id": "na-freight-insurance", "category": "no_answer", "tenant_id": "t_demo", "query": "订单带运费险吗？", "gold_docs": [], "gold_evidence_terms": ["运费险"]}
+{"id": "na-self-pickup", "category": "no_answer", "tenant_id": "t_demo", "query": "线上门店支持到店自提吗？", "gold_docs": [], "gold_evidence_terms": ["自提"]}
+{"id": "na-overseas", "category": "no_answer", "tenant_id": "t_demo", "query": "可以邮寄到国外吗？", "gold_docs": [], "gold_evidence_terms": ["海外"]}
