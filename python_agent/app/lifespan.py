@@ -24,7 +24,8 @@ from app.infra.db.kb_policy import ensure_kb_policy_schema
 from app.infra.db.prompt import load_active_prompt, seed_default_prompt
 from app.infra.db.session import verify_agent_tables
 from app.infra.db.trace import ensure_trace_table
-from app.infra.db.experience import ensure_experience_schema  # [ours] S2 经验层四表
+from app.infra.db.experience import (  # [ours] S2 经验层四表 + S3 召回索引
+    ensure_experience_indexes, ensure_experience_schema)
 from app.infra import pubsub as redis_pubsub
 from app.services.invalidation import clear_tenant_caches
 from app.workers.cleanup import session_cleanup_loop
@@ -83,6 +84,7 @@ async def lifespan(app: FastAPI):
             await ensure_kb_policy_schema(conn)
             await ensure_trace_table(conn)
             await ensure_experience_schema(conn)  # [ours] S2 经验层四表（幂等）
+            await ensure_experience_indexes(conn)  # [ours] S3 提炼去重/召回索引（幂等）
             await seed_default_prompt(conn)
             global_prompt = await load_active_prompt(conn, "")
         logger.info("✅ global prompt loaded (len=%d)", len(global_prompt))
@@ -152,6 +154,13 @@ async def lifespan(app: FastAPI):
             app.state.kb_workers.append(t)
         logger.info("✅ KB index workers started (%d)", n_workers)
 
+        # 9. [ours] S3 经验提炼后台任务（Redis 锁互斥，间隔 0 可禁用）
+        from app.workers import distill as experience_distill
+        app.state.distill_task = asyncio.create_task(
+            experience_distill.experience_distill_loop(app))
+        logger.info("✅ experience distill task started (interval=%ds)",
+                    experience_distill.INTERVAL)
+
     except Exception as e:
         logger.exception(f"❌ 服务启动初始化失败:{str(e)}")
         raise
@@ -185,6 +194,13 @@ async def lifespan(app: FastAPI):
         app.state.summary_task.cancel()
         try:
             await app.state.summary_task
+        except asyncio.CancelledError:
+            pass
+    # [ours] S3 停止经验提炼后台任务
+    if getattr(app.state, "distill_task", None) is not None:
+        app.state.distill_task.cancel()
+        try:
+            await app.state.distill_task
         except asyncio.CancelledError:
             pass
     if getattr(app.state, "redis_client", None) is not None:

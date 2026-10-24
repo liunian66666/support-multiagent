@@ -18,6 +18,8 @@ from app.infra.db.session import touch_session_retry
 from app.infra.db_pool import _pool_conn
 from app.schemas import AgentResp, ChatRequest, ResumeRequest
 from app.services.dialog import _record_to_checkpoint, _record_usage_after_chat
+# [ours] S3 经验召回（默认 off：影子模式只记事件，注入模式才改 prompt）
+from app.services.experience_recall import augment_message, recall_for_turn
 from app.services.specialists import execute_shortcut
 from app.services.supervisor import _compound_plan as _compound_plan
 from app.services.supervisor import decide_turn
@@ -92,8 +94,12 @@ async def _agent_chat_impl(req: ChatRequest, request: Request):
     specialist_faq = route.specialist == "faq"
     agent = (await get_faq_specialist(request.app, tenant_id) if specialist_faq
              else await get_intake_specialist(request.app, tenant_id))
+    # [ours] S3 经验召回：off 恒空；shadow 只记 experience_hit 事件不改应答；
+    # inject 把已审核经验附加到当轮模型输入（检查点/记账仍用原话，不被污染）
+    exp_hits = await recall_for_turn(request.app, tenant_id, decision.specialist,
+                                     user_message)
     input_messages = [*await recent_messages(request.app, thread_id),
-                      HumanMessage(content=user_message)]
+                      HumanMessage(content=augment_message(user_message, exp_hits))]
 
     config = {"configurable": {"thread_id": thread_id}}
     try:
@@ -198,8 +204,11 @@ async def agent_chat_stream(req: ChatRequest, request: Request):
             specialist_faq = route.specialist == "faq"
             agent = (await get_faq_specialist(request.app, tenant_id) if specialist_faq
                      else await get_intake_specialist(request.app, tenant_id))
+            # [ours] S3 经验召回（与 JSON 链路同点位：只影响模型输入，不影响检查点）
+            exp_hits = await recall_for_turn(request.app, tenant_id,
+                                             decision.specialist, user_message)
             input_messages = [*await recent_messages(request.app, thread_id),
-                              HumanMessage(content=user_message)]
+                              HumanMessage(content=augment_message(user_message, exp_hits))]
             config = {"configurable": {"thread_id": thread_id}}
             async with _pool_conn(request.app) as conn:
                 await touch_session_retry(request.app, thread_id)

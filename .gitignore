@@ -48,3 +48,6 @@ orders_backup.sql
 
 # AI 助手工作目录
 .workbuddy-ai/
+
+# 本地会话记忆目录（不随仓库发布）
+.workbuddy/

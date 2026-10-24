@@ -9,7 +9,7 @@ import os
 
 from fastapi import APIRouter, HTTPException, Request
 
-from app.infra.db.experience import save_feedback_event
+from app.infra.db.experience import save_feedback_event, set_experience_status
 
 router = APIRouter()
 
@@ -51,3 +51,27 @@ async def ingest_feedback(request: Request):
         if await save_feedback_event(request.app, ev):
             stored += 1
     return {"code": 0, "data": {"received": len(events), "stored": stored}}
+
+
+@router.post("/agent/experience/review")
+async def review_experience(request: Request):
+    """[ours] S3 审核接口（供 S4 管理页调用）：publish / suspend 单条经验。
+
+    与投喂接口同款内部鉴权；租户隔离在 SQL 层（UPDATE 带 tenant_id 条件），
+    跨租户 ID 一律 404。published 是经验进入召回池的唯一入口。
+    """
+    tenant_id = request.headers.get("X-Tenant-Id", "")
+    _guard(request, tenant_id)
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="载荷必须为对象")
+    experience_id = body.get("experience_id")
+    action = body.get("action")
+    if not isinstance(experience_id, int) or action not in ("publish", "suspend"):
+        raise HTTPException(status_code=400,
+                            detail="experience_id(int)/action(publish|suspend) 必填")
+    ok = await set_experience_status(request.app, tenant_id, experience_id, action)
+    if not ok:
+        raise HTTPException(status_code=404, detail="经验不存在或不属于该租户")
+    return {"code": 0, "data": {"experience_id": experience_id,
+                                "review_status": action}}

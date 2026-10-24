@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
 
-from app.api.experience import ingest_feedback
+from app.api.experience import ingest_feedback, review_experience
 
 
 def make_request(events, tenant="t_shop", token="tok"):
@@ -69,6 +69,59 @@ class ExperienceFeedbackApiTest(unittest.IsolatedAsyncioTestCase):
                 make_request([event("outbox:1"), event("outbox:2")]))
         self.assertEqual(result["code"], 0)
         self.assertEqual(result["data"], {"received": 2, "stored": 1})
+
+
+class ExperienceReviewApiTest(unittest.IsolatedAsyncioTestCase):
+    """[ours] S3 审核接口：publish/suspend 契约与租户隔离行为。"""
+
+    def setUp(self):
+        patcher = patch.dict(os.environ, {"INTERNAL_API_TOKEN": TOKEN})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _req(self, body, tenant="t_shop", token="tok"):
+        return SimpleNamespace(
+            headers={"X-Internal-Token": token, "X-Tenant-Id": tenant},
+            app=SimpleNamespace(),
+            json=AsyncMock(return_value=body),
+        )
+
+    async def test_requires_token(self):
+        with self.assertRaises(HTTPException) as ctx:
+            await review_experience(self._req({"experience_id": 1, "action": "publish"},
+                                              token="wrong"))
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    async def test_bad_action_or_id_rejected(self):
+        for body in ({"experience_id": 1, "action": "delete"},
+                     {"experience_id": "1", "action": "publish"},
+                     {"action": "publish"}):
+            with self.subTest(body=body):
+                with self.assertRaises(HTTPException) as ctx:
+                    await review_experience(self._req(body))
+                self.assertEqual(ctx.exception.status_code, 400)
+
+    async def test_cross_tenant_id_404(self):
+        async def fake_set(app, tenant_id, exp_id, action):
+            return False  # SQL 层 tenant_id 条件不命中
+        with patch("app.api.experience.set_experience_status", fake_set):
+            with self.assertRaises(HTTPException) as ctx:
+                await review_experience(self._req(
+                    {"experience_id": 99, "action": "publish"}))
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    async def test_publish_success(self):
+        calls = []
+
+        async def fake_set(app, tenant_id, exp_id, action):
+            calls.append((tenant_id, exp_id, action))
+            return True
+        with patch("app.api.experience.set_experience_status", fake_set):
+            result = await review_experience(self._req(
+                {"experience_id": 7, "action": "publish"}))
+        self.assertEqual(result["data"], {"experience_id": 7,
+                                          "review_status": "publish"})
+        self.assertEqual(calls, [("t_shop", 7, "publish")])
 
 
 if __name__ == "__main__":
