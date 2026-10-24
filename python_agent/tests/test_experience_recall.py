@@ -45,7 +45,11 @@ class AugmentTest(unittest.TestCase):
         out = augment_message("原始问题", match_experiences([item()], "faq", "退货"))
         self.assertIn("原始问题", out)
         self.assertIn("人工审核", out)
-        self.assertIn("以店铺资料为准", out)  # 事实锚定护栏必须在
+        # B 方案护栏：经验只指导处理方式；KB 已有数值必须照常给出，
+        # 不得借经验回避数值（S9 配对评测中 2 题因此类措辞回退）
+        self.assertIn("仅指导处理方式", out)
+        self.assertIn("必须直接给出", out)
+        self.assertIn("以核验结果与店铺资料为准", out)
 
 
 class RecallSwitchTest(unittest.IsolatedAsyncioTestCase):

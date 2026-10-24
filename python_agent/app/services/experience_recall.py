@@ -102,8 +102,16 @@ async def recall_for_turn(app, tenant_id: str, route: str, message: str) -> list
     return hits if mode == "inject" else []
 
 
-# 注入语句的固定护栏前缀：经验只作参考做法，事实仍锚定 KB 证据
-_INJECT_HEADER = "以下是经人工审核的历史服务经验（仅参考做法，政策数值以店铺资料为准）："
+# 注入语句的固定护栏（B 方案，S9 复测依据）：经验只是"怎么办"的处理方式
+# 参考，不是答案来源——KB/店铺资料里已检索到的具体数值必须照常给出，
+# 不得引用经验作为回避数值或转为"以已发布政策为准"式推诿的理由。
+_INJECT_HEADER = (
+    "以下是经人工审核的历史服务经验，仅指导处理方式（如何组织回答、注意什么）：")
+_INJECT_FOOTER = (
+    "使用规则：政策、金额、时限等事实一律以本轮检索到的店铺资料/订单核验结果为准；"
+    "资料中已找到这些数值时必须直接给出，不得依据经验回避数值或改答\u201c以店铺已发布"
+    "政策为准\u201d；只有资料确无依据时才说明无法确认。经验与核验结果或店铺资料冲突时，"
+    "一律以核验结果与店铺资料为准。")
 
 
 def augment_message(base_content: str, hits: list) -> str:
@@ -111,5 +119,4 @@ def augment_message(base_content: str, hits: list) -> str:
     if not hits:
         return base_content
     lines = "\n".join(f"- {h['content']}" for h in hits)
-    return (f"{base_content}\n\n{_INJECT_HEADER}\n{lines}\n"
-            "（经验与订单核验结果或店铺资料冲突时，一律以核验结果与店铺资料为准。）")
+    return (f"{base_content}\n\n{_INJECT_HEADER}\n{lines}\n{_INJECT_FOOTER}")
