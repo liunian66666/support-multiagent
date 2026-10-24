@@ -90,7 +90,7 @@ async def _distill_one(app, cand: dict) -> bool:
     # 证据事件属性里可能带 evidence_ids 列表（chunk ID，非用户数据）；
     # 用户/会话内容从未进入 trace，此处无需再脱敏。
     digest = _digest_events(cand.get("events"))
-    prompt = _DISTILL_PROMPT.format(tenant_id=tenant_id,
+    prompt = _DISTILL_PROMPT.format(tenant=tenant_id,
                                     score=cand.get("score", 5),
                                     digest=digest)
     try:

@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from app.services.experience_recall import (augment_message, match_experiences,
                                             recall_for_turn)
-from app.workers.distill import _digest_events, _parse_digest
+from app.workers.distill import _DISTILL_PROMPT, _digest_events, _parse_digest
 
 
 def item(exp_id=1, route="faq", content="退货咨询先收集订单号与原因",
@@ -150,6 +150,16 @@ class DistillParseTest(unittest.TestCase):
         d = _digest_events([{"stage": "evidence", "name": "kb_retrieval",
                              "attributes": {"count": 2, "evidence_ids": ["c1"]}}])
         self.assertIn("kb_retrieval", d)
+
+    def test_prompt_placeholders_match_distill_call(self):
+        # 回归：模板占位符必须与 _distill_one 的 .format 关键字一致
+        # （历史上模板用 {tenant} 而调用传 tenant_id=，提炼每轮 KeyError→经验恒 0）
+        import string
+        fields = {f for _, f, _, _ in string.Formatter().parse(_DISTILL_PROMPT) if f}
+        self.assertTrue(
+            fields <= {"tenant", "score", "digest"},
+            f"模板占位符 {fields} 与 _distill_one .format 关键字不一致")
+        _DISTILL_PROMPT.format(tenant="t_demo", score=5, digest="x")  # 不抛即通过
 
 
 if __name__ == "__main__":

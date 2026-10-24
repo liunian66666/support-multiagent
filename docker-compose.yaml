@@ -188,7 +188,8 @@ services:
       SESSION_SUMMARY_INTERVAL: "600"
       # [ours] S3 经验层：召回开关 off|shadow|inject（缺省 off=完全关闭）。
       # 影子期切 shadow：召回只记 experience_hit 事件、不改任何应答（注入路径零流量）
-      # EXPERIENCE_DISTILL_INTERVAL: "1800"   # 提炼间隔秒数（缺省 1800，0=禁用）
+      EXPERIENCE_DISTILL_INTERVAL: "60"   # 对比评测试运行期高频提炼（生产缺省 1800，0=禁用）
+      EXPERIENCE_DISTILL_MAX_PER_ROUND: "10"
       # EXPERIENCE_RECALL_MODE: "shadow"
       # [ours] S6 治理：LLM SDK 层重试（429/5xx/超时指数退避）；0=关闭保持旧行为
       LLM_MAX_RETRIES: "2"

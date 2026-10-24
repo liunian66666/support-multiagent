@@ -116,7 +116,9 @@ async def find_distill_candidates(app, limit: int = 10):
                   AND t.answer_id <> ''
                   AND EXISTS (
                       SELECT 1 FROM jsonb_array_elements(t.events) e
-                      WHERE e->>'stage' = 'evidence' AND e->>'name' = 'kb_retrieval'
+                      -- search_kb=search_kb 工具事件名（主链路）、kb_retrieval=compound 链路
+                      WHERE e->>'stage' = 'evidence'
+                        AND e->>'name' IN ('kb_retrieval', 'search_kb')
                         AND COALESCE((e->'attributes'->>'count')::int, 0) > 0)
                   AND NOT EXISTS (
                       SELECT 1 FROM experience_items i
