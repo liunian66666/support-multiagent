@@ -11,6 +11,7 @@ import os
 
 from app.infra.config import BUSINESS_API, INTERNAL_API_TOKEN
 from app.agent.llm_config import get_tenant_model
+from app.infra import redis_lock
 
 logger = logging.getLogger("agent.session_summary")
 
@@ -30,26 +31,15 @@ _LOCK_KEY = "cs:lock:session_summary"
 _LOCK_TTL = 300
 
 
-async def _acquire_lock(app) -> bool:
+async def _acquire_lock(app) -> str | None:
+    # [ours] S6 治理：改经持有者 token 锁（Lua 校验后再删，消除误删他人锁）
     rc = getattr(getattr(app, "state", None), "redis_client", None)
-    if rc is None:
-        return False
-    try:
-        ok = await rc.set(_LOCK_KEY, "1", nx=True, ex=_LOCK_TTL)
-        return bool(ok)
-    except Exception as e:
-        logger.warning("summary lock acquire failed: %s", e)
-        return False
+    return await redis_lock.acquire_lock(rc, _LOCK_KEY, _LOCK_TTL)
 
 
-async def _release_lock(app) -> None:
+async def _release_lock(app, token) -> None:
     rc = getattr(getattr(app, "state", None), "redis_client", None)
-    if rc is None:
-        return
-    try:
-        await rc.delete(_LOCK_KEY)
-    except Exception:
-        pass
+    await redis_lock.release_lock(rc, _LOCK_KEY, token)
 
 
 async def _internal_headers() -> dict:
@@ -153,14 +143,15 @@ async def session_summary_loop(app):
     await asyncio.sleep(MESSAGE_INTERVAL)
     while True:
         try:
-            if not await _acquire_lock(app):
+            lock_token = await _acquire_lock(app)
+            if not lock_token:
                 logger.info("⏭ summary lock held by another instance, skip")
                 await asyncio.sleep(MESSAGE_INTERVAL)
                 continue
             try:
                 await _run_round(app)
             finally:
-                await _release_lock(app)
+                await _release_lock(app, lock_token)
         except Exception:
             logger.exception("session summary round failed")
         await asyncio.sleep(MESSAGE_INTERVAL)

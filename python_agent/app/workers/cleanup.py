@@ -18,9 +18,11 @@ async def session_cleanup_loop(app: FastAPI):
         return
     await asyncio.sleep(SESSION_CLEANUP_INTERVAL)
     while True:
+        cleanup_token = None
         try:
-            # 多实例互斥：Redis 分布式锁（SETNX），抢不到锁则跳过本轮（其他实例在执行）
-            if not await _acquire_cleanup_lock(app):
+            # 多实例互斥：持有者 token 锁（S6），抢不到锁则跳过本轮（其他实例在执行）
+            cleanup_token = await _acquire_cleanup_lock(app)
+            if not cleanup_token:
                 logger.info("⏭ cleanup lock held by another instance, skip")
                 await asyncio.sleep(SESSION_CLEANUP_INTERVAL)
                 continue
@@ -30,7 +32,8 @@ async def session_cleanup_loop(app: FastAPI):
         except Exception:
             logger.exception("periodic session cleanup failed")
         finally:
-            await _release_cleanup_lock(app)
+            # [ours] S6：只释放自己持有的锁（旧实现未抢锁也会 delete，误删他人锁）
+            await _release_cleanup_lock(app, cleanup_token)
         # P2-2：同时清理过期的知识库检索缓存
         try:
             expired = _kb_cache_cleanup()

@@ -104,25 +104,21 @@ _CLEANUP_LOCK_KEY = "cs:lock:session_cleanup"
 _CLEANUP_LOCK_TTL = 300  # 秒，超时自动释放防死锁
 
 
-async def _acquire_cleanup_lock(app) -> bool:
-    """Redis SETNX 抢锁；Redis 不可用 → 本轮不执行清理（fail-closed，Redis 为强制依赖）"""
+async def _acquire_cleanup_lock(app) -> str | None:
+    """[ours] S6 治理：持有者 token 锁（Lua 校验后再删）；Redis 不可用→本轮不执行
+
+    返回 token 供 release 校验；fail-closed 语义与旧实现一致。"""
+    from app.infra import redis_lock
     rc = getattr(getattr(app, "state", None), "redis_client", None)
     if rc is None:
         logger.warning("cleanup lock skipped: redis_client 未初始化")
-        return False
-    try:
-        ok = await rc.set(_CLEANUP_LOCK_KEY, "1", nx=True, ex=_CLEANUP_LOCK_TTL)
-        return bool(ok)
-    except Exception as e:
-        logger.warning("cleanup lock acquire failed, skip this round: %s", e)
-        return False
+        return None
+    return await redis_lock.acquire_lock(rc, _CLEANUP_LOCK_KEY, _CLEANUP_LOCK_TTL)
 
 
-async def _release_cleanup_lock(app) -> None:
+async def _release_cleanup_lock(app, token=None) -> None:
+    from app.infra import redis_lock
     rc = getattr(getattr(app, "state", None), "redis_client", None)
     if rc is None:
         return
-    try:
-        await rc.delete(_CLEANUP_LOCK_KEY)
-    except Exception:
-        pass
+    await redis_lock.release_lock(rc, _CLEANUP_LOCK_KEY, token)
