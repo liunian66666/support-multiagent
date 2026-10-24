@@ -60,19 +60,30 @@ def _digest_events(events: list) -> str:
 
 
 def _parse_digest(text: str) -> tuple[str, dict]:
-    """拆分『经验正文 + APPLICABILITY 行』；解析失败返回空（跳过不落库）。"""
-    lines = [x.strip() for x in (text or "").splitlines() if x.strip()]
-    if not lines or len(lines) > 6:
+    """拆分『经验正文 + APPLICABILITY 行』；解析失败返回空（跳过不落库）。
+
+    容错：剥离 markdown 代码围栏；APPLICABILITY 标签允许全角冒号与 **加粗** 包裹
+    （实测模型常违反"恰好两行"约束，严格解析导致大量候选 unparsable）。
+    """
+    raw = (text or "").strip()
+    if raw.startswith("```"):
+        raw = raw.strip("`").strip()
+        if raw.lower().startswith("text"):
+            raw = raw[4:]
+    lines = [x.strip() for x in raw.splitlines() if x.strip()]
+    if not lines:
         return "", {}
     keywords, content_lines = [], []
     for ln in lines:
-        if ln.upper().startswith("APPLICABILITY:"):
+        norm = ln.replace("*", "").replace("：", ":")
+        if norm.upper().startswith("APPLICABILITY:"):
             keywords = [k.strip() for k in
-                        ln.split(":", 1)[1].replace("，", ",").split(",")
+                        norm.split(":", 1)[1].replace("，", ",").split(",")
                         if k.strip()][:4]
         else:
             content_lines.append(ln)
     content = " ".join(content_lines).strip()[:300]
+    # 模型偶尔把标签行混在正文里，只要拿到关键词就接受（正文已限 300 字）
     if not content or not keywords:
         return "", {}
     return content, {"keywords": keywords}
@@ -101,7 +112,11 @@ async def _distill_one(app, cand: dict) -> bool:
     try:
         from app.agent.llm_config import get_tenant_model
         model = await get_tenant_model(app, tenant_id)
-        resp = await asyncio.wait_for(model.ainvoke(prompt), timeout=60)
+        # [fix] 思考型模型思考 token 计入 completion，租户模型实例默认 max_tokens=1024
+        # 时思考即可耗尽预算 → content 恒空（finish=length）。提炼单独放宽。
+        model = model.bind(max_tokens=int(
+            os.getenv("EXPERIENCE_DISTILL_MAX_TOKENS", "4096")))
+        resp = await asyncio.wait_for(model.ainvoke(prompt), timeout=90)
     except Exception as e:
         logger.warning("distill model failed tenant=%s answer=%s: %s",
                        tenant_id, cand.get("answer_id", ""), str(e)[:120])
@@ -109,8 +124,15 @@ async def _distill_one(app, cand: dict) -> bool:
     text = (resp.content or "").strip() if hasattr(resp, "content") else str(resp).strip()
     content, applicability = _parse_digest(text)
     if not content:
-        logger.info("distill skipped (unparsable) tenant=%s answer=%s",
-                    tenant_id, cand.get("answer_id", ""))
+        # 诊断线索：思考型模型 content 为空常因 max_tokens 被思考耗尽(finish=length)
+        finish = ""
+        try:
+            md = getattr(resp, "response_metadata", None) or {}
+            finish = str(md.get("finish_reason", ""))
+        except Exception:  # noqa: BLE001
+            pass
+        logger.info("distill skipped (unparsable) tenant=%s answer=%s finish=%s text=%r",
+                    tenant_id, cand.get("answer_id", ""), finish, text[:200])
         return False
     try:
         exp_id = await insert_experience_item(app, {

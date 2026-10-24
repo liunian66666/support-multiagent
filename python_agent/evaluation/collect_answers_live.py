@@ -47,6 +47,11 @@ def main():
         if status != 200 or body.get("code") != 0:
             raise RuntimeError(f"demo login failed: {identity}")
         token = body["data"]["token"]
+        # EVAL_PACING seconds between cases: keeps guest logins under the
+        # 12/minute rate limit when a full gold set is collected back-to-back.
+        pacing = float(os.getenv("EVAL_PACING", "0"))
+        if pacing > 0 and rows:
+            time.sleep(pacing)
         started = time.perf_counter()
         status, body = post("/api/user/chat", {"msg": case["query"]}, token)
         rows.append({"id": case["id"], "http_status": status, "code": body.get("code"),
