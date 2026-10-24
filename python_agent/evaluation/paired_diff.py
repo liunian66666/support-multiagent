@@ -18,19 +18,33 @@ from pathlib import Path
 
 from score import score_case  # 复用同一判定，禁止另写一套口径
 
+# 回避/推诿措辞（S9 实测回退答案中的实际句式）：与"丢失金标数值"同时出现
+# 即判数值拒答阻断项。宁可多查不可漏查，词表只增不删。
+_EVASIVE_PATTERNS = (
+    "无法为您确认", "无法确认", "无法据此", "不能作为", "不代表",
+    "以店铺已发布政策为准", "以已发布政策为准", "抱歉", "无相关", "无法回答",
+    "查不到", "没有相关", "暂无相关", "没有查询到",
+)
+
 
 def _load_jsonl(path: Path):
     return [json.loads(x) for x in path.read_text("utf-8").splitlines() if x.strip()]
 
 
-def _pass(rows_by_id, gold_row):
+def _score(rows_by_id, gold_row):  # noqa: E302
+    """返回 (ok 或 None, 丢失的 required 数值词列表)。"""
     if gold_row["id"] not in rows_by_id:
-        return None  # unscored：该组没采集到
+        return None, []
     merged = {**gold_row, **rows_by_id[gold_row["id"]]}
     scored = score_case(merged)
     if "answer_rules_ok" not in scored:
-        return None
-    return bool(scored["answer_rules_ok"])
+        return None, []
+    return bool(scored["answer_rules_ok"]), list(scored.get("missing_required", []))
+
+
+def _pass(rows_by_id, gold_row):
+    ok, _ = _score(rows_by_id, gold_row)
+    return ok
 
 
 def main():
@@ -47,10 +61,11 @@ def main():
     base_by_id = {r["id"]: r for r in _load_jsonl(args.base)}
     cand_by_id = {r["id"]: r for r in _load_jsonl(args.cand)}
 
-    flips, same, unscored = [], [], []
+    flips, same, unscored, blockers = [], [], [], []
     base_pass_n = cand_pass_n = scored_n = 0
     for g in gold:
-        b, c = _pass(base_by_id, g), _pass(cand_by_id, g)
+        b, _ = _score(base_by_id, g)
+        c, c_missing = _score(cand_by_id, g)
         if b is None or c is None:
             unscored.append(g["id"])
             continue
@@ -62,6 +77,17 @@ def main():
                           "direction": "regress" if b else "improve"})
         else:
             same.append(g["id"])
+        # 阻断项：金标要求具体数值且基线答对，注入组丢掉该数值且答案出现
+        # 回避/推诿措辞 → 无论总体 pass 率涨跌都判不放行（S9 保守回退教训）。
+        numeric = [k for k in g.get("required", [])
+                   if any(ch.isdigit() for ch in k)]
+        if numeric and b and not c:
+            lost = [k for k in numeric if k in c_missing]
+            ans = cand_by_id[g["id"]].get("answer", "")
+            evasive = any(p in ans for p in _EVASIVE_PATTERNS)
+            if lost and evasive:
+                blockers.append({"id": g["id"], "lost_numeric": lost,
+                                 "reason": "有KB数值却改为拒答/回避"})
 
     base_rate = round(base_pass_n / scored_n, 4) if scored_n else None
     cand_rate = round(cand_pass_n / scored_n, 4) if scored_n else None
@@ -74,12 +100,15 @@ def main():
         "flips": flips,
         "improve": sum(1 for f in flips if f["direction"] == "improve"),
         "regress": sum(1 for f in flips if f["direction"] == "regress"),
+        "blockers": blockers,
     }
     payload = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
     if args.output:
         args.output.write_text(payload, encoding="utf-8")
     print(payload, end="")
 
+    if blockers:
+        sys.exit(2)  # 数值拒答阻断项：总体不下降也一票否决
     if scored_n and cand_pass_n < base_pass_n:
         sys.exit(1)  # 注入组低于基线 → 发布闸门不放行
 
