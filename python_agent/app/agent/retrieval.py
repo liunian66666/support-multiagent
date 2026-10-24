@@ -1,4 +1,5 @@
 """租户向量集合与检索器构建（从 agent_factory.py 拆出）。"""
+import asyncio
 import logging
 
 from langchain_qdrant import QdrantVectorStore
@@ -29,7 +30,9 @@ async def ensure_tenant_vector(app, tenant_id: str) -> QdrantVectorStore | None:
     col = collection_name(tenant_id)
     try:
         tenant_emb = await get_tenant_embeddings(app, tenant_id)
-        if not app.state.qdrant_client.collection_exists(col):
+        # [ours] S6 治理：同步 Qdrant HTTP 调用挪出事件循环（阻塞心跳/SSE 的根因之一）
+        exists = await asyncio.to_thread(app.state.qdrant_client.collection_exists, col)
+        if not exists:
             # 维度探测：vec_dim 仅在启动时探测一次；若当时平台 embedding 不可用（vec_dim=0）
             # 或后续更换了向量模型，用当前租户 embedding 实时探测维度，无需重启 Agent。
             vec_dim = app.state.vec_dim
@@ -38,7 +41,8 @@ async def ensure_tenant_vector(app, tenant_id: str) -> QdrantVectorStore | None:
                 vec_dim = len(probe)
                 app.state.vec_dim = vec_dim
                 logger.info("✅ vec_dim lazily probed via tenant embedding: dim=%d", vec_dim)
-            app.state.qdrant_client.create_collection(
+            await asyncio.to_thread(
+                app.state.qdrant_client.create_collection,
                 collection_name=col,
                 vectors_config=VectorParams(size=vec_dim, distance=Distance.COSINE),
             )

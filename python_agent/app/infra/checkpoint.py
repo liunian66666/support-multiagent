@@ -18,6 +18,8 @@
 """
 import asyncio
 import logging
+import os
+import time
 
 import psycopg
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -45,6 +47,14 @@ class SafeAsyncPostgresSaver(AsyncPostgresSaver):
         self._checkpoint_lock = asyncio.Lock()
         self._dsn = dsn or ""          # 断线重连用的 DSN（main.py 传入 POSTGRES_DSN）
         self._reconnect_count = 0      # 重连次数（日志排障用）
+        self._last_ping_ts = 0.0       # [ours] S6：活性探测降频时间戳
+        # [ours] S6 治理：SELECT 1 探活降频。默认 0=每操作都探测（与旧行为一致）；
+        # 设 >0（秒）则窗口内跳过探测——窗口内 PG 恰好重启由执行级重试兜底
+        # （_TRANSIENT_DB_EXC 重建重试本就覆盖该场景，探测只是提前量）。
+        try:
+            self._ping_ttl = max(0.0, float(os.getenv("CHECKPOINT_PING_TTL", "0")))
+        except ValueError:
+            self._ping_ttl = 0.0
 
     def _conn_ok(self) -> bool:
         """客户端侧连接状态检查（未关闭、未断开）"""
@@ -93,10 +103,22 @@ class SafeAsyncPostgresSaver(AsyncPostgresSaver):
         logger.warning("⚠️ checkpointer PG 连接已关闭，已自动重建（第 %d 次）", self._reconnect_count)
 
     async def _ensure_connection(self):
-        """操作前确保连接可用：客户端状态检查 + SELECT 1 活性探测，不可用即重建"""
-        if self._conn_ok() and await self._ping():
+        """操作前确保连接可用：客户端状态检查 + SELECT 1 活性探测，不可用即重建。
+
+        [ours] S6：_ping_ttl>0 时窗口内跳过探测（在锁内更新，无并发竞态）；
+        窗口内漏检的瞬断层连由 _with_retry 的执行级重建重试兜底。"""
+        if not self._conn_ok():
+            await self._rebuild()
+            self._last_ping_ts = time.monotonic()
+            return
+        now = time.monotonic()
+        if self._ping_ttl > 0 and now - self._last_ping_ts < self._ping_ttl:
+            return
+        if await self._ping():
+            self._last_ping_ts = now
             return
         await self._rebuild()
+        self._last_ping_ts = time.monotonic()
 
     async def _with_retry(self, fn, *args, **kwargs):
         """连接自愈 + 瞬时段连错误重试一次：

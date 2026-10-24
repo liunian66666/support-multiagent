@@ -5,6 +5,7 @@
 - 后台 worker（app/workers/kb_index.py）消费队列：分片 → embedding → Qdrant → status=1
 - 下载/预览：前端直接用 nginx 静态 file_url，不再经 Go/Python 查库取 content
 """
+import asyncio
 import logging
 import uuid
 from datetime import datetime
@@ -225,7 +226,9 @@ async def kb_delete(doc_id: str, request: Request):
                 row = await cur.fetchone()
         file_name = row[0] if row else ""
         # 从该租户的 Qdrant 集合按 doc_id 元数据删除
-        request.app.state.qdrant_client.delete(
+        # [ours] S6：同步 Qdrant 调用挪出事件循环
+        await asyncio.to_thread(
+            request.app.state.qdrant_client.delete,
             collection_name=collection_name(tenant_id),
             points_selector=qmodels.FilterSelector(filter=qmodels.Filter(must=[
                 qmodels.FieldCondition(key="metadata.doc_id", match=qmodels.MatchValue(value=doc_id))  # [ours] 修正 payload 字段路径
@@ -465,7 +468,8 @@ async def kb_batch(request: Request):
                     "DELETE FROM kb_documents WHERE tenant_id = %s AND doc_id = ANY(%s)",
                     (tenant_id, valid))
         try:
-            request.app.state.qdrant_client.delete(
+            await asyncio.to_thread(  # [ours] S6：同步 Qdrant 调用挪出事件循环
+                request.app.state.qdrant_client.delete,
                 collection_name=collection_name(tenant_id),
                 points_selector=qmodels.FilterSelector(filter=qmodels.Filter(must=[
                     qmodels.FieldCondition(key="metadata.doc_id", match=qmodels.MatchAny(any=valid))  # [ours] 修正 payload 字段路径

@@ -1,4 +1,5 @@
 """租户预热、租户清理与租户用量报表（从 main.py 拆出）。"""
+import asyncio
 import logging
 
 from fastapi import APIRouter, Request
@@ -42,7 +43,10 @@ async def tenant_cleanup(tenant_id: str, request: Request):
         # 删除 Qdrant 集合
         col = collection_name(tenant_id)
         try:
-            request.app.state.qdrant_client.delete_collection(collection_name=col)
+            # [ours] S6：同步 Qdrant 调用挪出事件循环（行为不变，仅去事件循环阻塞）
+            await asyncio.to_thread(
+                request.app.state.qdrant_client.delete_collection,
+                collection_name=col)
             result["qdrant_collection"] = col
         except Exception as qe:
             logger.warning("delete qdrant collection %s failed: %s", col, qe)

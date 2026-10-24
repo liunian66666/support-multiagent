@@ -1,5 +1,6 @@
 """对话端点：/agent/chat、/agent/chat/stream、/agent/resume、/agent/checkpoint/{thread_id}。"""
 import logging
+import os
 
 from fastapi import APIRouter, Request
 from langchain_core.messages import AIMessage, HumanMessage
@@ -27,6 +28,21 @@ from app.services import trace as agent_trace
 
 logger = logging.getLogger("agent")
 router = APIRouter()
+
+# [ours] S6 治理：图执行步数预算。AGENT_RECURSION_LIMIT=0（默认）保持
+# LangGraph 缺省 25（现行为不变）；设 >0 显式收紧，超限抛 GraphRecursionError
+# 走既有友好错误路径（确定性安全答复，不再静默空转）。
+try:
+    _RECURSION_LIMIT = max(0, int(os.getenv("AGENT_RECURSION_LIMIT", "0")))
+except ValueError:
+    _RECURSION_LIMIT = 0
+
+
+def _graph_config(thread_id: str) -> dict:
+    config = {"configurable": {"thread_id": thread_id}}
+    if _RECURSION_LIMIT:
+        config["recursion_limit"] = _RECURSION_LIMIT
+    return config
 
 
 @router.post("/agent/chat", response_model=AgentResp)
@@ -107,7 +123,7 @@ async def _agent_chat_impl(req: ChatRequest, request: Request):
     input_messages = [*await recent_messages(request.app, thread_id),
                       HumanMessage(content=augment_message(user_message, exp_hits))]
 
-    config = {"configurable": {"thread_id": thread_id}}
+    config = _graph_config(thread_id)
     try:
         async with _pool_conn(request.app) as conn:
             await touch_session_retry(request.app, thread_id)
@@ -215,7 +231,7 @@ async def agent_chat_stream(req: ChatRequest, request: Request):
                                              decision.specialist, user_message)
             input_messages = [*await recent_messages(request.app, thread_id),
                               HumanMessage(content=augment_message(user_message, exp_hits))]
-            config = {"configurable": {"thread_id": thread_id}}
+            config = _graph_config(thread_id)
             async with _pool_conn(request.app) as conn:
                 await touch_session_retry(request.app, thread_id)
 
@@ -306,7 +322,7 @@ async def agent_resume(req: ResumeRequest, request: Request):
 
     agent = await get_tenant_agent(request.app, tenant_id)
 
-    config = {"configurable": {"thread_id": thread_id}}
+    config = _graph_config(thread_id)
     try:
         async with _pool_conn(request.app) as conn:
             await touch_session_retry(request.app, thread_id)
