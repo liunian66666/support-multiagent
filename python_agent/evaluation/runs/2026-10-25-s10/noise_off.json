@@ -1,0 +1,74 @@
+{
+  "gold": "gold_answers.jsonl",
+  "scored": 50,
+  "unscored_ids": [],
+  "base": {
+    "pass": 29,
+    "pass_rate": 0.58
+  },
+  "cand": {
+    "pass": 31,
+    "pass_rate": 0.62
+  },
+  "delta_pass_rate": 0.04,
+  "flips": [
+    {
+      "id": "ans-ship-pickup-time",
+      "category": "answer_policy",
+      "direction": "regress"
+    },
+    {
+      "id": "ans-fee-99",
+      "category": "answer_policy",
+      "direction": "improve"
+    },
+    {
+      "id": "ans-ret-condition",
+      "category": "answer_policy",
+      "direction": "improve"
+    },
+    {
+      "id": "ans-ref-initiate",
+      "category": "answer_policy",
+      "direction": "regress"
+    },
+    {
+      "id": "ans-ref-channel",
+      "category": "answer_policy",
+      "direction": "improve"
+    },
+    {
+      "id": "ans-inv-type",
+      "category": "answer_policy",
+      "direction": "improve"
+    },
+    {
+      "id": "ans-na-price-protect",
+      "category": "answer_no_policy",
+      "direction": "regress"
+    },
+    {
+      "id": "ans-na-insurance",
+      "category": "answer_no_policy",
+      "direction": "improve"
+    }
+  ],
+  "improve": 5,
+  "regress": 3,
+  "blockers": [
+    {
+      "id": "ans-ship-pickup-time",
+      "lost_numeric": [
+        "24 小时"
+      ],
+      "reason": "有KB数值却改为拒答/回避"
+    },
+    {
+      "id": "ans-ref-initiate",
+      "lost_numeric": [
+        "1 个工作日"
+      ],
+      "reason": "有KB数值却改为拒答/回避"
+    }
+  ]
+}

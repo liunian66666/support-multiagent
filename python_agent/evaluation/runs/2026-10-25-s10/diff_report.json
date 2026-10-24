@@ -1,0 +1,58 @@
+{
+  "gold": "gold_answers.jsonl",
+  "scored": 50,
+  "unscored_ids": [],
+  "base": {
+    "pass": 29,
+    "pass_rate": 0.58
+  },
+  "cand": {
+    "pass": 31,
+    "pass_rate": 0.62
+  },
+  "delta_pass_rate": 0.04,
+  "flips": [
+    {
+      "id": "ans-ship-pickup-time",
+      "category": "answer_policy",
+      "direction": "regress"
+    },
+    {
+      "id": "ans-fee-display",
+      "category": "answer_policy",
+      "direction": "improve"
+    },
+    {
+      "id": "ans-ret-nr-freight",
+      "category": "answer_policy",
+      "direction": "improve"
+    },
+    {
+      "id": "ans-ref-initiate",
+      "category": "answer_policy",
+      "direction": "regress"
+    },
+    {
+      "id": "ans-inv-special",
+      "category": "answer_policy",
+      "direction": "regress"
+    },
+    {
+      "id": "ans-inv-time",
+      "category": "answer_policy",
+      "direction": "improve"
+    },
+    {
+      "id": "ans-hr-offhours",
+      "category": "answer_policy",
+      "direction": "improve"
+    },
+    {
+      "id": "ans-na-insurance",
+      "category": "answer_no_policy",
+      "direction": "improve"
+    }
+  ],
+  "improve": 5,
+  "regress": 3
+}
