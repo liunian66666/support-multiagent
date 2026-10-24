@@ -132,7 +132,10 @@ async def search_kb(query: str) -> str:
 
     # KB 闭环：检索结果落库（命中明细 / 未命中查询）
     await _record_kb_hits(tid, thread_id, query, docs)
+    # [ours] S3 提炼需要"用户会怎么问"的触发词面：检索词截断后随证据事件
+    # 入 trace（检索词本就明文落 kb_hits 表，无新增泄露面；截断 60 字防长文入事件）
     trace.record("evidence", "search_kb", count=len(docs),
+                 query=(query or "")[:60],
                  evidence_ids=[str((getattr(d, "metadata", {}) or {}).get("chunk_id", ""))
                                for d in docs[:3]])
 
