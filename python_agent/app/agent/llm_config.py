@@ -20,7 +20,7 @@ _PLATFORM_CONFIG_TTL = 300  # 平台默认模型配置缓存
 def clear_model_cache(tenant_id: str | None = None, scope: str = "all"):
     """清空模型配置/实例缓存。
 
-    Go 后端修改模型配置成功后调用（POST /agent/cache/clear），
+    后端修改模型配置成功后调用（POST /agent/cache/clear），
     使新配置立即生效，无需等待 TTL 过期。
     - tenant_id 为空：清全部（平台默认配置变更，所有跟随平台的租户都受影响）
     - tenant_id 非空 + scope：

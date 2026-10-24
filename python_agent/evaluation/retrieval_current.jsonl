@@ -1,0 +1,9 @@
+{"id": "shipping-threshold", "retrieved_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e", "8b0a0bf7d19d41b8b519b2c2a00fb54e", "8b0a0bf7d19d41b8b519b2c2a00fb54e"], "latency_ms": 183.62}
+{"id": "shipping-region", "retrieved_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e", "8b0a0bf7d19d41b8b519b2c2a00fb54e", "8b0a0bf7d19d41b8b519b2c2a00fb54e"], "latency_ms": 161.83}
+{"id": "return-shipping", "retrieved_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e", "8b0a0bf7d19d41b8b519b2c2a00fb54e", "c111e8bd171b4bfe8abf54fd7ce3ca30"], "latency_ms": 120.96}
+{"id": "return-window", "retrieved_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e", "8b0a0bf7d19d41b8b519b2c2a00fb54e", "c111e8bd171b4bfe8abf54fd7ce3ca30"], "latency_ms": 156.91}
+{"id": "invoice-timing", "retrieved_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e", "8b0a0bf7d19d41b8b519b2c2a00fb54e", "8b0a0bf7d19d41b8b519b2c2a00fb54e"], "latency_ms": 156.67}
+{"id": "human-handoff", "retrieved_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30", "8b0a0bf7d19d41b8b519b2c2a00fb54e", "c111e8bd171b4bfe8abf54fd7ce3ca30"], "latency_ms": 153.23}
+{"id": "return-intake", "retrieved_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30", "c111e8bd171b4bfe8abf54fd7ce3ca30", "c111e8bd171b4bfe8abf54fd7ce3ca30"], "latency_ms": 168.6}
+{"id": "unsupported-crypto", "retrieved_docs": ["c111e8bd171b4bfe8abf54fd7ce3ca30", "8b0a0bf7d19d41b8b519b2c2a00fb54e", "c111e8bd171b4bfe8abf54fd7ce3ca30"], "latency_ms": 134.06}
+{"id": "unsupported-flight", "retrieved_docs": ["8b0a0bf7d19d41b8b519b2c2a00fb54e", "8b0a0bf7d19d41b8b519b2c2a00fb54e", "8b0a0bf7d19d41b8b519b2c2a00fb54e"], "latency_ms": 144.29}

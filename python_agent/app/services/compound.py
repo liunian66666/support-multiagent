@@ -10,13 +10,13 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from app.agent import tools
 from app.agent.llm_config import get_tenant_model
 from app.agent.retrieval import ensure_tenant_vector, get_tenant_retriever
+from app.kb.evidence import approved_evidence
 from app.chat.order import ORDER_OK, order_handoff_reason, should_auto_handoff
 from app.chat.plan import ReadTask, TaskPlan
 from app.services import trace
 
 logger = logging.getLogger("agent.compound")
 
-_STALE_KB_FACTS = ("当前主项目尚未接通真实订单业务接口",)
 _INTERNAL_REPLY_MARKERS = ("已找到以下知识库片段", "当前主项目尚未接通", "知识来源：")
 
 
@@ -42,20 +42,16 @@ async def _read_kb(app, tenant_id: str, thread_id: str, task: ReadTask) -> dict:
         retriever = get_tenant_retriever(app, tenant_id)
     if retriever is None:
         return {"kind": "kb", "status": "unavailable", "topic": task.query}
-    docs = await retriever.ainvoke(task.query)
+    docs = await approved_evidence(app, tenant_id, task.query, await retriever.ainvoke(task.query))
     await tools._record_kb_hits(tenant_id, thread_id, task.query, docs)
     trace.record("evidence", "kb_retrieval", count=len(docs),
-                 evidence_ids=[str((getattr(d, "metadata", {}) or {}).get("doc_id", ""))
+                 evidence_ids=[str((getattr(d, "metadata", {}) or {}).get("chunk_id", ""))
                                for d in docs[:3]])
     evidence = []
     for doc in docs[:3]:
         metadata = getattr(doc, "metadata", {}) or {}
-        if any(stale in doc.page_content for stale in _STALE_KB_FACTS):
-            logger.warning("stale KB chunk ignored tenant=%s doc_id=%s", tenant_id,
-                           str(metadata.get("doc_id") or "")[:80])
-            continue
         evidence.append({
-            "id": str(metadata.get("doc_id") or "")[:80],
+            "id": str(metadata.get("chunk_id") or metadata.get("doc_id") or "")[:80],
             "title": str(metadata.get("title") or "")[:120],
             "text": str(doc.page_content)[:900],
         })
@@ -153,6 +149,7 @@ async def execute_compound(app, tenant_id: str, thread_id: str, question: str,
         content = fallback
     else:
         content = re.sub(r"\[K\d+\]", "", content).strip()
+        content = content.replace("知识库", "店铺资料").replace("检索到", "查到")
     # Model output is not trusted to ask for missing identity/slots.
     if plan.needs_order_id and "订单号" not in content:
         content += "\n\n请提供订单号并登录客户账号，以便核验订单归属。"

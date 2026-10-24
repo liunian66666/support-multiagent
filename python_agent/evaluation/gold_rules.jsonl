@@ -1,0 +1,11 @@
+{"id":"compound-order-return","category":"compound","query":"ORD-2024-003订单的状态，以及怎么退货？","tenant_id":"t_demo","expected_route":"order","expected_order_id":"ORD-2024-003","expected_action":"compound","required":["ORD-2024-003"],"forbidden":["已找到以下知识库片段","知识来源","当前主项目尚未接通","[K1]"]}
+{"id":"order-status","category":"order","query":"查订单 ORD-2024-001 的状态","expected_route":"order","expected_order_id":"ORD-2024-001","expected_action":"order"}
+{"id":"vendor-id-adjacent-chinese","category":"order","query":"查TB202410180001物流","expected_route":"order","expected_order_id":"TB202410180001","expected_action":"order"}
+{"id":"numeric-id","category":"order","query":"订单10001现在怎样","expected_route":"order","expected_order_id":"10001","expected_action":"order"}
+{"id":"refund-policy","category":"faq","query":"退款政策是什么","expected_route":"faq","expected_order_id":null,"expected_action":"faq"}
+{"id":"return-shipping","category":"faq","query":"退货运费谁承担？","expected_route":"faq","expected_order_id":null,"expected_action":"faq"}
+{"id":"return-process","category":"faq","query":"如何申请退货？","expected_route":"faq_fast","expected_order_id":null,"expected_action":"faq_fast"}
+{"id":"refund-request","category":"faq","query":"我想申请退款","expected_route":"faq_fast","expected_order_id":null,"expected_action":"faq_fast"}
+{"id":"human-request","category":"handoff","query":"转人工","expected_route":"handoff","expected_order_id":null,"expected_action":"handoff"}
+{"id":"sealed-return-eligibility","category":"faq","query":"未拆封能退吗？","expected_route":"faq","expected_order_id":null,"expected_action":"faq"}
+{"id":"opened-return-eligibility","category":"faq","query":"已经拆封能退吗？","expected_route":"faq","expected_order_id":null,"expected_action":"faq"}

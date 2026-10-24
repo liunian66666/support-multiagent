@@ -1,0 +1,197 @@
+{
+  "k": 3,
+  "cases": 24,
+  "metrics": {
+    "recall_at_k": {
+      "value": 1.0,
+      "n": 12
+    },
+    "reciprocal_rank": {
+      "value": 1.0,
+      "n": 12
+    },
+    "negative_retrieval_ok": {
+      "value": 1.0,
+      "n": 12
+    },
+    "answer_rules_ok": {
+      "value": null,
+      "n": 0
+    },
+    "route_ok": {
+      "value": null,
+      "n": 0
+    },
+    "order_id_ok": {
+      "value": null,
+      "n": 0
+    },
+    "action_ok": {
+      "value": null,
+      "n": 0
+    },
+    "latency_ms": {
+      "p50": 152.09,
+      "p95": 175.72,
+      "n": 24
+    }
+  },
+  "details": [
+    {
+      "id": "shipping-threshold",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "latency_ms": 142.29
+    },
+    {
+      "id": "shipping-region",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "latency_ms": 165.36
+    },
+    {
+      "id": "return-shipping",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "latency_ms": 150.32
+    },
+    {
+      "id": "return-window",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "latency_ms": 134.74
+    },
+    {
+      "id": "invoice-timing",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "latency_ms": 153.64
+    },
+    {
+      "id": "human-handoff",
+      "category": "process",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "latency_ms": 129.97
+    },
+    {
+      "id": "return-intake",
+      "category": "process",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "latency_ms": 160.82
+    },
+    {
+      "id": "unsupported-crypto",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 149.09
+    },
+    {
+      "id": "unsupported-flight",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 152.09
+    },
+    {
+      "id": "presale-dispatch",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "latency_ms": 155.97
+    },
+    {
+      "id": "refund-bank",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "latency_ms": 154.03
+    },
+    {
+      "id": "invoice-vat",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "latency_ms": 152.83
+    },
+    {
+      "id": "human-hours",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "latency_ms": 165.49
+    },
+    {
+      "id": "refund-process",
+      "category": "process",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "latency_ms": 124.03
+    },
+    {
+      "id": "unsupported-cod",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 152.96
+    },
+    {
+      "id": "unsupported-installments",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 125.35
+    },
+    {
+      "id": "unsupported-return-address",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 175.72
+    },
+    {
+      "id": "unsupported-course-schedule",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 154.87
+    },
+    {
+      "id": "unsupported-trial",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 132.01
+    },
+    {
+      "id": "unsupported-vip-points",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 159.38
+    },
+    {
+      "id": "unsupported-crypto-refund",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 333.76
+    },
+    {
+      "id": "unsupported-order-status",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 141.56
+    },
+    {
+      "id": "unsupported-food-shelf-life",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 148.02
+    },
+    {
+      "id": "unsupported-digital-course-return",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 151.77
+    }
+  ]
+}

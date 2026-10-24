@@ -42,6 +42,7 @@
         <template #cell-title="{ row }">
           <b>{{ row.title }}</b>
           <span class="badge" :style="statusStyle(row.status)">{{ statusText(row.status) }}</span>
+          <span class="badge" :style="policyStyle(row.policy_state)">{{ policyText(row.policy_state) }}</span>
         </template>
         <template #cell-meta="{ row }">
           <span class="text-2 mono" style="font-size:12px;">
@@ -58,6 +59,7 @@
           <button class="btn btn-sm" @click="preview(row)">预览</button>
           <button class="btn btn-sm" @click="download(row)">下载</button>
           <button class="btn btn-sm" v-perm="'knowledge:edit'" @click="setCategory(row)">分类</button>
+          <button class="btn btn-sm" v-perm="'knowledge:edit'" @click="setPolicy(row)">审核/发布</button>
           <button class="btn btn-sm" v-perm="'knowledge:edit'" @click="reindex(row)">重索引</button>
           <button class="btn btn-sm btn-danger" v-perm="'knowledge:remove'" @click="remove(row)">删除</button>
         </template>
@@ -116,6 +118,38 @@
       </div>
     </Modal>
 
+    <!-- 商家审核状态决定文档是否允许用于回答 -->
+    <Modal :visible="showPolicyModal" title="审核知识库文档" @close="showPolicyModal = false">
+      <div class="form">
+        <p class="text-2">只有索引成功且已审核发布的文档可作为客服回答依据。演示资料始终标明仅供测试。</p>
+        <label class="field">
+          <span class="f-label">发布状态</span>
+          <select v-model="policyForm.policy_state" class="select">
+            <option value="unreviewed">待审核（不用于回答）</option>
+            <option value="published">已发布</option>
+            <option value="retired">已停用（不用于回答）</option>
+            <option v-if="policyForm.policy_state === 'demo'" value="demo">演示资料</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="f-label">适用范围</span>
+          <select v-model="policyForm.product_scope" class="select">
+            <option value="unknown">未指定</option>
+            <option value="all">全部商品</option>
+            <option value="physical">实物商品</option>
+            <option value="digital">数字商品/课程</option>
+          </select>
+        </label>
+        <label class="field"><span class="f-label">生效时间（可留空）</span>
+          <input v-model="policyForm.valid_from" class="input" type="datetime-local" />
+        </label>
+        <label class="field"><span class="f-label">失效时间（可留空）</span>
+          <input v-model="policyForm.valid_until" class="input" type="datetime-local" />
+        </label>
+        <button class="btn btn-primary btn-sm" @click="savePolicy">保存审核结果</button>
+      </div>
+    </Modal>
+
     <!-- 上传大小设置（平台管理员） -->
     <Modal :visible="showSetting" title="知识库上传大小限制" @close="showSetting = false">
       <div class="form">
@@ -167,6 +201,16 @@ const upType = ref('text')
 const upForm = reactive({ category: '', title: '', content: '' })
 const upNewCat = ref('')
 const fileInput = ref(null)
+const showPolicyModal = ref(false)
+const policyTarget = ref(null)
+const policyForm = reactive({ policy_state: 'unreviewed', product_scope: 'unknown',
+                              valid_from: '', valid_until: '' })
+const policyLabels = { unreviewed: '待审核', published: '已发布', retired: '已停用', demo: '演示资料' }
+const policyText = state => policyLabels[state] || '待审核'
+const policyStyle = state => ({ background: state === 'published' ? '#1e8e54' :
+  state === 'demo' ? '#6f5bd3' : '#8f959e', color: '#fff', borderRadius: '4px',
+  padding: '1px 5px', fontSize: '11px', marginLeft: '6px' })
+
 // 分类设置 Modal（行内/批量共用）
 const showCatModal = ref(false)
 const catMode = ref('single')   // single | batch
@@ -335,6 +379,45 @@ async function load(pg) {
 }
 function onPage({ page: p, size: s }) { size.value = s; load(p) }
 function reset() { category.value = ''; keyword.value = ''; sortBy.value = 'created_desc'; load(1) }
+
+function toLocalDatetime(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+  return local.toISOString().slice(0, 16)
+}
+function setPolicy(row) {
+  policyTarget.value = row
+  policyForm.policy_state = row.policy_state || 'unreviewed'
+  policyForm.product_scope = row.product_scope || 'unknown'
+  policyForm.valid_from = toLocalDatetime(row.valid_from)
+  policyForm.valid_until = toLocalDatetime(row.valid_until)
+  showPolicyModal.value = true
+}
+async function savePolicy() {
+  const row = policyTarget.value
+  if (!row) return
+  if (policyForm.policy_state === 'published' && row.status !== 1) {
+    return toast('请先完成索引，再发布文档', 'warning')
+  }
+  if (policyForm.policy_state === 'published' && policyForm.product_scope === 'unknown') {
+    return toast('发布前请选择适用范围', 'warning')
+  }
+  const from = policyForm.valid_from ? new Date(policyForm.valid_from).toISOString() : null
+  const until = policyForm.valid_until ? new Date(policyForm.valid_until).toISOString() : null
+  if (from && until && from >= until) return toast('失效时间需晚于生效时间', 'warning')
+  const body = { policy_state: policyForm.policy_state, product_scope: policyForm.product_scope,
+                 valid_from: from, valid_until: until }
+  try {
+    const r = await api('/api/admin/kb/documents/' + encodeURIComponent(row.doc_id) + '/policy',
+                        { method: 'POST', body })
+    if (r.code !== 0) return toast(r.msg || '保存失败', 'error')
+    toast('审核状态已保存', 'success')
+    showPolicyModal.value = false
+    load()
+  } catch (e) {}
+}
 
 async function setCategory(row) {
   catMode.value = 'single'

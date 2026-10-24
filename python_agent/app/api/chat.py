@@ -10,7 +10,7 @@ from app.agent.faq_agent import faq_agent as get_faq_specialist
 from app.agent.faq_agent import recent_messages
 from app.agent.intake_agent import intake_agent as get_intake_specialist
 from app.api.deps import _require_trusted_chat
-from app.chat.reply import _friendly_llm_error
+from app.chat.reply import finalize_faq_reply, _friendly_llm_error, demo_faq_prefix, mark_demo_faq_reply
 from app.infra.config import PROD_MODE, SERVICE_FOOTER
 from app.infra.context import pending_ticket_var, tenant_var, thread_var, trace_id_var
 from app.infra.db.quota import check_concurrent_sessions
@@ -108,6 +108,9 @@ async def _agent_chat_impl(req: ChatRequest, request: Request):
 
         last_msg = messages[-1]
         content = last_msg.content if hasattr(last_msg, "content") else ""
+        if specialist_faq:
+            content = finalize_faq_reply(user_message, content, messages)
+            content = mark_demo_faq_reply(tenant_id, content)
         if not req.has_pending_ticket:
             await _record_to_checkpoint(request.app, thread_id, user_message, content)
         agent_trace.record("delegate", "model_result",
@@ -200,6 +203,7 @@ async def agent_chat_stream(req: ChatRequest, request: Request):
                 await touch_session_retry(request.app, thread_id)
 
             full_content = ""
+            demo_prefix_sent = False
             stream_msgs: list = []
 
             # 使用 LangGraph astream(stream_mode="messages") 逐 token 输出
@@ -215,9 +219,19 @@ async def agent_chat_stream(req: ChatRequest, request: Request):
                 if hasattr(msg, "content") and msg.content and isinstance(msg, AIMessage):
                     chunk = msg.content if isinstance(msg.content, str) else str(msg.content)
                     if chunk:
+                        if specialist_faq and not demo_prefix_sent:
+                            prefix = demo_faq_prefix(tenant_id)
+                            if prefix:
+                                full_content += prefix
+                            demo_prefix_sent = True
                         full_content += chunk
-                        yield f"data: {_json.dumps({'type':'chunk','content':chunk}, ensure_ascii=False)}\n\n"
+                        if not specialist_faq:
+                            yield f"data: {_json.dumps({'type':'chunk','content':chunk}, ensure_ascii=False)}\n\n"
 
+            if specialist_faq:
+                full_content = finalize_faq_reply(user_message, full_content, stream_msgs)
+                full_content = mark_demo_faq_reply(tenant_id, full_content)
+                yield f"data: {_json.dumps({'type':'chunk','content':full_content}, ensure_ascii=False)}\n\n"
             if not req.has_pending_ticket:
                 await _record_to_checkpoint(request.app, thread_id, user_message, full_content)
             agent_trace.record("delegate", "model_result",

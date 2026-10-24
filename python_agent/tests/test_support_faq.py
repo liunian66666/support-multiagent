@@ -35,6 +35,20 @@ class SupportFaqContractTest(unittest.TestCase):
         ):
             self.assertIsNone(lookup(query, "t_demo"), query)
 
+    def test_return_eligibility_with_different_conditions_uses_policy_specialist(self):
+        from app.chat.intent import route_message
+
+        for query in ("未拆封能退吗？", "已经拆封能退吗？"):
+            self.assertEqual(route_message(query, "t_demo").specialist, "faq")
+
+    def test_payment_method_questions_use_faq_but_payment_actions_do_not(self):
+        from app.chat.intent import route_message
+
+        for query in ("支持货到付款吗？", "买课程支持花呗分期吗？", "有哪些支付方式？"):
+            self.assertEqual(route_message(query, "t_demo").specialist, "faq", query)
+        for query in ("帮我付款", "给我支付这单"):
+            self.assertEqual(route_message(query, "t_demo").specialist, "handoff", query)
+
     def test_capabilities_do_not_promise_mutations(self):
         answer = lookup("你可以做什么？", "t_demo")
         self.assertIn("订单状态查询已接通", answer)

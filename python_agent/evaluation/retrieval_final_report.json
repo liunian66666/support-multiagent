@@ -1,0 +1,213 @@
+{
+  "k": 3,
+  "cases": 24,
+  "metrics": {
+    "recall_at_k": {
+      "value": 1.0,
+      "n": 12
+    },
+    "reciprocal_rank": {
+      "value": 1.0,
+      "n": 12
+    },
+    "negative_retrieval_ok": {
+      "value": 1.0,
+      "n": 12
+    },
+    "clause_covered": {
+      "value": 1.0,
+      "n": 12
+    },
+    "answer_rules_ok": {
+      "value": null,
+      "n": 0
+    },
+    "route_ok": {
+      "value": null,
+      "n": 0
+    },
+    "order_id_ok": {
+      "value": null,
+      "n": 0
+    },
+    "action_ok": {
+      "value": null,
+      "n": 0
+    },
+    "latency_ms": {
+      "p50": 145.9,
+      "p95": 167.77,
+      "n": 24
+    }
+  },
+  "details": [
+    {
+      "id": "shipping-threshold",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "clause_covered": true,
+      "latency_ms": 139.13
+    },
+    {
+      "id": "shipping-region",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "clause_covered": true,
+      "latency_ms": 153.05
+    },
+    {
+      "id": "return-shipping",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "clause_covered": true,
+      "latency_ms": 153.0
+    },
+    {
+      "id": "return-window",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "clause_covered": true,
+      "latency_ms": 161.98
+    },
+    {
+      "id": "invoice-timing",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "clause_covered": true,
+      "latency_ms": 149.24
+    },
+    {
+      "id": "human-handoff",
+      "category": "process",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "clause_covered": true,
+      "latency_ms": 151.18
+    },
+    {
+      "id": "return-intake",
+      "category": "process",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "clause_covered": true,
+      "latency_ms": 128.22
+    },
+    {
+      "id": "unsupported-crypto",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 139.55
+    },
+    {
+      "id": "unsupported-flight",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 122.67
+    },
+    {
+      "id": "presale-dispatch",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "clause_covered": true,
+      "latency_ms": 126.83
+    },
+    {
+      "id": "refund-bank",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "clause_covered": true,
+      "latency_ms": 131.04
+    },
+    {
+      "id": "invoice-vat",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "clause_covered": true,
+      "latency_ms": 145.78
+    },
+    {
+      "id": "human-hours",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "clause_covered": true,
+      "latency_ms": 126.68
+    },
+    {
+      "id": "refund-process",
+      "category": "process",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "clause_covered": true,
+      "latency_ms": 140.74
+    },
+    {
+      "id": "unsupported-cod",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 125.14
+    },
+    {
+      "id": "unsupported-installments",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 174.32
+    },
+    {
+      "id": "unsupported-return-address",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 147.62
+    },
+    {
+      "id": "unsupported-course-schedule",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 162.91
+    },
+    {
+      "id": "unsupported-trial",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 158.28
+    },
+    {
+      "id": "unsupported-vip-points",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 167.77
+    },
+    {
+      "id": "unsupported-crypto-refund",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 145.9
+    },
+    {
+      "id": "unsupported-order-status",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 156.49
+    },
+    {
+      "id": "unsupported-food-shelf-life",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 156.41
+    },
+    {
+      "id": "unsupported-digital-course-return",
+      "category": "no_answer",
+      "negative_retrieval_ok": true,
+      "latency_ms": 138.35
+    }
+  ]
+}

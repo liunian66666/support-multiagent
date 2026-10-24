@@ -1,0 +1,7 @@
+{"id":"faq-shipping","category":"answer_policy","customer":"guest","query":"单笔订单满多少元包邮？","required":[],"forbidden":["已找到以下知识库片段","当前主项目尚未接通","知识来源：","[K1]"]}
+{"id":"faq-invoice","category":"answer_policy","customer":"guest","query":"能开增值税专用发票吗？","required":["发票"],"forbidden":["已找到以下知识库片段","当前主项目尚未接通","知识来源："]}
+{"id":"faq-no-cod","category":"answer_no_policy","customer":"guest","query":"店铺支持货到付款吗？","required":[],"forbidden":["肯定支持货到付款","已找到以下知识库片段","当前主项目尚未接通","没有查询店铺政策的能力"]}
+{"id":"faq-digital-return","category":"answer_applicability","customer":"guest","query":"数据分析数字课程已学习一半还能退吗？","required":[],"forbidden":["已找到以下知识库片段","当前主项目尚未接通"]}
+{"id":"faq-sealed","category":"answer_applicability","customer":"guest","query":"未拆封能退吗？","required":[],"forbidden":["当前主项目尚未接通"]}
+{"id":"faq-opened","category":"answer_applicability","customer":"guest","query":"已经拆封能退吗？","required":[],"forbidden":["当前主项目尚未接通"]}
+{"id":"compound-course-order","category":"answer_compound","customer":"buyer1","query":"ORD-2024-003订单的状态，以及怎么退货？","required":["ORD-2024-003","待发货"],"forbidden":["已找到以下知识库片段","当前主项目尚未接通","知识来源：","[K1]"]}

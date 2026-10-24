@@ -1,0 +1,102 @@
+{
+  "k": 3,
+  "cases": 9,
+  "metrics": {
+    "recall_at_k": {
+      "value": 1.0,
+      "n": 7
+    },
+    "reciprocal_rank": {
+      "value": 1.0,
+      "n": 7
+    },
+    "negative_retrieval_ok": {
+      "value": 0.0,
+      "n": 2
+    },
+    "answer_rules_ok": {
+      "value": null,
+      "n": 0
+    },
+    "route_ok": {
+      "value": null,
+      "n": 0
+    },
+    "order_id_ok": {
+      "value": null,
+      "n": 0
+    },
+    "action_ok": {
+      "value": null,
+      "n": 0
+    },
+    "latency_ms": {
+      "p50": 156.67,
+      "p95": 183.62,
+      "n": 9
+    }
+  },
+  "details": [
+    {
+      "id": "shipping-threshold",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "latency_ms": 183.62
+    },
+    {
+      "id": "shipping-region",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "latency_ms": 161.83
+    },
+    {
+      "id": "return-shipping",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "latency_ms": 120.96
+    },
+    {
+      "id": "return-window",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "latency_ms": 156.91
+    },
+    {
+      "id": "invoice-timing",
+      "category": "policy",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "latency_ms": 156.67
+    },
+    {
+      "id": "human-handoff",
+      "category": "process",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "latency_ms": 153.23
+    },
+    {
+      "id": "return-intake",
+      "category": "process",
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "latency_ms": 168.6
+    },
+    {
+      "id": "unsupported-crypto",
+      "category": "no_answer",
+      "negative_retrieval_ok": false,
+      "latency_ms": 134.06
+    },
+    {
+      "id": "unsupported-flight",
+      "category": "no_answer",
+      "negative_retrieval_ok": false,
+      "latency_ms": 144.29
+    }
+  ]
+}

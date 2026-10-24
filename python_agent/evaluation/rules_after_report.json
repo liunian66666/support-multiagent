@@ -1,0 +1,118 @@
+{
+  "k": 3,
+  "cases": 11,
+  "metrics": {
+    "recall_at_k": {
+      "value": null,
+      "n": 0
+    },
+    "reciprocal_rank": {
+      "value": null,
+      "n": 0
+    },
+    "negative_retrieval_ok": {
+      "value": null,
+      "n": 0
+    },
+    "answer_rules_ok": {
+      "value": null,
+      "n": 0
+    },
+    "route_ok": {
+      "value": 1.0,
+      "n": 11
+    },
+    "order_id_ok": {
+      "value": 1.0,
+      "n": 11
+    },
+    "action_ok": {
+      "value": 1.0,
+      "n": 11
+    },
+    "latency_ms": {
+      "p50": null,
+      "p95": null,
+      "n": 0
+    }
+  },
+  "details": [
+    {
+      "id": "compound-order-return",
+      "category": "compound",
+      "route_ok": true,
+      "order_id_ok": true,
+      "action_ok": true
+    },
+    {
+      "id": "order-status",
+      "category": "order",
+      "route_ok": true,
+      "order_id_ok": true,
+      "action_ok": true
+    },
+    {
+      "id": "vendor-id-adjacent-chinese",
+      "category": "order",
+      "route_ok": true,
+      "order_id_ok": true,
+      "action_ok": true
+    },
+    {
+      "id": "numeric-id",
+      "category": "order",
+      "route_ok": true,
+      "order_id_ok": true,
+      "action_ok": true
+    },
+    {
+      "id": "refund-policy",
+      "category": "faq",
+      "route_ok": true,
+      "order_id_ok": true,
+      "action_ok": true
+    },
+    {
+      "id": "return-shipping",
+      "category": "faq",
+      "route_ok": true,
+      "order_id_ok": true,
+      "action_ok": true
+    },
+    {
+      "id": "return-process",
+      "category": "faq",
+      "route_ok": true,
+      "order_id_ok": true,
+      "action_ok": true
+    },
+    {
+      "id": "refund-request",
+      "category": "faq",
+      "route_ok": true,
+      "order_id_ok": true,
+      "action_ok": true
+    },
+    {
+      "id": "human-request",
+      "category": "handoff",
+      "route_ok": true,
+      "order_id_ok": true,
+      "action_ok": true
+    },
+    {
+      "id": "sealed-return-eligibility",
+      "category": "faq",
+      "route_ok": true,
+      "order_id_ok": true,
+      "action_ok": true
+    },
+    {
+      "id": "opened-return-eligibility",
+      "category": "faq",
+      "route_ok": true,
+      "order_id_ok": true,
+      "action_ok": true
+    }
+  ]
+}

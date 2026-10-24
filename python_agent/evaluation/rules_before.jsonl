@@ -1,0 +1,11 @@
+{"id": "compound-order-return", "actual_route": "order", "actual_order_id": "ORD-2024-003", "actual_action": "compound", "public_kb_query": ["退换售后：订单的状态，以及怎么退货？"]}
+{"id": "order-status", "actual_route": "order", "actual_order_id": "ORD-2024-001", "actual_action": "order", "public_kb_query": []}
+{"id": "vendor-id-adjacent-chinese", "actual_route": "order", "actual_order_id": "TB202410180001", "actual_action": "order", "public_kb_query": []}
+{"id": "numeric-id", "actual_route": "order", "actual_order_id": "10001", "actual_action": "order", "public_kb_query": []}
+{"id": "refund-policy", "actual_route": "faq", "actual_order_id": null, "actual_action": "faq", "public_kb_query": []}
+{"id": "return-shipping", "actual_route": "faq", "actual_order_id": null, "actual_action": "faq", "public_kb_query": []}
+{"id": "return-process", "actual_route": "faq_fast", "actual_order_id": null, "actual_action": "faq_fast", "public_kb_query": []}
+{"id": "refund-request", "actual_route": "faq_fast", "actual_order_id": null, "actual_action": "faq_fast", "public_kb_query": []}
+{"id": "human-request", "actual_route": "handoff", "actual_order_id": null, "actual_action": "handoff", "public_kb_query": []}
+{"id": "sealed-return-eligibility", "actual_route": "general", "actual_order_id": null, "actual_action": "general", "public_kb_query": []}
+{"id": "opened-return-eligibility", "actual_route": "general", "actual_order_id": null, "actual_action": "general", "public_kb_query": []}

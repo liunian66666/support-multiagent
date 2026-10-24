@@ -20,6 +20,7 @@ from app.infra.checkpoint import SafeAsyncPostgresSaver
 from app.infra.config import (POSTGRES_DSN, QDRANT_URL, SESSION_CLEANUP_INTERVAL,
                               SESSION_RETENTION_DAYS, TEXT_SPLITTER_CHUNK_OVERLAP,
                               TEXT_SPLITTER_CHUNK_SIZE)
+from app.infra.db.kb_policy import ensure_kb_policy_schema
 from app.infra.db.prompt import load_active_prompt, seed_default_prompt
 from app.infra.db.session import verify_agent_tables
 from app.infra.db.trace import ensure_trace_table
@@ -78,6 +79,7 @@ async def lifespan(app: FastAPI):
         # 扩展表：会话元数据 / Prompt / 知识库文档（含租户维度）
         async with app.state.db_pool.connection() as conn:
             await verify_agent_tables(conn)
+            await ensure_kb_policy_schema(conn)
             await ensure_trace_table(conn)
             await seed_default_prompt(conn)
             global_prompt = await load_active_prompt(conn, "")

@@ -15,6 +15,7 @@ from app.chat.order import (ORDER_FORBIDDEN, ORDER_NOT_FOUND, ORDER_OK,
                             ORDER_UNVERIFIED)
 from app.infra.cache import _kb_cache_get, _kb_cache_set
 from app.infra.config import INTERNAL_API_TOKEN, ORDER_BUSINESS_API
+from app.kb.evidence import approved_evidence
 from app.infra.db_pool import _pool_conn
 from app.services import trace
 
@@ -24,6 +25,24 @@ _logger = None
 _tenant_var = None
 _pending_ticket_var = None
 _thread_var = None
+
+_STALE_KB_FACTS = ("当前主项目尚未接通真实订单业务接口",)
+
+
+def usable_kb_docs(docs: list) -> list:
+    """Exclude known superseded operational claims from all FAQ paths."""
+    return [doc for doc in docs if not any(
+        stale in str(getattr(doc, "page_content", "")) for stale in _STALE_KB_FACTS)]
+
+
+def format_kb_doc_for_model(doc) -> str:
+    """Keep demo provenance attached to every retrieved chunk."""
+    metadata = getattr(doc, "metadata", {}) or {}
+    title = str(metadata.get("title") or "")
+    text = str(getattr(doc, "page_content", ""))
+    if metadata.get("policy_state") == "demo" or "演示" in title or "示例" in title:
+        return f"【演示资料，仅供测试，不代表真实店铺承诺】{text}"
+    return text
 
 
 def set_app(app, logger, tenant_var, pending_ticket_var=None, thread_var=None):
@@ -105,15 +124,16 @@ async def search_kb(query: str) -> str:
         _logger.warning(f"[KB Degrade] tenant={tid} 检索失败，降级为纯LLM: {str(e)[:150]}")
         trace.record("tool", "search_kb", status="error")
         return "知识库暂未就绪，请稍后再试。"
+    docs = await approved_evidence(_app, tid, query, docs)
     if not docs:
         result = "未找到相关信息，建议转接人工客服。"
     else:
-        result = "\n".join(f"- {doc.page_content}" for doc in docs)
+        result = "\n".join(f"- {format_kb_doc_for_model(doc)}" for doc in docs)
 
     # KB 闭环：检索结果落库（命中明细 / 未命中查询）
     await _record_kb_hits(tid, thread_id, query, docs)
     trace.record("evidence", "search_kb", count=len(docs),
-                 evidence_ids=[str((getattr(d, "metadata", {}) or {}).get("doc_id", ""))
+                 evidence_ids=[str((getattr(d, "metadata", {}) or {}).get("chunk_id", ""))
                                for d in docs[:3]])
 
     # P2-2：写入缓存

@@ -1,0 +1,99 @@
+{
+  "k": 3,
+  "cases": 7,
+  "metrics": {
+    "recall_at_k": {
+      "value": null,
+      "n": 0
+    },
+    "reciprocal_rank": {
+      "value": null,
+      "n": 0
+    },
+    "negative_retrieval_ok": {
+      "value": null,
+      "n": 0
+    },
+    "answer_rules_ok": {
+      "value": 0.8571,
+      "n": 7
+    },
+    "route_ok": {
+      "value": null,
+      "n": 0
+    },
+    "order_id_ok": {
+      "value": null,
+      "n": 0
+    },
+    "action_ok": {
+      "value": null,
+      "n": 0
+    },
+    "latency_ms": {
+      "p50": 7973.79,
+      "p95": 9920.15,
+      "n": 7
+    }
+  },
+  "details": [
+    {
+      "id": "faq-shipping",
+      "category": "answer_policy",
+      "missing_required": [],
+      "present_forbidden": [],
+      "answer_rules_ok": true,
+      "latency_ms": 7973.79
+    },
+    {
+      "id": "faq-invoice",
+      "category": "answer_policy",
+      "missing_required": [],
+      "present_forbidden": [],
+      "answer_rules_ok": true,
+      "latency_ms": 7318.22
+    },
+    {
+      "id": "faq-no-cod",
+      "category": "answer_no_policy",
+      "missing_required": [],
+      "present_forbidden": [],
+      "answer_rules_ok": true,
+      "latency_ms": 6134.85
+    },
+    {
+      "id": "faq-digital-return",
+      "category": "answer_applicability",
+      "missing_required": [],
+      "present_forbidden": [],
+      "answer_rules_ok": true,
+      "latency_ms": 9920.15
+    },
+    {
+      "id": "faq-sealed",
+      "category": "answer_applicability",
+      "missing_required": [],
+      "present_forbidden": [
+        "一定能退"
+      ],
+      "answer_rules_ok": false,
+      "latency_ms": 9766.46
+    },
+    {
+      "id": "faq-opened",
+      "category": "answer_applicability",
+      "missing_required": [],
+      "present_forbidden": [],
+      "answer_rules_ok": true,
+      "latency_ms": 8553.75
+    },
+    {
+      "id": "compound-course-order",
+      "category": "answer_compound",
+      "missing_required": [],
+      "present_forbidden": [],
+      "answer_rules_ok": true,
+      "latency_ms": 2491.11
+    }
+  ]
+}

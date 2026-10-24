@@ -186,6 +186,14 @@ async def admin_kb_document_category(doc_id: str, request: Request,
                                 admin.tenant_id)
 
 
+@router.post("/api/admin/kb/documents/{doc_id}/policy")
+async def admin_kb_document_policy(doc_id: str, request: Request,
+                                   admin: Admin = Depends(require_perm("knowledge:edit"))):
+    return await proxy_to_agent(request, "POST",
+                                "/agent/kb/documents/" + doc_id + "/policy",
+                                admin.tenant_id)
+
+
 @router.post("/api/admin/kb/documents/{doc_id}/reindex")
 async def admin_kb_document_reindex(doc_id: str, request: Request,
                                     admin: Admin = Depends(require_perm("knowledge:edit"))):

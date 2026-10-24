@@ -2,13 +2,15 @@
 
 - 队列：Redis List `cs:kb:index:queue`，消息 {"doc_id": "...", "tenant_id": "..."}
 - 上传/重索引只入队并标记 status=0，本 worker 异步完成向量化后更新 status=1/2
-- 幂等：处理前先按 doc_id 删除旧 Qdrant points，重复消费不产生重复向量
+- 幂等：稳定分片 ID 覆写新向量，校验成功后只删除旧分片
 - 崩溃兜底：main.py 启动时扫描 status=0 记录重新入队
 """
 import asyncio
 import json
 import logging
 import uuid
+from app.infra.cache import clear_kb_cache
+from app.kb.evidence import stable_chunk_id
 
 from qdrant_client.http import models as qmodels
 
@@ -49,16 +51,22 @@ async def _index_one(app, doc_id: str, tenant_id: str) -> None:
                     "WHERE doc_id = %s AND tenant_id = %s",
                     (doc_id, tenant_id))
 
-        # 3) 幂等：先删旧向量（防重复消费/重索引残留）
-        try:
-            app.state.qdrant_client.delete(
-                collection_name=collection_name(tenant_id),
-                points_selector=qmodels.FilterSelector(filter=qmodels.Filter(must=[
-                    qmodels.FieldCondition(key="metadata.doc_id", match=qmodels.MatchValue(value=doc_id))  # [ours] 修正 payload 字段路径
-                ])),
+        # 3) 先记下旧分片 ID；新分片验证成功前不删旧向量。
+        col = collection_name(tenant_id)
+        doc_filter = qmodels.Filter(must=[
+            qmodels.FieldCondition(key="metadata.doc_id",
+                                   match=qmodels.MatchValue(value=doc_id))
+        ])
+        old_ids = set()
+        offset = None
+        while True:
+            points, offset = app.state.qdrant_client.scroll(
+                collection_name=col, scroll_filter=doc_filter, limit=256,
+                offset=offset, with_payload=False, with_vectors=False,
             )
-        except Exception:
-            pass
+            old_ids.update(str(point.id) for point in points)
+            if offset is None:
+                break
 
         # 4) 分片（超长截断）
         text = content[:MAX_TEXT_CHARS]
@@ -67,7 +75,8 @@ async def _index_one(app, doc_id: str, tenant_id: str) -> None:
             await _mark_failed(app, doc_id, tenant_id, "文档分片结果为空")
             return
         texts = [ch.page_content for ch in chunks]
-        ids = [str(uuid.uuid4()) for _ in range(len(texts))]
+        ids = [str(uuid.uuid5(uuid.NAMESPACE_URL, stable_chunk_id(tenant_id, doc_id, i, text)))
+               for i, text in enumerate(texts)]
 
         # 5) embedding + 写入 Qdrant
         vs = await ensure_tenant_vector(app, tenant_id)
@@ -77,11 +86,26 @@ async def _index_one(app, doc_id: str, tenant_id: str) -> None:
         await vs.aadd_texts(
             texts,
             metadatas=[{"doc_id": doc_id, "title": title, "source": "kb",
-                        "tenant_id": tenant_id}] * len(texts),
+                        "tenant_id": tenant_id, "chunk_index": i,
+                        "chunk_id": stable_chunk_id(tenant_id, doc_id, i, chunk)}
+                       for i, chunk in enumerate(texts)],
             ids=ids,
         )
 
-        # 6) 更新状态
+        # 6) 确认新分片可读后，只删不再存在的旧分片。
+        written = app.state.qdrant_client.retrieve(
+            collection_name=col, ids=ids, with_payload=False, with_vectors=False)
+        if len(written) != len(ids):
+            raise RuntimeError(f"Qdrant 新分片校验失败: {len(written)}/{len(ids)}")
+        obsolete_ids = list(old_ids - set(ids))
+        if obsolete_ids:
+            app.state.qdrant_client.delete(
+                collection_name=col,
+                points_selector=qmodels.PointIdsList(points=obsolete_ids),
+                wait=True,
+            )
+
+        # 7) 更新状态
         async with _pool_conn(app) as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
@@ -89,6 +113,7 @@ async def _index_one(app, doc_id: str, tenant_id: str) -> None:
                     "WHERE doc_id = %s AND tenant_id = %s",
                     (len(texts), doc_id, tenant_id))
         app.state.tenant_retrievers.pop(tenant_id, None)
+        clear_kb_cache()
         logger.info("KB worker indexed tenant=%s doc_id=%s chunks=%d", tenant_id, doc_id, len(texts))
     except Exception as e:
         logger.exception("KB worker index error doc_id=%s", doc_id)

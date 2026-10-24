@@ -1,0 +1,24 @@
+{"id":"shipping-threshold","category":"policy","tenant_id":"t_demo","query":"满多少元包邮？","gold_docs":["8b0a0bf7d19d41b8b519b2c2a00fb54e"],"gold_evidence_terms":["99 元包邮"]}
+{"id":"shipping-region","category":"policy","tenant_id":"t_demo","query":"新疆地区运费怎么算？","gold_docs":["8b0a0bf7d19d41b8b519b2c2a00fb54e"],"gold_evidence_terms":["新疆"]}
+{"id":"return-shipping","category":"policy","tenant_id":"t_demo","query":"质量问题退货的运费谁承担？","gold_docs":["8b0a0bf7d19d41b8b519b2c2a00fb54e"],"gold_evidence_terms":["质量问题","运费"]}
+{"id":"return-window","category":"policy","tenant_id":"t_demo","query":"签收几天内能申请退货？","gold_docs":["8b0a0bf7d19d41b8b519b2c2a00fb54e"],"gold_evidence_terms":["签收后 7 天"]}
+{"id":"invoice-timing","category":"policy","tenant_id":"t_demo","query":"电子发票多久开出？","gold_docs":["8b0a0bf7d19d41b8b519b2c2a00fb54e"],"gold_evidence_terms":["3 个工作日"]}
+{"id":"human-handoff","category":"process","tenant_id":"t_demo","query":"想转人工客服应该怎么做？","gold_docs":["c111e8bd171b4bfe8abf54fd7ce3ca30"],"gold_evidence_terms":["转人工"]}
+{"id":"return-intake","category":"process","tenant_id":"t_demo","query":"退货咨询前客服需要核验哪些信息？","gold_docs":["c111e8bd171b4bfe8abf54fd7ce3ca30"],"gold_evidence_terms":["退货咨询","订单号"]}
+{"id":"unsupported-crypto","category":"no_answer","tenant_id":"t_demo","query":"比特币能否支付课程学费？","gold_docs":[]}
+{"id":"unsupported-flight","category":"no_answer","tenant_id":"t_demo","query":"明天北京到上海的航班几点起飞？","gold_docs":[]}
+{"id":"presale-dispatch","category":"policy","tenant_id":"t_demo","query":"预售商品何时发货？","gold_docs":["8b0a0bf7d19d41b8b519b2c2a00fb54e"],"gold_evidence_terms":["预售商品"]}
+{"id":"refund-bank","category":"policy","tenant_id":"t_demo","query":"退款退到银行卡一般多久到账？","gold_docs":["8b0a0bf7d19d41b8b519b2c2a00fb54e"],"gold_evidence_terms":["银行卡","1 至 3"]}
+{"id":"invoice-vat","category":"policy","tenant_id":"t_demo","query":"能开增值税专用发票吗？","gold_docs":["8b0a0bf7d19d41b8b519b2c2a00fb54e"],"gold_evidence_terms":["增值税专用发票"]}
+{"id":"human-hours","category":"policy","tenant_id":"t_demo","query":"人工客服几点上班？","gold_docs":["8b0a0bf7d19d41b8b519b2c2a00fb54e"],"gold_evidence_terms":["9:00"]}
+{"id":"refund-process","category":"process","tenant_id":"t_demo","query":"退款咨询客服需要先核对什么？","gold_docs":["c111e8bd171b4bfe8abf54fd7ce3ca30"],"gold_evidence_terms":["退款与支付","归属核验"]}
+{"id":"unsupported-cod","category":"no_answer","tenant_id":"t_demo","query":"支持货到付款吗？","gold_docs":[]}
+{"id":"unsupported-installments","category":"no_answer","tenant_id":"t_demo","query":"买课程支持花呗分期吗？","gold_docs":[]}
+{"id":"unsupported-return-address","category":"no_answer","tenant_id":"t_demo","query":"退货地址和收件人电话是什么？","gold_docs":[]}
+{"id":"unsupported-course-schedule","category":"no_answer","tenant_id":"t_demo","query":"数据分析课程下周几开课？","gold_docs":[]}
+{"id":"unsupported-trial","category":"no_answer","tenant_id":"t_demo","query":"Python课程可以免费试听几节？","gold_docs":[]}
+{"id":"unsupported-vip-points","category":"no_answer","tenant_id":"t_demo","query":"VIP会员消费能积多少积分？","gold_docs":[]}
+{"id":"unsupported-crypto-refund","category":"no_answer","tenant_id":"t_demo","query":"退款可以退到比特币钱包吗？","gold_docs":[]}
+{"id":"unsupported-order-status","category":"no_answer","tenant_id":"t_demo","query":"订单ORD-2024-003是否已经发货？","gold_docs":[]}
+{"id":"unsupported-food-shelf-life","category":"no_answer","tenant_id":"t_demo","query":"店铺零食保质期多久？","gold_docs":[]}
+{"id":"unsupported-digital-course-return","category":"no_answer","tenant_id":"t_demo","query":"数据分析数字课程已学习一半还能退吗？","gold_docs":[]}

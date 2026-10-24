@@ -12,6 +12,7 @@ from app.agent.tools import OrderLookup
 from app.api.chat import _compound_plan
 from app.chat.intent import Route, route_message
 from app.chat.plan import plan_compound
+from app.kb.evidence import select_evidence
 from app.services.compound import execute_compound
 
 
@@ -64,6 +65,14 @@ class ExecutionTest(unittest.IsolatedAsyncioTestCase):
         self.app = SimpleNamespace(state=SimpleNamespace(
             tenant_retrievers={"t_demo": self.retriever}))
 
+        async def approve(_app, _tenant_id, _query, docs):
+            return select_evidence(docs, _query, {
+                "policy-1": (1, "demo", "all", None, None)
+            })
+        patcher = patch("app.services.compound.approved_evidence", side_effect=approve)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     async def test_parallel_reads_and_one_synthesis(self):
         seen = []
 
@@ -95,6 +104,19 @@ class ExecutionTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("知识来源", result.content)
         self.assertNotIn("[K1]", result.content)
         self.assertNotIn("ORD-2024-001", self.retriever.ainvoke.call_args.args[0])
+
+    async def test_composer_uses_customer_language_for_source_reference(self):
+        model = SimpleNamespace(ainvoke=AsyncMock(return_value=AIMessage(
+            content="知识库中未明确课程退货规则，建议人工核实。")))
+        with patch("app.services.compound.tools.lookup_order", new_callable=AsyncMock,
+                   return_value=OrderLookup("OK", "订单 ORD-2024-003 状态：待发货。")), \
+                patch("app.services.compound.tools._record_kb_hits", new_callable=AsyncMock), \
+                patch("app.services.compound.get_tenant_model", new_callable=AsyncMock,
+                      return_value=model):
+            plan = plan_compound("查订单 ORD-2024-003 状态并说明怎么退货")
+            result = await execute_compound(self.app, "t_demo", "t_demo:buyer1", "问题", plan)
+        self.assertIn("店铺资料中未明确", result.content)
+        self.assertNotIn("知识库", result.content)
 
     async def test_empty_model_reply_keeps_order_without_exposing_evidence(self):
         model = SimpleNamespace(ainvoke=AsyncMock(return_value=AIMessage(content="")))
