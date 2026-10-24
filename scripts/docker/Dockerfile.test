@@ -1,0 +1,22 @@
+# 测试基础镜像：仅装依赖，源码运行时挂载（改代码无需重建）。与 .gitlab-ci.yml 的
+# business_tests / agent_tests 两个独立 job 对齐——两侧依赖存在版本冲突（python-multipart
+# agent=0.0.9 / business=0.0.20），不能共装一个镜像。
+# 构建:
+#   docker build -f scripts/docker/Dockerfile.test --target agent   -t cs-test:agent   .
+#   docker build -f scripts/docker/Dockerfile.test --target business -t cs-test:business .
+FROM python:3.13-slim AS base
+
+ENV PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    TZ=Asia/Shanghai \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /build
+
+FROM base AS agent
+COPY python_agent/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+FROM base AS business
+COPY python_business/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
