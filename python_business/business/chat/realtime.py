@@ -331,11 +331,14 @@ async def stream_agent_reply(customer, content, pending, client):
                                        "chunk": event.get("content") or ""})
                 elif kind == "end":
                     answer = event.get("content") or ""
+                    answer_id = str(event.get("answer_id") or "")  # [ours] S1 轮次归因锚点
                     ticket = await asyncio.to_thread(handling_ticket, customer)
                     await asyncio.to_thread(save_message, customer.thread_id, "ai",
-                                            answer, "text", ticket["id"] if ticket else None)
+                                            answer, "text", ticket["id"] if ticket else None,
+                                            answer_id)
                     await client.send({"type": "chat_end", "msg": answer,
-                                       "trace_id": trace_id})
+                                       "trace_id": trace_id,
+                                       "answer_id": answer_id})
                     completed = True
                     success = True
                     break
@@ -516,9 +519,11 @@ def process_http_chat(customer, content, trace_id):
     answer = data.get("content") or ""
     ticket = handling_ticket(customer)
     save_message(customer.thread_id, "ai", answer, "text",
-                 ticket["id"] if ticket else None)
+                 ticket["id"] if ticket else None,
+                 str(data.get("answer_id") or ""))  # [ours] S1 轮次归因锚点
     return {"code": 0, "msg": answer,
-            "trace_id": data.get("trace_id") or trace_id}
+            "trace_id": data.get("trace_id") or trace_id,
+            "answer_id": str(data.get("answer_id") or "")}
 
 
 @router.post("/api/user/chat")

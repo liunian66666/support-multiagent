@@ -27,6 +27,9 @@ class TraceRun:
     status: str = "running"
     duration_ms: int = 0
     events: list[dict] = field(default_factory=list)
+    # [ours] S1 轮次归因锚点：每一轮 Agent 答复的稳定 ID，随响应返回给业务层，
+    # 客户评价按它归因到轮次（trace_id 标识"哪次运行"，answer_id 标识"哪条答复"）。
+    answer_id: str = ""
 
     def event(self, stage: str, name: str, **attributes):
         if len(self.events) >= _MAX_EVENTS and (stage, name) != ("run", "finished"):
@@ -64,9 +67,15 @@ class TraceRun:
 
 def new_trace(raw_id: str, tenant_id: str, thread_id: str) -> TraceRun:
     trace_id = raw_id if _VALID_ID.fullmatch(raw_id or "") else secrets.token_hex(16)
-    run = TraceRun(trace_id, tenant_id, thread_id)
+    run = TraceRun(trace_id, tenant_id, thread_id, answer_id="ans_" + secrets.token_hex(12))
     run.event("run", "started")
     return run
+
+
+def current_answer_id() -> str:
+    """本轮答复的 answer_id；不在 trace 上下文时为空串（调用方按缺省处理）。"""
+    run = _current.get()
+    return run.answer_id if run is not None else ""
 
 
 def bind(run: TraceRun):

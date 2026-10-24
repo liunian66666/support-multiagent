@@ -80,16 +80,19 @@ def agent_resume(thread_id, confirmed, wait_time, ticket_no, trace_id=""):
     raise RuntimeError(str(error))
 
 
-def save_message(thread_id, role, content, msg_type="", ticket_id=None):
-    """对齐 Go repository.saveMessage：用户消息默认已读，其余未读；文本消息触发客户信息提取。"""
+def save_message(thread_id, role, content, msg_type="", ticket_id=None, answer_id=""):
+    """对齐 Go repository.saveMessage：用户消息默认已读，其余未读；文本消息触发客户信息提取。
+
+    [ours] S1：answer_id 为 agent 返回的轮次归因锚点，仅 AI 消息携带，默认空串。
+    """
     if not content:
         return
     msg_type = msg_type or "text"
     write(
         "INSERT INTO messages (thread_id, role, content, msg_type, tenant_id, ticket_id, "
-        "is_read, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())",
+        "is_read, answer_id, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())",
         (thread_id, role, content, msg_type, tenant_of_thread(thread_id), ticket_id,
-         1 if role == "user" else 0),
+         1 if role == "user" else 0, (answer_id or "")[:64]),
     )
     if msg_type == "text" and role == "user":
         upsert_extracted_profile(thread_id, tenant_of_thread(thread_id),

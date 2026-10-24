@@ -536,7 +536,7 @@ function handleMsg(data){
     case 'chat_reply': hideTyping(); cancelStreaming(); addAI(data.msg); break;
     // 流式输出：Go 流式链路只下发 chat_chunk（增量）与 chat_end（全文收尾）
     case 'chat_chunk': appendStreamChunk(data.chunk||''); break;
-    case 'chat_end': endStreaming(data.msg); break;
+    case 'chat_end': if(data.answer_id) latestAnswerId = data.answer_id; endStreaming(data.msg); break;  // [ours] S1 记录轮次锚点
     case 'ticket': {
       hideTyping(); cancelStreaming();
       var why = data.reason ? ('（原因：' + data.reason + '）') : '';
@@ -718,6 +718,7 @@ function hideToast(){document.getElementById('connToast').style.display='none';}
 // ============ 满意度评价 ============
 var ratingScore = 0;
 var ratingTags = [];
+var latestAnswerId = '';  // [ours] S1：最近一轮 AI 回答的归因锚点（chat_end/HTTP 应答携带）
 
 function openRating(){
   ratingScore = 0;
@@ -756,7 +757,8 @@ async function submitRating(){
       body: JSON.stringify({
         score: ratingScore,
         tags: ratingTags.join(','),
-        comment: document.getElementById('ratingComment').value.trim()
+        comment: document.getElementById('ratingComment').value.trim(),
+        answer_id: latestAnswerId || ''  // [ours] S1 轮次归因锚点
       })
     });
     var data = await resp.json();

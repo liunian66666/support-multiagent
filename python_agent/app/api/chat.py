@@ -40,6 +40,7 @@ async def agent_chat(req: ChatRequest, request: Request):
     try:
         result = await _agent_chat_impl(req, request)
         result.trace_id = run.trace_id
+        result.answer_id = run.answer_id  # [ours] S1 轮次归因锚点
         status = ("interrupted" if result.is_interrupt else
                   "completed" if result.success else "failed")
         return result
@@ -177,6 +178,7 @@ async def agent_chat_stream(req: ChatRequest, request: Request):
                 payload = ({"type": "interrupt", "data": shortcut.interrupt_data}
                            if shortcut.interrupt_data else
                            {"type": "end", "content": shortcut.content + SERVICE_FOOTER})
+                payload["answer_id"] = run.answer_id  # [ours] S1 轮次归因锚点
                 yield f"data: {_json.dumps(payload, ensure_ascii=False)}\n\n"
                 return
         except Exception as e:
@@ -241,7 +243,8 @@ async def agent_chat_stream(req: ChatRequest, request: Request):
             # stops reading as soon as it receives `end`.
             async with _pool_conn(request.app) as conn:
                 await _record_usage_after_chat(request, conn, tenant_id, thread_id, stream_msgs)
-            yield f"data: {_json.dumps({'type':'end','content':full_content}, ensure_ascii=False)}\n\n"
+            # [ours] S1：end/interrupt 帧携带 answer_id，业务层落库与前端评价按它归因
+            yield f"data: {_json.dumps({'type':'end','content':full_content,'answer_id':run.answer_id}, ensure_ascii=False)}\n\n"
 
         except Exception as e:
             logger.exception("/agent/chat/stream error")

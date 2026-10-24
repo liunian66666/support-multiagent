@@ -28,6 +28,9 @@ class AgentResp(BaseModel):
     interrupt_data: Optional[dict] = None
     content: Optional[str] = None
     trace_id: Optional[str] = None
+    # [ours] S1 轮次归因锚点（附加字段，旧客户端忽略即可）：业务层落库/评价携带它，
+    # 反馈才能归因到"哪条答复"而不是整个会话。
+    answer_id: Optional[str] = None
 
 
 class SessionCleanupReq(BaseModel):

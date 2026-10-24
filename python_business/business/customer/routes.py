@@ -347,6 +347,7 @@ class RatingBody(BaseModel):
     score: int
     tags: str = ""
     comment: str = ""
+    answer_id: str = ""  # [ours] S1：评价指向的轮次锚点（chat_end/HTTP 应答返回），可空
 
 
 def upsert_rating(customer, body):
@@ -354,13 +355,25 @@ def upsert_rating(customer, body):
         deny(400, "评分需为 1-5 星")
     tags = (body.tags or "").strip()[:255]
     comment = (body.comment or "").strip()[:500]
+    answer_id = (body.answer_id or "").strip()[:64]
+    # [ours] S1：先追加 Outbox 不可变反馈事件（异步幂等同步 PG 经验层），
+    # 再落 satisfaction_ratings 业务表。旧链路（不带 answer_id）行为不变。
+    if answer_id:
+        write(
+            "INSERT INTO feedback_outbox (event_type, tenant_id, thread_id, "
+            "answer_id, payload, status, created_at) "
+            "VALUES ('rating_submitted', %s, %s, %s, %s, 0, NOW())",
+            (customer.tenant_id, customer.thread_id, answer_id,
+             json.dumps({"score": body.score, "tags": tags, "comment": comment},
+                        ensure_ascii=False)),
+        )
     existing = one(
         "SELECT id FROM satisfaction_ratings "
         "WHERE tenant_id = %s AND thread_id = %s LIMIT 1",
         (customer.tenant_id, customer.thread_id),
     )
     if existing:
-        # 同一会话重复评价覆盖旧值，与 Go 侧语义一致
+        # 同一会话重复评价覆盖旧值，与 Go 侧语义一致（answer_id 归属首轮不改）
         write(
             "UPDATE satisfaction_ratings SET score = %s, tags = %s, comment = %s, "
             "updated_at = NOW() WHERE id = %s",
@@ -370,9 +383,10 @@ def upsert_rating(customer, body):
         write(
             "INSERT INTO satisfaction_ratings "
             "(tenant_id, thread_id, ticket_id, user_key, score, tags, comment, "
-            "created_at, updated_at) VALUES (%s, %s, 0, %s, %s, %s, %s, NOW(), NOW())",
+            "answer_id, created_at, updated_at) "
+            "VALUES (%s, %s, 0, %s, %s, %s, %s, %s, NOW(), NOW())",
             (customer.tenant_id, customer.thread_id, customer.thread_id,
-             body.score, tags, comment),
+             body.score, tags, comment, answer_id),
         )
     return {"code": 0, "msg": "评价成功"}
 

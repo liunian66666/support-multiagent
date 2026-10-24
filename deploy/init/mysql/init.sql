@@ -75,8 +75,10 @@ CREATE TABLE IF NOT EXISTS `messages` (
   `tenant_id` varchar(64) NOT NULL DEFAULT '' COMMENT '租户ID',
   `is_read` tinyint(1) DEFAULT 0 COMMENT '0=未读 1=已读',
   `ticket_id` bigint(20) unsigned DEFAULT NULL COMMENT '归属工单ID，NULL=不归属',
+  `answer_id` varchar(64) NOT NULL DEFAULT '' COMMENT '轮次归因锚点（agent 生成，评价-应答-溯源关联）',
   PRIMARY KEY (`id`),
   KEY `idx_messages_thread_id` (`thread_id`),
+  KEY `idx_messages_answer_id` (`answer_id`),
   KEY `idx_messages_tenant_id` (`tenant_id`),
   KEY `idx_messages_tenant_thread` (`tenant_id`,`thread_id`(64)),
   KEY `idx_messages_thread_read` (`thread_id`,`is_read`),
@@ -178,6 +180,7 @@ CREATE TABLE IF NOT EXISTS `messages_archive` (
   `created_at` datetime(3) DEFAULT NULL,
   `archived_at` datetime(3) DEFAULT NULL COMMENT '归档时间',
   `ticket_id` bigint(20) unsigned DEFAULT NULL COMMENT '归属工单ID',
+  `answer_id` varchar(64) NOT NULL DEFAULT '' COMMENT '轮次归因锚点（随消息归档）',
   PRIMARY KEY (`id`),
   KEY `idx_messages_archive_thread_id` (`thread_id`),
   KEY `idx_messages_archive_tenant_id` (`tenant_id`),
@@ -350,12 +353,30 @@ CREATE TABLE IF NOT EXISTS `satisfaction_ratings` (
   `score` tinyint(1) NOT NULL COMMENT '评分 1-5 星',
   `tags` varchar(255) NOT NULL DEFAULT '' COMMENT '原因标签，逗号分隔',
   `comment` varchar(500) NOT NULL DEFAULT '' COMMENT '留言',
+  `answer_id` varchar(64) NOT NULL DEFAULT '' COMMENT '评价所指向的轮次锚点（空=会话级评价）',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uni_rating_thread` (`tenant_id`,`thread_id`),
-  KEY `idx_rating_created` (`tenant_id`,`created_at`)
+  KEY `idx_rating_created` (`tenant_id`,`created_at`),
+  KEY `idx_rating_answer` (`tenant_id`,`answer_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='会话满意度评价表';
+
+-- 反馈 Outbox 表（评价等反馈事件在此追加不可变记录，异步幂等同步至 PG 经验层）
+CREATE TABLE IF NOT EXISTS `feedback_outbox` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `event_type` varchar(32) NOT NULL DEFAULT '' COMMENT '事件类型：rating_submitted 等',
+  `tenant_id` varchar(64) NOT NULL DEFAULT '' COMMENT '租户ID',
+  `thread_id` varchar(255) NOT NULL DEFAULT '' COMMENT '会话ID',
+  `answer_id` varchar(64) NOT NULL DEFAULT '' COMMENT '轮次归因锚点',
+  `payload` text COMMENT '事件载荷JSON',
+  `status` tinyint(1) NOT NULL DEFAULT 0 COMMENT '0=待同步 1=已同步',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `published_at` datetime(3) DEFAULT NULL COMMENT '同步完成时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_outbox_status_id` (`status`,`id`),
+  KEY `idx_outbox_answer` (`tenant_id`,`answer_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='反馈Outbox表（MySQL→PG异步同步）';
 
 -- 会话标签表（运营人员给会话打标，同租户同会话唯一，逗号分隔多标签）
 CREATE TABLE IF NOT EXISTS `session_tags` (

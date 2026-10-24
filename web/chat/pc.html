@@ -637,6 +637,7 @@ function handleWSMessage(data){
       appendStreamChunk(data.chunk);
       break;
     case 'chat_end':
+      if (data.answer_id) latestAnswerId = data.answer_id;  // [ours] S1 记录轮次锚点
       endStreaming(data.msg);
       // 上报已读
       if (!document.hidden) {
@@ -913,6 +914,7 @@ function hideConnStatus(){
 // ============ 满意度评价 ============
 var ratingScore = 0;
 var ratingTags = [];
+var latestAnswerId = '';  // [ours] S1：最近一轮 AI 回答的归因锚点（chat_end/HTTP 应答携带）
 
 function openRating(){
   ratingScore = 0;
@@ -951,7 +953,8 @@ async function submitRating(){
       body: JSON.stringify({
         score: ratingScore,
         tags: ratingTags.join(','),
-        comment: document.getElementById('ratingComment').value.trim()
+        comment: document.getElementById('ratingComment').value.trim(),
+        answer_id: latestAnswerId || ''  // [ours] S1 轮次归因锚点
       })
     });
     var data = await resp.json();

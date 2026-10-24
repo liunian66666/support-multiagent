@@ -23,6 +23,15 @@ async def ensure_trace_table(conn):
             CREATE INDEX IF NOT EXISTS idx_agent_trace_tenant_time
             ON agent_trace_runs (tenant_id, created_at DESC)
         """)
+        # [ours] S1 轮次归因：幂等补列，旧库自动获得 answer_id 与查询索引
+        await cur.execute("""
+            ALTER TABLE agent_trace_runs
+            ADD COLUMN IF NOT EXISTS answer_id varchar(64) NOT NULL DEFAULT ''
+        """)
+        await cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_agent_trace_answer
+            ON agent_trace_runs (tenant_id, answer_id)
+        """)
 
 
 async def save_trace_run(app, run):
@@ -31,12 +40,12 @@ async def save_trace_run(app, run):
             await cur.execute("""
                 INSERT INTO agent_trace_runs
                     (trace_id, tenant_id, thread_id, route, specialist, status,
-                     duration_ms, events, created_at, finished_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, to_timestamp(%s), now())
+                     duration_ms, events, answer_id, created_at, finished_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, to_timestamp(%s), now())
                 ON CONFLICT (trace_id) DO NOTHING
             """, (run.trace_id, run.tenant_id, run.thread_id, run.route,
                   run.specialist, run.status, run.duration_ms,
-                  Jsonb(run.events), run.started_at))
+                  Jsonb(run.events), getattr(run, "answer_id", ""), run.started_at))
 
 
 async def get_trace_run(app, tenant_id: str, trace_id: str):

@@ -308,7 +308,7 @@ def archive_old_messages(days, tenant_id):
     total = 0
     while True:
         sql = ("SELECT m.id, m.thread_id, m.role, m.content, m.tenant_id, m.ticket_id, "
-               "m.is_read, m.created_at FROM messages AS m "
+               "m.is_read, m.created_at, m.answer_id FROM messages AS m "
                "LEFT JOIN tickets t ON m.ticket_id = t.id "
                f"WHERE {ARCHIVABLE_WHERE}")
         args = [cutoff]
@@ -327,10 +327,11 @@ def archive_old_messages(days, tenant_id):
                 with conn.cursor() as cur:
                     cur.executemany(
                         "INSERT INTO messages_archive (thread_id, role, content, tenant_id, "
-                        "ticket_id, is_read, created_at, archived_at) "
-                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                        "ticket_id, is_read, created_at, archived_at, answer_id) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                         [(r["thread_id"], r["role"], r["content"], r["tenant_id"],
-                          r["ticket_id"], r["is_read"], r["created_at"], now)
+                          r["ticket_id"], r["is_read"], r["created_at"], now,
+                          r.get("answer_id") or "")  # [ours] S1 锚点随消息归档
                          for r in batch])
                     cur.execute(
                         "DELETE FROM messages WHERE id IN ("
