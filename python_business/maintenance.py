@@ -2,9 +2,11 @@
 
 import logging
 import os
+import threading
 import time
 
 from business.admin.ops import archive_old_messages
+from business.infra.outbox import sync_once as outbox_sync_once
 from business.infra.storage import cache
 
 
@@ -26,7 +28,34 @@ def archive_once():
         lock.release()
 
 
+def outbox_sync_guarded():
+    """[ours] S2：Outbox→agent 经验层同步（Redis 锁防多实例并发推同批）。"""
+    lock = cache().lock("cs:business:feedback-outbox-sync", timeout=55,
+                        blocking_timeout=0)
+    if not lock.acquire(blocking=False):
+        return
+    try:
+        outbox_sync_once()
+    finally:
+        lock.release()
+
+
+def outbox_sync_loop():
+    interval = int(os.getenv("OUTBOX_SYNC_INTERVAL", "60"))
+    if interval <= 0:
+        logger.info("feedback outbox sync disabled")
+        return
+    while True:
+        try:
+            outbox_sync_guarded()
+        except Exception:
+            logger.exception("feedback outbox sync failed; retrying next interval")
+        time.sleep(interval)
+
+
 def main():
+    # [ours] S2：分钟级经验反馈同步独立于日频归档线程
+    threading.Thread(target=outbox_sync_loop, daemon=True).start()
     while True:
         try:
             archive_once()

@@ -16,6 +16,7 @@ from fastapi import FastAPI  # noqa: E402
 from app.agent import tools  # noqa: E402
 from app.api.cache_admin import router as cache_router  # noqa: E402
 from app.api.chat import router as chat_router  # noqa: E402
+from app.api.experience import router as experience_router  # noqa: E402
 from app.api.kb import router as kb_router  # noqa: E402
 from app.api.platform import router as platform_router  # noqa: E402
 from app.api.prompt import router as prompt_router  # noqa: E402
@@ -42,6 +43,8 @@ app.include_router(session_router)
 app.include_router(tenant_router)
 app.include_router(usage_router)
 app.include_router(platform_router)
+# [ours] S2 经验层内部接口（feedback outbox 同步接收）
+app.include_router(experience_router)
 
 # 注入 tools 模块的全局依赖（app/logger/tenant_var/pending_ticket_var/thread_var）
 tools.set_app(app, logger, tenant_var, pending_ticket_var, thread_var)

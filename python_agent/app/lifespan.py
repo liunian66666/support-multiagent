@@ -24,6 +24,7 @@ from app.infra.db.kb_policy import ensure_kb_policy_schema
 from app.infra.db.prompt import load_active_prompt, seed_default_prompt
 from app.infra.db.session import verify_agent_tables
 from app.infra.db.trace import ensure_trace_table
+from app.infra.db.experience import ensure_experience_schema  # [ours] S2 经验层四表
 from app.infra import pubsub as redis_pubsub
 from app.services.invalidation import clear_tenant_caches
 from app.workers.cleanup import session_cleanup_loop
@@ -81,6 +82,7 @@ async def lifespan(app: FastAPI):
             await verify_agent_tables(conn)
             await ensure_kb_policy_schema(conn)
             await ensure_trace_table(conn)
+            await ensure_experience_schema(conn)  # [ours] S2 经验层四表（幂等）
             await seed_default_prompt(conn)
             global_prompt = await load_active_prompt(conn, "")
         logger.info("✅ global prompt loaded (len=%d)", len(global_prompt))
