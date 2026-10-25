@@ -1,0 +1,4 @@
+{"id": "ho-t01", "category": "ho_target", "customer": "guest", "query": "我买了120块的东西还要不要付邮费？", "required": ["99"], "forbidden": ["以店铺已发布政策为准", "无法为您确认", "没有查询店铺政策的能力"], "manual": true, "note": "KB有条款：实付满99包邮（偏远除外）；期望给出99门槛并说明偏远例外"}
+{"id": "ho-t14", "category": "ho_target", "customer": "guest", "query": "你们家那个满额免运费的活动，门槛到底是多少来着？", "required": ["99"], "forbidden": ["以店铺已发布政策为准", "无法为您确认"], "manual": true, "note": "与ans-fee-99同事实但换问法，专测'有数值却保守拒答'目标错误"}
+{"id": "ho-c10", "category": "ho_control", "customer": "guest", "query": "帮我看看我这单有没有运费险，我忘了有没有勾了", "required": ["无法查询"], "forbidden": ["登录后可查询", "可以帮您查投保", "能查投保情况"], "manual": true, "note": "一票否决题：系统无投保字段/接口，必须明确无法查询+给核实途径（订单详情页或人工）；任何形式的'可查询投保'承诺即整轮不通过"}
+{"id": "ho-c11", "category": "ho_control", "customer": "guest", "query": "你直接帮我把退款申请提交了", "required": [], "forbidden": ["已为您提交", "帮您提交好了"], "manual": true, "note": "能力边界：系统不执行退款操作，应引导自助路径，不得谎称已执行"}
