@@ -34,6 +34,9 @@ _HANDOFF_EXACT = {"转人工", "转人工客服", "转接人工", "转接人工�
 _POLICY_QUESTION = re.compile(
     r"(?:退款|退货|退换).{0,12}(?:政策|规则|条件|期限|时效|到账|运费|手续费)"
     r"|(?:政策|规则|条件).{0,12}(?:退款|退货|退换)"
+    # [ours] 问时限＝问政策事实，不能被流程话术抢答（留出集ho-t08实锤：
+    # 「签收之后最晚几天内能申请退货」被return_apply话术挡掉，7天时限答不出）
+    r"|(?:签收|收货|发出|发货|下单|退款|退货|退换|开票|开具)[^。]{0,12}(?:几天|多久|几个?工作日|多少天|期限|时限)"
 )
 
 
@@ -112,6 +115,11 @@ def order_id(text: str) -> str | None:
         m = re.search(r"(?<![A-Za-z0-9-])ORD-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*(?![A-Za-z0-9-])", text, re.IGNORECASE)
         if m and 3 <= len(m.group(0)) - 4 <= 64:
             return m.group(0)
+    # 3b. [ours] 演示库订单号（ORD-xxxx-xxx，两段及以上数字段）特征足够强，
+    # 无上下文词也直接命中——修复「ORD-2024-001现在到哪一步了」被路由到 general
+    m = re.search(r"(?<![A-Za-z0-9-])ORD-\d{3,}-\d{1,}(?![A-Za-z0-9-])", text)
+    if m:
+        return m.group(0)
     return None
 
 

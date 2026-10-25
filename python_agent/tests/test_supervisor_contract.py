@@ -16,6 +16,33 @@ class SupervisorTest(unittest.IsolatedAsyncioTestCase):
     async def test_shipping_threshold_question_routes_to_knowledge(self):
         self.assertEqual(route_message("满99元包邮吗？", "t_demo").specialist, "faq")
 
+    async def test_store_fact_phrasings_reach_knowledge_not_general(self):
+        """留出集off两轮共同暴露：口语化政策问法被规则路由丢给 general，
+        由无知识库能力的 intake 直接拒答——这些问法的正确归宿是 faq。"""
+        for msg in ("我买了120块的东西还要不要付邮费？",
+                    "一单买了88元，邮费具体是几块？",
+                    "东西有质量问题要退，寄回去的钱谁掏？",
+                    "无理由退货来回邮费谁承担？",
+                    "签收之后最晚几天内能申请退货？",
+                    "退货打到银行卡大概几个工作日？",
+                    "预售的包写的是11月20日发货，会按这个时间发吗？",
+                    "晚上十点在线客服还有人吗，几点有？"):
+            with self.subTest(msg=msg):
+                self.assertNotEqual(route_message(msg, "t_demo").specialist, "general")
+
+    async def test_demo_order_id_without_context_still_routes_to_order(self):
+        """「ORD-2024-001现在到哪一步了？」无上下文词，旧正则漏提取→落general。
+        ORD-数字-数字 特征足够强，无需上下文词。"""
+        route = route_message("ORD-2024-001现在到哪一步了？", "t_demo")
+        self.assertEqual(route.specialist, "order")
+        self.assertEqual(route.order_id, "ORD-2024-001")
+
+    async def test_general_chat_not_swept_into_faq(self):
+        """扩词不得把寒暄/闲聊吸进 faq（否则知识库检索空转、时延上升）。"""
+        for msg in ("你好", "谢谢", "再见", "好的", "哈哈", "是的", "嗯嗯", "辛苦了"):
+            with self.subTest(msg=msg):
+                self.assertEqual(route_message(msg, "t_demo").specialist, "general")
+
     async def test_owned_order_history_is_scoped_to_same_thread(self):
         app = SimpleNamespace()
         with patch("app.services.supervisor._last_order_id_from_history",

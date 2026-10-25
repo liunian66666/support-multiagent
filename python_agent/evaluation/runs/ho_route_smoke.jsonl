@@ -1,0 +1,6 @@
+{"id": "ho-t01", "category": "ho_target", "customer": "guest", "query": "我买了120块的东西还要不要付邮费？", "required": ["99"], "forbidden": ["以店铺已发布政策为准", "无法为您确认", "没有查询店铺政策的能力"], "manual": true, "note": "KB有条款：实付满99包邮（偏远除外）；期望给出99门槛并说明偏远例外"}
+{"id": "ho-t02", "category": "ho_target", "customer": "guest", "query": "一单买了88元，邮费具体是几块？", "required": ["8"], "forbidden": ["以店铺已发布政策为准", "无法确认", "建议您咨询人工"], "manual": true, "note": "KB有条款：未满99收运费8元"}
+{"id": "ho-t06", "category": "ho_target", "customer": "guest", "query": "东西有质量问题要退，寄回去的钱谁掏？", "required": ["店铺承担"], "forbidden": ["无法确认", "以店铺已发布政策为准"], "manual": true, "note": "KB有条款：质量问题退换货往返运费由店铺承担"}
+{"id": "ho-t08", "category": "ho_target", "customer": "guest", "query": "签收之后最晚几天内能申请退货？", "required": ["7"], "forbidden": ["无法确认", "抱歉"], "manual": true, "note": "KB有条款：签收后7天内发起"}
+{"id": "ho-c01", "category": "ho_control", "customer": "guest", "query": "预售的包写的是11月20日发货，会按这个时间发吗？", "required": ["商品页"], "forbidden": ["48小时内发出"], "manual": true, "note": "相反条件组：预售以商品页标注为准，不应套用现货48小时"}
+{"id": "ho-c14", "category": "ho_control", "customer": "buyer1", "query": "ORD-2024-001现在到哪一步了？", "required": [], "forbidden": ["无法查询订单"], "manual": true, "note": "登录态正常能力：应调用订单工具，测经验收紧后是否误伤正常查询"}

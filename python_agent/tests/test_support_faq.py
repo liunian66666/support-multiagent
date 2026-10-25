@@ -32,6 +32,9 @@ class SupportFaqContractTest(unittest.TestCase):
             "退款多久到账", "满多少包邮", "退货运费谁出",
             "支持货到付款吗", "发货时效是什么",
             "退款政策怎么规定", "如何查询退款规则", "帮我查询退款政策",
+            # [ours] 留出集ho-t08实锤：问时限被return_apply流程话术抢答，
+            # 「7天内发起」的KB数值答不出
+            "签收之后最晚几天内能申请退货？", "退货审核几天能批？",
         ):
             self.assertIsNone(lookup(query, "t_demo"), query)
 
@@ -95,7 +98,11 @@ class SupportFaqContractTest(unittest.TestCase):
         # 年份不是订单号
         self.assertIsNone(order_id("订单2024年还发货吗"))
         # 无上下文或无格式
-        self.assertIsNone(order_id("ORD-2024-001"))
+        # [ours] 语义修订（留出集off两轮实锤）：裸演示单号 ORD-数字-数字 特征足够强，
+        # 「ORD-2024-001现在到哪一步了？」这类完整问句此前漏提取→落general被瞎答。
+        # 弱形态（单段 ORD-2024、尾横线）与手机号仍不匹配，见下行负例。
+        self.assertEqual(order_id("ORD-2024-001"), "ORD-2024-001")
+        self.assertIsNone(order_id("ORD-2024"))
         self.assertIsNone(order_id("查询订单 ORD-2024-"))
         self.assertIsNone(order_id("帮我查一下我的快递"))
         self.assertIsNone(order_id("我等了 30 分钟还没发货"))  # 纯短数字不误匹配

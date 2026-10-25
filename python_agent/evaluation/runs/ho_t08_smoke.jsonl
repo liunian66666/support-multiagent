@@ -1,0 +1,1 @@
+{"id": "ho-t08", "category": "ho_target", "customer": "guest", "query": "签收之后最晚几天内能申请退货？", "required": ["7"], "forbidden": ["无法确认", "抱歉"], "manual": true, "note": "KB有条款：签收后7天内发起"}
