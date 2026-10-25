@@ -56,6 +56,9 @@ def main():
         status, body = post("/api/user/chat", {"msg": case["query"]}, token)
         rows.append({"id": case["id"], "http_status": status, "code": body.get("code"),
                      "answer": body.get("msg", ""), "trace_id": body.get("trace_id", ""),
+                     # [ours] S1 轮次锚点：RSI 演示脚本对指定轮次提交好评时需要
+                     # （评价须在原会话 token 下补发，token 不落盘——见模块 docstring）
+                     "answer_id": body.get("answer_id", ""),
                      "latency_ms": round((time.perf_counter() - started) * 1000, 2)})
     args.output.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
                            encoding="utf-8")
