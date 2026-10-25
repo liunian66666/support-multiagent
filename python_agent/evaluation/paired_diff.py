@@ -16,7 +16,10 @@ import json
 import sys
 from pathlib import Path
 
-from score import score_case  # 复用同一判定，禁止另写一套口径
+try:
+    from .score import score_case  # package import (unit tests)
+except ImportError:
+    from score import score_case  # direct script execution
 
 # 回避/推诿措辞（S9 实测回退答案中的实际句式）：与"丢失金标数值"同时出现
 # 即判数值拒答阻断项。宁可多查不可漏查，词表只增不删。
@@ -24,6 +27,7 @@ _EVASIVE_PATTERNS = (
     "无法为您确认", "无法确认", "无法据此", "不能作为", "不代表",
     "以店铺已发布政策为准", "以已发布政策为准", "抱歉", "无相关", "无法回答",
     "查不到", "没有相关", "暂无相关", "没有查询到",
+    "没法给", "不能给", "不能当作",
 )
 
 
@@ -61,7 +65,7 @@ def main():
     base_by_id = {r["id"]: r for r in _load_jsonl(args.base)}
     cand_by_id = {r["id"]: r for r in _load_jsonl(args.cand)}
 
-    flips, same, unscored, blockers = [], [], [], []
+    flips, same, unscored, blockers, manual_review = [], [], [], [], []
     base_pass_n = cand_pass_n = scored_n = 0
     for g in gold:
         b, _ = _score(base_by_id, g)
@@ -85,9 +89,17 @@ def main():
             lost = [k for k in numeric if k in c_missing]
             ans = cand_by_id[g["id"]].get("answer", "")
             evasive = any(p in ans for p in _EVASIVE_PATTERNS)
-            if lost and evasive:
+            # A literal number in a refusal or hypothetical example is not a factual answer.
+            # Keep the historical string score visible, but require manual review instead
+            # of claiming the candidate lost a correctly answered policy fact.
+            base_ans = base_by_id[g["id"]].get("answer", "")
+            base_body = base_ans.replace("以下为演示环境中的示例答复；涉及的店铺政策不代表真实商家承诺。", "")
+            base_evasive = any(p in base_body for p in _EVASIVE_PATTERNS if p not in ("抱歉", "不代表"))
+            if lost and base_evasive:
+                manual_review.append({"id": g["id"], "reason": "基线仅字面包含数值且伴随拒答；需人工判断是否真正回答"})
+            elif lost and evasive:
                 blockers.append({"id": g["id"], "lost_numeric": lost,
-                                 "reason": "有KB数值却改为拒答/回避"})
+                                 "reason": "基线给出金标数值，候选改为拒答/回避"})
 
     base_rate = round(base_pass_n / scored_n, 4) if scored_n else None
     cand_rate = round(cand_pass_n / scored_n, 4) if scored_n else None
@@ -101,6 +113,7 @@ def main():
         "improve": sum(1 for f in flips if f["direction"] == "improve"),
         "regress": sum(1 for f in flips if f["direction"] == "regress"),
         "blockers": blockers,
+        "manual_review": manual_review,
     }
     payload = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
     if args.output:
@@ -109,6 +122,9 @@ def main():
 
     if blockers:
         sys.exit(2)  # 数值拒答阻断项：总体不下降也一票否决
+    if manual_review:
+        sys.exit(3)  # 金标的字面命中不足以自动判断，禁止自动发布
+
     if scored_n and cand_pass_n < base_pass_n:
         sys.exit(1)  # 注入组低于基线 → 发布闸门不放行
 

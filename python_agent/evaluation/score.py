@@ -9,7 +9,13 @@ Document labels are stable source document IDs, not Qdrant point IDs.
 import argparse
 import json
 import math
+import re
 from pathlib import Path
+
+
+def _claim_text(value):
+    """Ignore Markdown emphasis and whitespace in required-answer phrases."""
+    return re.sub(r"[\s*_`]", "", str(value))
 
 
 def _mean(values):
@@ -35,7 +41,8 @@ def score_case(case, k=3):
         row["clause_covered"] = case["clause_covered"]
     if "answer" in case:
         answer = case["answer"]
-        row["missing_required"] = [x for x in case.get("required", []) if x not in answer]
+        row["missing_required"] = [x for x in case.get("required", [])
+                                   if _claim_text(x) not in _claim_text(answer)]
         row["present_forbidden"] = [x for x in case.get("forbidden", []) if x in answer]
         row["answer_rules_ok"] = not (row["missing_required"] or row["present_forbidden"])
     for field in ("route", "order_id", "action"):

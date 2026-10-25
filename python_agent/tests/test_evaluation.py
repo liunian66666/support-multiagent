@@ -35,6 +35,11 @@ class EvaluationTest(unittest.TestCase):
         self.assertTrue(row["answer_rules_ok"])
         self.assertFalse(row["order_id_ok"])
 
+    def test_required_phrase_allows_markdown_and_spacing(self):
+        row = score_case({"id": "fee", "answer": "演示政策：实付满 **99 元** 包邮。",
+                          "required": ["99 元包邮"]})
+        self.assertTrue(row["answer_rules_ok"])
+
     def test_live_cases_use_independent_guest_sessions(self):
         from evaluation.collect_answers_live import main
 
