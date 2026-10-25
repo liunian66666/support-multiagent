@@ -1,0 +1,75 @@
+{
+  "gold": "gold_answers.jsonl",
+  "scored": 50,
+  "unscored_ids": [],
+  "base": {
+    "pass": 30,
+    "pass_rate": 0.6
+  },
+  "cand": {
+    "pass": 32,
+    "pass_rate": 0.64
+  },
+  "delta_pass_rate": 0.04,
+  "flips": [
+    {
+      "id": "ans-ship-pickup-time",
+      "category": "answer_policy",
+      "direction": "regress"
+    },
+    {
+      "id": "ans-fee-display",
+      "category": "answer_policy",
+      "direction": "improve"
+    },
+    {
+      "id": "ans-ret-nr-freight",
+      "category": "answer_policy",
+      "direction": "improve"
+    },
+    {
+      "id": "ans-ref-initiate",
+      "category": "answer_policy",
+      "direction": "regress"
+    },
+    {
+      "id": "ans-inv-special",
+      "category": "answer_policy",
+      "direction": "regress"
+    },
+    {
+      "id": "ans-inv-time",
+      "category": "answer_policy",
+      "direction": "improve"
+    },
+    {
+      "id": "ans-hr-offhours",
+      "category": "answer_policy",
+      "direction": "improve"
+    },
+    {
+      "id": "ans-na-insurance",
+      "category": "answer_no_policy",
+      "direction": "improve"
+    }
+  ],
+  "improve": 5,
+  "regress": 3,
+  "blockers": [
+    {
+      "id": "ans-ship-pickup-time",
+      "lost_numeric": [
+        "24 小时"
+      ],
+      "reason": "基线给出金标数值，候选改为拒答/回避"
+    },
+    {
+      "id": "ans-ref-initiate",
+      "lost_numeric": [
+        "1 个工作日"
+      ],
+      "reason": "基线给出金标数值，候选改为拒答/回避"
+    }
+  ],
+  "manual_review": []
+}

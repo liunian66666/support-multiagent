@@ -1,0 +1,65 @@
+{
+  "gold": "gold_answers.jsonl",
+  "scored": 50,
+  "unscored_ids": [],
+  "base": {
+    "pass": 32,
+    "pass_rate": 0.64
+  },
+  "cand": {
+    "pass": 32,
+    "pass_rate": 0.64
+  },
+  "delta_pass_rate": 0.0,
+  "flips": [
+    {
+      "id": "ans-ship-presale",
+      "category": "answer_policy",
+      "direction": "improve"
+    },
+    {
+      "id": "ans-ship-pickup-time",
+      "category": "answer_policy",
+      "direction": "improve"
+    },
+    {
+      "id": "ans-fee-99",
+      "category": "answer_policy",
+      "direction": "regress"
+    },
+    {
+      "id": "ans-fee-under99",
+      "category": "answer_policy",
+      "direction": "improve"
+    },
+    {
+      "id": "ans-ret-condition",
+      "category": "answer_policy",
+      "direction": "regress"
+    },
+    {
+      "id": "ans-inv-type",
+      "category": "answer_policy",
+      "direction": "regress"
+    },
+    {
+      "id": "ans-inv-special",
+      "category": "answer_policy",
+      "direction": "regress"
+    },
+    {
+      "id": "ans-na-price-protect",
+      "category": "answer_no_policy",
+      "direction": "improve"
+    }
+  ],
+  "improve": 4,
+  "regress": 4,
+  "blockers": [],
+  "manual_review": [
+    {
+      "id": "ans-fee-99",
+      "reason": "基线仅字面包含数值且伴随拒答；需人工判断是否真正回答"
+    }
+  ]
+}

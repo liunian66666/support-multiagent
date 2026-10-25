@@ -1,0 +1,121 @@
+{
+  "status": "qwen_live_ablation_2026-10-25",
+  "cases_per_run": 50,
+  "run_metrics": {
+    "base_off": {
+      "pass": 41,
+      "latency_p50_ms": 3101.785,
+      "latency_p95_ms": 5113.44,
+      "experience_hit_cases": 0,
+      "missing_trace_cases": 0,
+      "hit_case_ids": []
+    },
+    "exp_inject": {
+      "pass": 43,
+      "latency_p50_ms": 3085.055,
+      "latency_p95_ms": 5024.71,
+      "experience_hit_cases": 12,
+      "missing_trace_cases": 0,
+      "hit_case_ids": [
+        "ans-ship-pickup-time",
+        "ans-fee-under99",
+        "ans-fee-display",
+        "ans-ret-quality-freight",
+        "ans-ret-nr-freight",
+        "ans-ref-initiate",
+        "ans-ref-channel",
+        "ans-ref-balance",
+        "ans-ref-card",
+        "ans-ref-progress",
+        "ans-ref-accelerate",
+        "ans-na-insurance"
+      ]
+    },
+    "off_r2": {
+      "pass": 43,
+      "latency_p50_ms": 3051.3,
+      "latency_p95_ms": 5427.56,
+      "experience_hit_cases": 0,
+      "missing_trace_cases": 0,
+      "hit_case_ids": []
+    },
+    "inj_r2": {
+      "pass": 43,
+      "latency_p50_ms": 2995.52,
+      "latency_p95_ms": 5252.32,
+      "experience_hit_cases": 12,
+      "missing_trace_cases": 0,
+      "hit_case_ids": [
+        "ans-ship-pickup-time",
+        "ans-fee-under99",
+        "ans-fee-display",
+        "ans-ret-quality-freight",
+        "ans-ret-nr-freight",
+        "ans-ref-initiate",
+        "ans-ref-channel",
+        "ans-ref-balance",
+        "ans-ref-card",
+        "ans-ref-progress",
+        "ans-ref-accelerate",
+        "ans-na-insurance"
+      ]
+    }
+  },
+  "paired_r1": {
+    "improve": 2,
+    "regress": 0,
+    "delta": 2
+  },
+  "paired_r2": {
+    "improve": 0,
+    "regress": 0,
+    "delta": 0
+  },
+  "off_self_variation": {
+    "improve": 2,
+    "regress": 0,
+    "delta": 2
+  },
+  "inject_self_variation": {
+    "improve": 0,
+    "regress": 0,
+    "delta": 0
+  },
+  "mean_inject_minus_off_pp": 2,
+  "bootstrap_delta_95ci_pp": [
+    0.0,
+    5.0
+  ],
+  "hit_coverage_r1": {
+    "hit": {
+      "n": 12,
+      "base_pass": 8,
+      "inject_pass": 10,
+      "improve": 2,
+      "regress": 0
+    },
+    "no_hit": {
+      "n": 38,
+      "base_pass": 33,
+      "inject_pass": 33,
+      "improve": 0,
+      "regress": 0
+    }
+  },
+  "hit_coverage_r2": {
+    "hit": {
+      "n": 12,
+      "base_pass": 10,
+      "inject_pass": 10,
+      "improve": 0,
+      "regress": 0
+    },
+    "no_hit": {
+      "n": 38,
+      "base_pass": 33,
+      "inject_pass": 33,
+      "improve": 0,
+      "regress": 0
+    }
+  }
+}

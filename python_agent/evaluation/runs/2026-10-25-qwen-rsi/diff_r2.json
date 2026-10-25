@@ -1,0 +1,19 @@
+{
+  "gold": "gold_answers.jsonl",
+  "scored": 50,
+  "unscored_ids": [],
+  "base": {
+    "pass": 43,
+    "pass_rate": 0.86
+  },
+  "cand": {
+    "pass": 43,
+    "pass_rate": 0.86
+  },
+  "delta_pass_rate": 0.0,
+  "flips": [],
+  "improve": 0,
+  "regress": 0,
+  "blockers": [],
+  "manual_review": []
+}

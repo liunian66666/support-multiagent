@@ -1,0 +1,17 @@
+{
+  "started_at": "2026-10-25T01:11:12.405156+00:00",
+  "requested_model": "qwen",
+  "endpoint_base": "http://20.222.143.1:1030/v1",
+  "initial_strategy": {
+    "id": 2,
+    "mode": "off"
+  },
+  "cases": 50,
+  "modes": [
+    "off",
+    "inject",
+    "off",
+    "inject"
+  ],
+  "pacing_seconds": 6.2
+}

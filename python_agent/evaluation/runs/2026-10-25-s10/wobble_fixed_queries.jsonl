@@ -1,0 +1,15 @@
+{"id": "ans-ship-presale", "category": "answer_policy", "customer": "guest", "query": "预售商品什么时候发货？", "required": ["商品页标注"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-ship-pickup-time", "category": "answer_policy", "customer": "guest", "query": "发货后多久能查到揽收？", "required": ["24 小时"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-fee-99", "category": "answer_policy", "customer": "guest", "query": "多少钱包邮？", "required": ["99 元包邮"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-fee-under99", "category": "answer_policy", "customer": "guest", "query": "不够包邮金额运费多少？", "required": ["8 元"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-fee-display", "category": "answer_policy", "customer": "guest", "query": "下单时能看到运费吗？", "required": ["应付运费"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-ret-nr-freight", "category": "answer_policy", "customer": "guest", "query": "无理由退货运费谁承担？", "required": ["买家承担"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-ret-condition", "category": "answer_policy", "customer": "guest", "query": "退货商品有什么要求？", "required": ["吊牌完整"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-ref-initiate", "category": "answer_policy", "customer": "guest", "query": "退款多久发起？", "required": ["1 个工作日"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-ref-channel", "category": "answer_policy", "customer": "guest", "query": "退款会退到哪里？", "required": ["原路退回"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-inv-type", "category": "answer_policy", "customer": "guest", "query": "你们开什么类型的发票？", "required": ["电子普通发票"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-inv-special", "category": "answer_policy", "customer": "guest", "query": "能开专票吗？", "required": ["增值税专用发票"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-inv-time", "category": "answer_policy", "customer": "guest", "query": "发票多久能开好？", "required": ["3 个工作日"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-hr-offhours", "category": "answer_policy", "customer": "guest", "query": "客服下班了还能联系吗？", "required": ["留言"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-na-price-protect", "category": "answer_no_policy", "customer": "guest", "query": "降价能退差价吗？", "required": [], "forbidden": ["[K1]", "可以申请价保", "可以退差价", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-na-insurance", "category": "answer_no_policy", "customer": "guest", "query": "订单有运费险吗？", "required": [], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "有运费险", "知识来源：", "附带运费险"]}

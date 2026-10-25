@@ -1,0 +1,129 @@
+{
+  "status": "historical_existing_runs_before_later_prompt_change",
+  "cases_per_run": 50,
+  "run_metrics": {
+    "base_off": {
+      "pass": 30,
+      "latency_p50_ms": 6479.9400000000005,
+      "latency_p95_ms": 11758.01,
+      "experience_hit_cases": 0,
+      "missing_trace_cases": 0,
+      "hit_case_ids": []
+    },
+    "exp_inject": {
+      "pass": 32,
+      "latency_p50_ms": 7884.4349999999995,
+      "latency_p95_ms": 15208.29,
+      "experience_hit_cases": 20,
+      "missing_trace_cases": 0,
+      "hit_case_ids": [
+        "faq-shipping",
+        "faq-invoice",
+        "ans-ship-pickup-time",
+        "ans-fee-99",
+        "ans-fee-under99",
+        "ans-fee-tibet",
+        "ans-fee-display",
+        "ans-ret-quality-freight",
+        "ans-ret-nr-freight",
+        "ans-ret-window",
+        "ans-ref-initiate",
+        "ans-ref-channel",
+        "ans-ref-balance",
+        "ans-ref-card",
+        "ans-ref-progress",
+        "ans-ref-accelerate",
+        "ans-inv-type",
+        "ans-inv-time",
+        "ans-inv-email",
+        "ans-na-insurance"
+      ]
+    },
+    "off_r2": {
+      "pass": 32,
+      "latency_p50_ms": 6510.025,
+      "latency_p95_ms": 10368.49,
+      "experience_hit_cases": 0,
+      "missing_trace_cases": 0,
+      "hit_case_ids": []
+    },
+    "inj_r2": {
+      "pass": 32,
+      "latency_p50_ms": 6242.49,
+      "latency_p95_ms": 14902.5,
+      "experience_hit_cases": 12,
+      "missing_trace_cases": 0,
+      "hit_case_ids": [
+        "ans-ship-pickup-time",
+        "ans-fee-under99",
+        "ans-fee-display",
+        "ans-ret-quality-freight",
+        "ans-ret-nr-freight",
+        "ans-ref-initiate",
+        "ans-ref-channel",
+        "ans-ref-balance",
+        "ans-ref-card",
+        "ans-ref-progress",
+        "ans-ref-accelerate",
+        "ans-na-insurance"
+      ]
+    }
+  },
+  "paired_r1": {
+    "improve": 5,
+    "regress": 3,
+    "delta": 2
+  },
+  "paired_r2": {
+    "improve": 4,
+    "regress": 4,
+    "delta": 0
+  },
+  "off_self_variation": {
+    "improve": 5,
+    "regress": 3,
+    "delta": 2
+  },
+  "inject_self_variation": {
+    "improve": 4,
+    "regress": 4,
+    "delta": 0
+  },
+  "mean_inject_minus_off_pp": 2,
+  "bootstrap_delta_95ci_pp": [
+    -6.0,
+    10.0
+  ],
+  "hit_coverage_r1": {
+    "hit": {
+      "n": 20,
+      "base_pass": 8,
+      "inject_pass": 10,
+      "improve": 4,
+      "regress": 2
+    },
+    "no_hit": {
+      "n": 30,
+      "base_pass": 22,
+      "inject_pass": 22,
+      "improve": 1,
+      "regress": 1
+    }
+  },
+  "hit_coverage_r2": {
+    "hit": {
+      "n": 12,
+      "base_pass": 4,
+      "inject_pass": 6,
+      "improve": 2,
+      "regress": 0
+    },
+    "no_hit": {
+      "n": 38,
+      "base_pass": 28,
+      "inject_pass": 26,
+      "improve": 2,
+      "regress": 4
+    }
+  }
+}

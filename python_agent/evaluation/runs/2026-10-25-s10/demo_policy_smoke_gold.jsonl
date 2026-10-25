@@ -1,0 +1,4 @@
+{"id": "ans-ship-pickup-time", "category": "answer_policy", "customer": "guest", "query": "发货后多久能查到揽收？", "required": ["24 小时"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-fee-99", "category": "answer_policy", "customer": "guest", "query": "多少钱包邮？", "required": ["99 元包邮"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-ref-initiate", "category": "answer_policy", "customer": "guest", "query": "退款多久发起？", "required": ["1 个工作日"], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "知识来源："]}
+{"id": "ans-na-insurance", "category": "answer_no_policy", "customer": "guest", "query": "订单有运费险吗？", "required": [], "forbidden": ["[K1]", "已找到以下知识库片段", "当前主项目尚未接通", "有运费险", "知识来源：", "附带运费险"]}
