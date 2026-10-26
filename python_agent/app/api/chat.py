@@ -9,6 +9,7 @@ from langgraph.types import Command
 from app.agent.builder import get_tenant_agent
 from app.agent.faq_agent import faq_agent as get_faq_specialist
 from app.agent.faq_agent import recent_messages
+from app.services.memory import memory_messages
 from app.agent.intake_agent import intake_agent as get_intake_specialist
 from app.api.deps import _require_trusted_chat
 from app.chat.reply import finalize_faq_reply, _friendly_llm_error, demo_faq_prefix, mark_demo_faq_reply
@@ -120,7 +121,9 @@ async def _agent_chat_impl(req: ChatRequest, request: Request):
     # inject 把已审核经验附加到当轮模型输入（检查点/记账仍用原话，不被污染）
     exp_hits = await recall_for_turn(request.app, tenant_id, decision.specialist,
                                      user_message)
-    input_messages = [*await recent_messages(request.app, thread_id),
+    # [ours] 长对话记忆：水位摘要作为记忆段前置（开关 off 时等价旧行为）
+    input_messages = [*await memory_messages(request.app, tenant_id, thread_id),
+                      *await recent_messages(request.app, thread_id),
                       HumanMessage(content=augment_message(user_message, exp_hits))]
 
     config = _graph_config(thread_id)
@@ -229,7 +232,9 @@ async def agent_chat_stream(req: ChatRequest, request: Request):
             # [ours] S3 经验召回（与 JSON 链路同点位：只影响模型输入，不影响检查点）
             exp_hits = await recall_for_turn(request.app, tenant_id,
                                              decision.specialist, user_message)
-            input_messages = [*await recent_messages(request.app, thread_id),
+            # [ours] 长对话记忆：与 JSON 链路同点位拼接记忆段
+            input_messages = [*await memory_messages(request.app, tenant_id, thread_id),
+                              *await recent_messages(request.app, thread_id),
                               HumanMessage(content=augment_message(user_message, exp_hits))]
             config = _graph_config(thread_id)
             async with _pool_conn(request.app) as conn:

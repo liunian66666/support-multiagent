@@ -35,6 +35,9 @@
         <template #cell-model_provider="{ row }">
           {{ row.model_provider === 'custom' ? '租户自定义' : '平台默认' }}
         </template>
+        <template #cell-memory="{ row }">
+          <span class="badge" :class="row.memory_enabled === 0 ? 'badge-red' : 'badge-green'" :title="row.memory_enabled === 0 ? '关闭后不再向模型注入更早对话摘要' : '长对话摘要记忆注入中'">{{ row.memory_enabled === 0 ? '记忆关' : '记忆开' }}</span>
+        </template>
         <template #cell-quota="{ row }">
           <span class="quota-cell">
             <span class="q-item" :class="over(row.active_sessions, row.max_concurrent_sessions)">会 {{ row.active_sessions ?? 0 }}/{{ row.max_concurrent_sessions ?? '-' }}</span>
@@ -78,6 +81,10 @@
         <label class="field" style="flex-direction:row;align-items:center;gap:8px;">
           <input v-model="form.is_platform_admin" type="checkbox" :disabled="!!editing" />
           <span class="f-label" style="margin:0;">平台管理员账号</span>
+        </label>
+        <label class="field" style="flex-direction:row;align-items:center;gap:8px;">
+          <input v-model="form.memory_enabled" type="checkbox" />
+          <span class="f-label" style="margin:0;">长对话记忆（更早对话摘要注入；关闭后新消息不再携带历史摘要，默认开启）</span>
         </label>
         <div class="quota-box">
           <div class="quota-title">租户配额 <span class="quota-tip">0 表示不限制</span></div>
@@ -135,7 +142,7 @@ const size = ref(10)
 const filter = reactive({ name: '', app_key: '', status: '' })
 const showModal = ref(false)
 const editing = ref(null)
-const form = reactive({ name: '', app_key: '', is_platform_admin: false, max_concurrent_sessions: 100, daily_message_limit: 1000, max_kb_docs: 100, max_kb_size_mb: 100 })
+const form = reactive({ name: '', app_key: '', is_platform_admin: false, memory_enabled: true, max_concurrent_sessions: 100, daily_message_limit: 1000, max_kb_docs: 100, max_kb_size_mb: 100 })
 const createdResult = ref(null)
 
 const columns = [
@@ -144,6 +151,7 @@ const columns = [
   { key: 'login_url', title: '成员登录链接', width: '230px' },
   { key: 'status', title: '状态', width: '80px' },
   { key: 'model_provider', title: '模型配置', width: '120px' },
+  { key: 'memory', title: '长对话记忆', width: '90px' },
   { key: 'quota', title: '用量 / 配额（并发·消息·文档·容量）', width: '280px' },
   { key: 'created_at', title: '创建时间', width: '160px' },
   { key: 'actions', title: '操作', width: '240px' }
@@ -198,13 +206,14 @@ function resetFilter() {
 
 function openCreate() {
   editing.value = null
-  Object.assign(form, { name: '', app_key: '', is_platform_admin: false, max_concurrent_sessions: 100, daily_message_limit: 1000, max_kb_docs: 100, max_kb_size_mb: 100 })
+  Object.assign(form, { name: '', app_key: '', is_platform_admin: false, memory_enabled: true, max_concurrent_sessions: 100, daily_message_limit: 1000, max_kb_docs: 100, max_kb_size_mb: 100 })
   showModal.value = true
 }
 function openEdit(t) {
   editing.value = t
   Object.assign(form, {
     name: t.name, app_key: t.app_key, is_platform_admin: !!t.is_platform_admin,
+    memory_enabled: t.memory_enabled !== 0,
     max_concurrent_sessions: t.max_concurrent_sessions ?? 100, daily_message_limit: t.daily_message_limit ?? 1000,
     max_kb_docs: t.max_kb_docs ?? 100, max_kb_size_mb: t.max_kb_size_mb ?? 100
   })
@@ -217,7 +226,8 @@ async function save() {
     max_concurrent_sessions: form.max_concurrent_sessions || 0,
     daily_message_limit: form.daily_message_limit || 0,
     max_kb_docs: form.max_kb_docs || 0,
-    max_kb_size_mb: form.max_kb_size_mb || 0
+    max_kb_size_mb: form.max_kb_size_mb || 0,
+    memory_enabled: form.memory_enabled ? 1 : 0
   }
   try {
     if (editing.value) {

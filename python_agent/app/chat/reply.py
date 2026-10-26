@@ -1,7 +1,21 @@
 """LLM 异常友好化与回复后处理（从 main.py 拆出）。"""
 import openai
 import re
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import HumanMessage, ToolMessage
+
+# [ours] 长对话记忆：模型复述【更早对话摘要】段（用户本人说过的内容）不算政策结论，
+# 证据门窄豁免——仅限应答中引用的编号令牌确实出现在该摘要段内
+_MEMORY_PREFIX = "【更早对话摘要】"
+_TOKEN_RE = re.compile(r"[A-Za-z]{2,}-\d[\w-]*")
+
+
+def _cites_session_memory(messages: list, content: str) -> bool:
+    mem = next((str(m.content) for m in messages
+                if isinstance(m, HumanMessage)
+                and str(m.content).startswith(_MEMORY_PREFIX)), "")
+    if not mem:
+        return False
+    return any(tok in mem for tok in set(_TOKEN_RE.findall(content or "")))
 
 from app.kb.evidence import has_explicit_support
 from app.infra.config import PROD_MODE
@@ -59,6 +73,13 @@ def finalize_faq_reply(question: str, content: str, messages: list) -> str:
         if re.search(r"课程|数字商品", question) and re.search(r"退|退款", question):
             return ("现有店铺资料未明确说明该数字商品在当前使用情况下的退款条件，"
                     "暂时无法判断能否办理。请提供订单号和商品信息，由客服核验具体条款。")
+        # [ours] 长对话记忆：应答引用的编号令牌若出自【更早对话摘要】（用户本人
+        # 说过的内容），不属于无依据政策结论，放行；支付方式/课程退款等
+        # 政策兜底分支保持无条件拦截不变
+        if _cites_session_memory(messages, content):
+            return (content.replace("知识库", "店铺资料")
+                            .replace("检索到", "查到")
+                            .replace("检索", "查询"))
         return ("现有店铺资料没有明确说明这个具体事项，暂时无法核实。"
                 "请查看店铺公示或联系人工客服。")
     return (content.replace("知识库", "店铺资料")

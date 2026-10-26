@@ -56,7 +56,8 @@ TENANT_COLUMNS = (
     "chat_input_cache_price, chat_input_price, chat_output_price, embedding_price, "
     "embedding_provider, embedding_provider_key, embedding_provider_id, "
     "embedding_model_name, embedding_api_base, "
-    "max_concurrent_sessions, daily_message_limit, max_kb_docs, max_kb_size_mb"
+    "max_concurrent_sessions, daily_message_limit, max_kb_docs, max_kb_size_mb, "
+    "memory_enabled"
 )
 
 
@@ -123,6 +124,8 @@ def tenant_list_item(row, usage):
         "daily_message_limit": int(row["daily_message_limit"] or 0),
         "max_kb_docs": int(row["max_kb_docs"] or 0),
         "max_kb_size_mb": int(row["max_kb_size_mb"] or 0),
+        # [ours] 缺列（旧库）按默认开处理
+        "memory_enabled": int(row["memory_enabled"]) if row.get("memory_enabled") is not None else 1,
         "active_sessions": u["active_sessions"],
         "today_messages": u["today_messages"],
         "kb_docs": u["kb_docs"],
@@ -158,6 +161,8 @@ def tenant_detail_json(row):
         "daily_message_limit": int(row["daily_message_limit"] or 0),
         "max_kb_docs": int(row["max_kb_docs"] or 0),
         "max_kb_size_mb": int(row["max_kb_size_mb"] or 0),
+        # [ours] 缺列（旧库）按默认开处理
+        "memory_enabled": int(row["memory_enabled"]) if row.get("memory_enabled") is not None else 1,
     }
 
 
@@ -303,13 +308,23 @@ async def admin_tenant_quota(tid: str, request: Request,
         if isinstance(value, bool) or not isinstance(value, int):
             soft(400, "参数错误")
         values[key] = 0 if value < 0 else value        # 负数视为不限制
+    # [ours] 租户级长对话记忆开关；body 不传该键时保持库中现值不动
+    memory_enabled = body.get("memory_enabled")
+    if memory_enabled is not None:
+        memory_enabled = 1 if memory_enabled in (1, True, "1", "on", "true") else 0
     if not tenant_row_or_none(tid):
         soft(404, "租户不存在")
     try:
-        write("UPDATE tenants SET max_concurrent_sessions = %s, daily_message_limit = %s, "
-              "max_kb_docs = %s, max_kb_size_mb = %s WHERE tenant_id = %s",
-              (values["max_concurrent_sessions"], values["daily_message_limit"],
-               values["max_kb_docs"], values["max_kb_size_mb"], tid))
+        if memory_enabled is None:
+            write("UPDATE tenants SET max_concurrent_sessions = %s, daily_message_limit = %s, "
+                  "max_kb_docs = %s, max_kb_size_mb = %s WHERE tenant_id = %s",
+                  (values["max_concurrent_sessions"], values["daily_message_limit"],
+                   values["max_kb_docs"], values["max_kb_size_mb"], tid))
+        else:
+            write("UPDATE tenants SET max_concurrent_sessions = %s, daily_message_limit = %s, "
+                  "max_kb_docs = %s, max_kb_size_mb = %s, memory_enabled = %s WHERE tenant_id = %s",
+                  (values["max_concurrent_sessions"], values["daily_message_limit"],
+                   values["max_kb_docs"], values["max_kb_size_mb"], memory_enabled, tid))
     except pymysql.MySQLError:
         soft(404, "租户不存在")
     reload_go_tenants()

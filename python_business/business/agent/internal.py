@@ -20,7 +20,7 @@ def agent_tenant_quota(request: Request, tenant_id: str = ""):
         soft(400, "缺少或无效的 tenant_id")
     row = one(
         "SELECT max_concurrent_sessions, daily_message_limit, max_kb_docs, "
-        "max_kb_size_mb FROM tenants WHERE tenant_id = %s AND deleted_at = 0 "
+        "max_kb_size_mb, memory_enabled FROM tenants WHERE tenant_id = %s AND deleted_at = 0 "
         "LIMIT 1", (tenant_id,),
     )
     if not row:
@@ -28,7 +28,10 @@ def agent_tenant_quota(request: Request, tenant_id: str = ""):
     return {"code": 0, "data": {"tenant_id": tenant_id,
             **{key: int(row[key] or 0) for key in (
                 "max_concurrent_sessions", "daily_message_limit",
-                "max_kb_docs", "max_kb_size_mb")}}}
+                "max_kb_docs", "max_kb_size_mb")},
+            # 记忆注入租户级开关：列缺失（旧库未 ALTER）时默认开
+            "memory_enabled": int(row.get("memory_enabled")
+                                  if row.get("memory_enabled") is not None else 1)}}
 
 
 @router.get("/api/agent/model-config")
@@ -77,29 +80,63 @@ def agent_internal_model_config(request: Request, tenant_id: str = ""):
 
 
 @router.get("/api/agent/session-summaries/pending")
-def agent_summary_pending(request: Request, limit: int = 20):
+def agent_summary_pending(request: Request, limit: int = 20, idle_minutes: int = 30,
+                          thread_id: str = ""):
+    """水位增量候选：水位后有新消息且已空闲 idle_minutes 的会话。
+
+    [ours] 长对话记忆：原实现按 s.thread_id IS NULL 只挑“从未摘要”的会话，
+    摘要每会话仅生成一次且旧实现取最近40条覆盖写；改为携带水位与增量消息，
+    由 agent 侧做滚动合并并回写新水位。idle_minutes 下限 0（评测场景可调小）。
+    """
     internal_guard(request)
     limit = limit if 1 <= limit <= 100 else 20
+    idle = idle_minutes if 0 <= idle_minutes <= 1440 else 30
     threads = many(
-        "SELECT m.thread_id, m.tenant_id, MAX(m.created_at) AS last_active "
+        "SELECT m.thread_id, m.tenant_id, MAX(m.created_at) AS last_active, "
+        "COALESCE(MAX(s.last_summarized_message_id), 0) AS watermark, "
+        "MAX(s.summary) AS old_summary "
         "FROM messages m LEFT JOIN session_summaries s ON "
         "s.thread_id = m.thread_id AND s.tenant_id = m.tenant_id "
-        "WHERE s.thread_id IS NULL AND m.created_at < "
-        "DATE_SUB(NOW(), INTERVAL 30 MINUTE) "
-        "GROUP BY m.thread_id, m.tenant_id ORDER BY last_active DESC LIMIT %s",
-        (limit,),
+        "WHERE m.created_at < DATE_SUB(NOW(), INTERVAL %s MINUTE) "
+        + ("AND m.thread_id = %s " if thread_id else "") +
+        "GROUP BY m.thread_id, m.tenant_id "
+        "HAVING MAX(m.id) > COALESCE(MAX(s.last_summarized_message_id), 0) "
+        "ORDER BY last_active DESC LIMIT %s",
+        ((idle, thread_id, limit) if thread_id else (idle, limit)),
     )
     candidates = []
     for item in threads:
         messages = list(many(
-            "SELECT role, content FROM messages WHERE thread_id = %s "
-            "AND tenant_id = %s ORDER BY id DESC LIMIT 40",
-            (item["thread_id"], item["tenant_id"]),
+            "SELECT id, role, content FROM messages WHERE thread_id = %s "
+            "AND tenant_id = %s AND id > %s ORDER BY id ASC LIMIT 40",
+            (item["thread_id"], item["tenant_id"], item["watermark"]),
         ))
-        messages.reverse()
+        if not messages:
+            continue
         candidates.append({"thread_id": item["thread_id"],
-                           "tenant_id": item["tenant_id"], "messages": messages})
+                           "tenant_id": item["tenant_id"],
+                           "watermark": int(item["watermark"]),
+                           "old_summary": item["old_summary"] or "",
+                           "messages": messages})
     return {"code": 0, "data": candidates}
+
+
+@router.get("/api/agent/session-summaries")
+def agent_summary_get(request: Request, thread_id: str = ""):
+    """读路径：按 thread 取当前摘要（agent 续聊时拼入 prompt）。"""
+    internal_guard(request)
+    if not thread_id:
+        soft(400, "thread_id 不能为空")
+    row = one(
+        "SELECT summary, last_summarized_message_id, summary_version "
+        "FROM session_summaries WHERE thread_id = %s LIMIT 1", (thread_id,),
+    )
+    if not row or not row["summary"]:
+        return {"code": 0, "data": None}
+    return {"code": 0, "data": {
+        "summary": row["summary"],
+        "watermark": int(row["last_summarized_message_id"] or 0),
+        "version": int(row["summary_version"] or 0)}}
 
 
 @router.post("/api/agent/session-summaries")
@@ -114,10 +151,18 @@ async def agent_summary_save(request: Request):
     if (not TENANT_ID.fullmatch(body["tenant_id"]) or
         not body["thread_id"].startswith(body["tenant_id"] + ":")):
         deny(403, "会话不属于该租户")
+    # [ours] 长对话记忆：水位随摘要原子推进；last_message_id 必须是十进制正整数
+    last_message_id = body.get("last_message_id", 0)
+    if not isinstance(last_message_id, int) or last_message_id < 0:
+        soft(400, "last_message_id 必须是非负整数")
     write(
-        "INSERT INTO session_summaries (tenant_id, thread_id, summary) "
-        "VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE summary = VALUES(summary)",
-        (body["tenant_id"], body["thread_id"], body["summary"]),
+        "INSERT INTO session_summaries (tenant_id, thread_id, summary, "
+        "last_summarized_message_id, summary_version, summarized_at) "
+        "VALUES (%s, %s, %s, %s, 1, NOW()) "
+        "ON DUPLICATE KEY UPDATE summary = VALUES(summary), "
+        "last_summarized_message_id = GREATEST(last_summarized_message_id, VALUES(last_summarized_message_id)), "
+        "summary_version = summary_version + 1, summarized_at = NOW()",
+        (body["tenant_id"], body["thread_id"], body["summary"], last_message_id),
     )
     return {"code": 0, "msg": "会话摘要已保存"}
 
