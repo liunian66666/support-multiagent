@@ -65,6 +65,34 @@ async def test_dropped_anchors_are_written_back_into_the_summary() -> None:
     assert "ORD-1000" in summary and "20 元" in summary
 
 
+async def test_summarisation_gets_its_own_output_budget() -> None:
+    """摘要那一次调用不能继承聊天模型的 1024 token 预算——实测那就是空正文的成因。
+
+    臂内 41 次压缩尝试 34 次 ``empty_summary``（全是"200 成功、正文为空"，不是异常也不是限流）；
+    隔离探针用臂一样长的输入重跑：1024 预算下 4 次里 3 次 ``finish_reason=length``，
+    4096 预算下 4 次全部正常收尾（报告 §6g 发现三）。
+    """
+    model = ScriptedSupportModel(summary_mode="keep_anchors")
+    await memory.compact(transcript(6), model=model, trigger=4, keep=2)
+    assert model.summary_kwargs.get("max_tokens") == memory.SUMMARY_MAX_TOKENS
+    assert memory.SUMMARY_MAX_TOKENS >= 4096, "预算调回去就等于把 §6g 那个 83% 空正文率放回来"
+
+
+async def test_a_truncated_summary_must_not_advance_the_watermark() -> None:
+    """半条摘要比没有摘要更坏：它会推进水位线，把截掉的那段原文从模型视野里拿走。
+
+    1024 预算下真实出现过"正文 12 字 / 100 字且 finish_reason=length"还被当成摘要成功的轮次，
+    所以 `finish_reason` 是必须看的字段，不是日志装饰。
+    """
+    state = transcript(6)
+    update = await memory.compact(state, model=ScriptedSupportModel(summary_finish="length"),
+                                  trigger=4, keep=2)
+    assert update == {"_compacted": False, "_reason": "truncated_summary"}
+    ok = await memory.compact(state, model=ScriptedSupportModel(summary_finish="stop"),
+                              trigger=4, keep=2)
+    assert ok["summary_watermark"] == 10                      # 同一个替身，只有收尾原因不同
+
+
 async def test_summary_failure_leaves_the_watermark_untouched() -> None:
     state = transcript(6)
     update = await memory.compact(state, model=ScriptedSupportModel(fail_summary=True),

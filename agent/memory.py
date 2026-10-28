@@ -33,6 +33,16 @@ from .state import SupportState
 
 SUMMARY_BANNER = "【较早对话摘要｜仅用于理解指代，不作为订单状态或店铺政策的依据】"
 SUMMARY_LIMIT = 900
+SUMMARY_MAX_TOKENS = 4096
+"""摘要那一次调用**单独**的输出预算，不复用聊天模型那份。
+
+实测依据（报告 §6g 发现三）：`deepseek-v4.1-flash` 在网关上仍会产生大段思考 token
+（一次 300 字摘要的 `output_tokens` 是 457~1723），而聊天模型继承下来的 `max_tokens=1024`
+会被思考吃光——臂内 41 次压缩尝试有 34 次拿到空正文（=全部 ``empty_summary``，不是限流、
+不是异常）；隔离探针用臂一样长的输入重跑，1024 预算下 4 次里 3 次 ``finish_reason=length``
+（其中 1 次正文为 0 字，另两次正文被截成 12 字和 100 字却仍算"摘要成功"并推进水位线），
+4096 预算下 4 次全部 ``stop``、正文 316~399 字。
+"""
 DEFAULT_TRIGGER = 12
 """Summarise once this many verbatim messages sit above the watermark."""
 DEFAULT_KEEP = 6
@@ -154,13 +164,18 @@ async def compact(state: SupportState, *, model: Any, trigger: int = DEFAULT_TRI
     chunk = messages[watermark:watermark + absorbable]
     previous = (state.get("summary") or "").strip()
     try:
-        response = await model.ainvoke([HumanMessage(content=SUMMARY_PROMPT.format(
-            limit=SUMMARY_LIMIT, previous=previous or "（无）", newly=render(chunk)[:5000]))])
+        response = await model.bind(max_tokens=SUMMARY_MAX_TOKENS).ainvoke(
+            [HumanMessage(content=SUMMARY_PROMPT.format(
+                limit=SUMMARY_LIMIT, previous=previous or "（无）", newly=render(chunk)[:5000]))])
     except Exception:
         return {"_compacted": False, "_reason": "summary_model_failed"}
     generated = message_text(response).strip()
     if not generated:
         return {"_compacted": False, "_reason": "empty_summary"}
+    if (getattr(response, "response_metadata", None) or {}).get("finish_reason") == "length":
+        # 半条摘要比没有摘要更坏：它会推进水位线，把被截掉的那部分原文从模型视野里拿走。
+        # 截断在这里是**看得见**的（finish_reason=length），所以按失败处理，一条都不删。
+        return {"_compacted": False, "_reason": "truncated_summary"}
 
     lost = anchors(previous, render(chunk)) - anchors(generated)
     if lost and repair:

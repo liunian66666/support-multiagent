@@ -47,6 +47,11 @@ class ScriptedSupportModel(BaseChatModel):
     fail_supervisor: bool = False
     order_answer: str = "订单 ORD-1001 状态：已发货；金额：199.00 元。"
     recorded: list[str] = Field(default_factory=list)
+    summary_finish: str = "stop"
+    """``response_metadata.finish_reason`` of the summarisation call — "length" is how a
+    truncated summary shows up in the wild (§6g 发现三), and it must not advance the watermark."""
+    summary_kwargs: dict = Field(default_factory=dict)
+    """What the compaction call was actually invoked with (``max_tokens`` lives here)."""
 
     @property
     def _llm_type(self) -> str:
@@ -57,13 +62,13 @@ class ScriptedSupportModel(BaseChatModel):
 
     def _generate(self, messages: list, stop: list[str] | None = None,
                   run_manager: Any = None, **kwargs: Any) -> ChatResult:
-        return ChatResult(generations=[ChatGeneration(message=self._respond(messages))])
+        return ChatResult(generations=[ChatGeneration(message=self._respond(messages, kwargs))])
 
     async def _agenerate(self, messages: list, stop: list[str] | None = None,
                          run_manager: Any = None, **kwargs: Any) -> ChatResult:
         return self._generate(messages, stop, run_manager, **kwargs)
 
-    def _respond(self, messages: list) -> AIMessage:
+    def _respond(self, messages: list, kwargs: dict | None = None) -> AIMessage:
         system = str(getattr(messages[0], "content", "")) if messages else ""
         if ORDER_MARKER in system:
             return self._as_order_agent(messages)
@@ -74,7 +79,9 @@ class ScriptedSupportModel(BaseChatModel):
             return self.supervisor_script.pop(0) if self.supervisor_script else AIMessage(
                 content="暂时没有可核实的结论，建议补充问题或转人工。", usage_metadata=USAGE)
         self.recorded.append("summary")
-        return AIMessage(content=self._summary(messages), usage_metadata=USAGE)
+        self.summary_kwargs = dict(kwargs or {})
+        return AIMessage(content=self._summary(messages), usage_metadata=USAGE,
+                         response_metadata={"finish_reason": self.summary_finish})
 
     def _as_order_agent(self, messages: list) -> AIMessage:
         read_back = [m for m in messages if isinstance(m, ToolMessage)]
