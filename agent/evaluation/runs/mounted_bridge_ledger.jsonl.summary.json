@@ -1,0 +1,217 @@
+{
+  "generated_at": "2026-10-28T05:02:13.572599+00:00",
+  "entry": "app.services.four_agent.run_turn -> agent.cutover.run_turn -> agent/graph.py",
+  "total": 12,
+  "pass": 11,
+  "findings": 1,
+  "rows": [
+    {
+      "case": "B0_topology",
+      "ok": true,
+      "entry": "app.services.four_agent.run_turn",
+      "cutover_loaded": true,
+      "agent_review_calls": 1,
+      "app_review_calls": 0,
+      "app_graph_builds": 0,
+      "outcome": "answered",
+      "turn_id_field": true,
+      "returned_keys": [
+        "_replayed",
+        "answer",
+        "attempts",
+        "delegations",
+        "evidence_ids",
+        "model_messages",
+        "outcome",
+        "review_issues",
+        "turn_id",
+        "usage"
+      ]
+    },
+    {
+      "case": "B1_compound_entry",
+      "ok": true,
+      "delegated": [
+        "order",
+        "faq"
+      ],
+      "order_codes": [
+        "ok"
+      ],
+      "faq_evidence": [
+        [
+          "chunk-7d"
+        ]
+      ],
+      "delegation_keys": [
+        "answer",
+        "evidence",
+        "failed",
+        "specialist",
+        "tool_calls",
+        "turn_id",
+        "used_search",
+        "verified_results"
+      ],
+      "order_tool_calls": [
+        [
+          "lookup_my_order"
+        ]
+      ],
+      "review_issues": [],
+      "answer_channel_checkpointed": true,
+      "trace_specialist": "order,faq",
+      "attempts": 1,
+      "billed_msgs": 0,
+      "ledger_roles": [
+        [
+          "order",
+          "faq"
+        ]
+      ],
+      "legacy_side_effects": {
+        "kb_hits_written": false,
+        "faq_cache_used": "reuse_faq_agent=True"
+      }
+    },
+    {
+      "case": "B2_replay_without_turn_id",
+      "ok": false,
+      "human_messages": 2,
+      "ledger_turns": 2,
+      "turn_ids": [
+        "f961874a74b445c9a844cd682f49d825",
+        "58f9c62fedc24214ba51b34ebde98880"
+      ],
+      "replayed_flag": false,
+      "note": "生产调用把 trace_id 当 turn_id 传（chat.py:100 与 :225），所以同一请求内 JSON/SSE 共用一个键、跨请求重试必然换一个键：§5e-M2 的缺口没有因为换接法而消失，ChatRequest 仍然没有 turn_id 字段"
+    },
+    {
+      "case": "B2b_replay_with_turn_id",
+      "ok": true,
+      "replayed": true,
+      "human_messages": 1,
+      "billed_msgs_first_vs_second": 0,
+      "message_ids": [
+        "turn-1:u",
+        "turn-1:a"
+      ]
+    },
+    {
+      "case": "B3_legacy_history_visible",
+      "ok": true,
+      "legacy_messages": 4,
+      "legacy_in_checkpoint": 4,
+      "checkpoint_messages": 6
+    },
+    {
+      "case": "B4_bounded_retry",
+      "ok": true,
+      "supervisor_calls": 3,
+      "attempts": 3,
+      "review_issues": [
+        "政策或订单数值没有当轮证据支持"
+      ],
+      "answer_head": "这笔订单的状态我暂时无法可靠核验，请确认订单号或登录客户账号后再问一次。\n相关店铺政策我没有查到可核实的依据，具体以店铺",
+      "outcome": "review_blocked"
+    },
+    {
+      "case": "B5_failure_turn_persisted_and_explained",
+      "ok": true,
+      "raised": null,
+      "human_messages": 1,
+      "error_stage_events": [],
+      "failed_attribute_events": [
+        [
+          "delegate",
+          "supervisor",
+          {
+            "roles": [],
+            "attempt": 1,
+            "status": "failed",
+            "draft_chars": 0,
+            "error": "RuntimeError: 403 Free quota exhausted"
+          }
+        ],
+        [
+          "delegate",
+          "supervisor",
+          {
+            "roles": [],
+            "attempt": 2,
+            "status": "failed",
+            "draft_chars": 0,
+            "error": "RuntimeError: 403 Free quota exhausted"
+          }
+        ],
+        [
+          "delegate",
+          "supervisor",
+          {
+            "roles": [],
+            "attempt": 3,
+            "status": "failed",
+            "draft_chars": 0,
+            "error": "RuntimeError: 403 Free quota exhausted"
+          }
+        ]
+      ],
+      "answer_after_failure": "我暂时没能核实到可靠信息，请补充更具体的问题；需要人工协助请回复「转人工」。",
+      "last_error": true
+    },
+    {
+      "case": "B6_watermark_advances_without_deleting",
+      "ok": true,
+      "memory_state": {
+        "summary": "摘要：客户此前咨询退货，未解决的问题是运费承担。",
+        "watermark": 16,
+        "total": 24,
+        "summarized": 16,
+        "verbatim": 8
+      },
+      "checkpoint_messages": 24,
+      "human_messages": 12,
+      "summarized": 16,
+      "verbatim": 8
+    },
+    {
+      "case": "B7_unverified_order_claim_blocked",
+      "ok": true,
+      "review_issues": [
+        "声称已执行发货等未被授权或无核验依据的操作",
+        "引用了本轮未经业务接口核验归属的订单号",
+        "订单事实未经本人订单接口核验",
+        "个人订单问题必须委派 Order Agent"
+      ],
+      "outcome": "review_blocked",
+      "answer_head": "这笔订单的状态我暂时无法可靠核验，请确认订单号或登录客户账号后再问一次。\n需要人工协助时回复「转人工」。"
+    },
+    {
+      "case": "B9_same_process_concurrency",
+      "ok": true,
+      "human_messages": 4,
+      "ledger_turns": 4,
+      "distinct_ledger_turns": 4
+    },
+    {
+      "case": "B10_entry_lock_granularity",
+      "ok": true,
+      "one_service_per_tenant": true,
+      "second_app_saver_ignored": true,
+      "concurrent_turns": 3,
+      "human_messages": 3,
+      "lost_turns": 0,
+      "thread_guard": null,
+      "note": "锁在 SupportService._thread_locks 上，而挂载入口按 tenant 只缓存一个 service ⇒ 同进程内并发轮次共用同一把锁，M10 那种「两个独立编译的图写同一线程」在生产入口上出不来；代价是 app.state.checkpointer 只在第一次建 service 时生效（第二个 app 的 saver 被忽略）"
+    },
+    {
+      "case": "B11_two_instances_same_thread_loses",
+      "ok": true,
+      "expected_turns": 6,
+      "human_messages": 5,
+      "lost_turns": 1,
+      "lock_scope": "per SupportService instance",
+      "note": "这就是 §5e-M10 的形状：两个各自编译的图共用一个 checkpointer 时后写覆盖。换接法没有改变它（锁的粒度还是 service 实例）；能治它的是 agent/thread_guard.py 的 PG advisory 锁，挂载入口通过 FOUR_AGENT_GRAPH 之外再加 SUPPORT_V2_THREAD_LOCK + POSTGRES_DSN 就会接上（§4b 已实测加锁六批零丢轮）"
+    }
+  ]
+}

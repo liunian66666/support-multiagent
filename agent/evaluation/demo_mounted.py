@@ -2,13 +2,17 @@
 """现场演示的第二条路：把"复合咨询 + 长对话续聊"跑在**已挂载的 app 侧图**上，并留下可核对的原始记录。
 
 `bash agent/evaluation/run_all.sh demo` 演的是 `agent/graph.py`。但真正上台按开关演示时会走
-`FOUR_AGENT_GRAPH` -> `app.services.four_agent.run_turn` -> `app/multi_agent/graph.py`，那是另一份
-实现。这个脚本就是给那条路做同样的事：8 轮真实入口对话（问候 -> 单订单 -> 复合问题 -> 指代追问 ->
+`FOUR_AGENT_GRAPH` -> `app.services.four_agent.run_turn`。**2026-10-28 之后这条链的下一跳换了**：
+four_agent 是薄适配器，实际执行的是 `agent.cutover.run_turn` -> `agent/graph.py`（旧接法的
+`app/multi_agent/graph.py` 已不在这条路上）。本脚本因此改跑新接法，并且**逐轮去读检查点里的持久化状态**
+而不是入口返回的那份摘要字典——新接法返回的字典里没有 messages/水位线，只看它会得出"记忆没推进"的错结论。：8 轮真实入口对话（问候 -> 单订单 -> 复合问题 -> 指代追问 ->
 政策数值 -> 若干日常轮把线程推过压缩阈值 -> 换图实例模拟重启 -> 问回最早的锚点），逐轮记录
 委派了哪些 Agent、Reviewer 判了什么、检查点里剩多少条、水位线/摘要多长、**这一轮模型实际看到的
 上下文里锚点还在不在**。
 
-零模型调用、零真实数据：脚本化委派 + `InMemorySaver`；业务订单适配器被替换。
+零模型调用、零真实数据：脚本化委派 + `InMemorySaver`；业务订单适配器与租户模型解析都被替换。
+"重启"那一轮的做法是 `agent.cutover.clear_services()` ——同一 checkpointer、重新编译图，
+与服务进程重启后第一次请求的形状一致。
 
     bash agent/evaluation/run_all.sh demo-mounted
     # 原始记录 → agent/evaluation/runs/demo_mounted.jsonl
@@ -35,6 +39,7 @@ def _load(rel: str, name: str):
 
 
 _pmg = _load("agent/evaluation/probe_mounted_graph.py", "_probe_mounted_graph")
+_pmb = _load("agent/evaluation/probe_mounted_bridge.py", "_probe_mounted_bridge")
 
 TENANT = "t_demo"
 THREAD = f"{TENANT}:demo-mounted-1"
@@ -78,8 +83,15 @@ def scripted_delegates(question: str):
 
 
 async def main(args: argparse.Namespace) -> int:
-    merge_model = _pmg.FakeModel(text="摘要：客户提过一笔订单并咨询过退货，具体单号金额抬头未保留。")
-    app, _ = _pmg.app_with(seed_pairs=8, thread=THREAD, model=merge_model)
+    from langchain_core.messages import AIMessage, HumanMessage
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    merge_model = _pmb.BridgeModel(
+        text="摘要：客户提过一笔订单并咨询过退货，具体单号金额抬头未保留。")
+    shared = InMemorySaver()
+    app, _ = _pmb.app_with(shared, model=merge_model)
+    history = [m for i in range(8) for m in (HumanMessage(content=f"历史提问{i}"),
+                                             AIMessage(content=f"历史回答{i}"))]
     supervisor = _pmg.Supervisor(scripted_delegates, "已按核验结果答复。")
     rows = []
 
@@ -87,24 +99,29 @@ async def main(args: argparse.Namespace) -> int:
     script.append(("after-restart", RESTART_ASK))
     for turn_id, question in script:
         if turn_id == RESTART_ASK:
-            # 同一 checkpointer、换新编译的图实例 == 服务重启后续聊
-            app.state.four_agent_graphs = {}
-        _graph, state, info = await _pmg.turn(app, merge_model, supervisor, question, thread=THREAD)
-        fed = "\n".join(text(m) for m in supervisor.last_prompt)
-        channel = "\n".join(text(m) for m in state.get("messages", []))
+            # 同一 checkpointer、重新编译的图实例 == 服务重启后的第一次请求
+            import agent.cutover as cutover
+            cutover.clear_services()
+        graph, state, info = await _pmb.bturn(app, merge_model, supervisor, question,
+                                              thread=THREAD, history=history)
+        vals = await _pmb.persisted(graph, THREAD)      # 读**持久化状态**，不读入口返回的摘要字典
+        msgs = vals.get("messages", [])
+        NL = chr(10)
+        fed = NL.join(text(m) for m in supervisor.last_prompt)
+        channel = NL.join(text(m) for m in msgs)
         rows.append({
             "turn": turn_id, "question": question,
-            "agents": [d["specialist"] for d in state.get("delegations", [])],
+            "agents": [d["specialist"] for d in vals.get("delegations", [])],
             "trace_specialist": info["specialist"], "trace_route": info["route"],
-            "review_feedback": (state.get("review_feedback") or "")[:80],
+            "review_issues": state.get("review_issues") or [],
+            "outcome": state.get("outcome"),
             "answer": (state.get("answer") or "")[:80],
-            "checkpoint_messages": len(state.get("messages", [])),
-            "summary_watermark": int(state.get("summary_watermark") or 0),
-            "summary_chars": len(state.get("summary") or ""),
+            "checkpoint_messages": len(msgs),
+            "summary_watermark": int(vals.get("summary_watermark") or 0),
+            "summary_chars": len(vals.get("summary") or ""),
             "fed_chars": len(fed),
             "needles_in_fed_context": {n: (squash(n) in squash(fed)) for n in NEEDLES},
             "needles_in_checkpoint": {n: (squash(n) in squash(channel)) for n in NEEDLES},
-            "legacy_bridge_messages": app.state.faq_bridge.length(THREAD),
         })
         r = rows[-1]
         print(f"{r['turn']:<26} agents={','.join(r['agents']) or '-':<10} "

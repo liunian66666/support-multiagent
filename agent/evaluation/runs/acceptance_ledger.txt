@@ -202,3 +202,25 @@ mem-diff             0      2s  逐轮转写附录 → E:\曹浩冉\研究生\AI
 test                 0     20s  109 passed, 1 warning in 8.59s
 compare              0      0s  → E:\曹浩冉\研究生\AI学习RAG与Agent\AGENT_exp\support-multiAgent\agent\ev
 --- 2 项：计入失败的硬项 0 ---
+=== 2026-10-28T13:03:22+08:00  run_all.sh all：19 项，失败硬项 0 ｜ 子集（带参数跑的，软项未进；实际项见下表）
+项              退出  耗时  摘要
+test                 0     21s  109 passed, 1 warning in 9.17s
+demo                 0      5s  注意：以上由脚本化模型驱动，只证明编排、守卫与记忆机制；
+demo-pg              0      7s  注意：以上由脚本化模型驱动，只证明编排、守卫与记忆机制；
+pg                   0      6s  PASS: PG checkpointer 持久化 / 重启续聊 / 重放幂等 / 水位线推进 / �
+pg-restart           0     12s  PASS: 真实 PG 检查点在独立进程重启后仍可续聊，且水位线记忆�
+xproc                0     25s  补丁组退出码=0（0＝加锁后零丢轮、零崩溃、零残留）
+http                 0     10s  PASS: 真实 PG 检查点之上，挂载入口的 JSON/SSE 一致、重放幂等、�
+guards               0      9s  注：本探针只是把 draft 直接喂给规则，不经过模型；它衡量的�
+memory               0     20s  → agent/evaluation/runs/memory_geometry_diff.md
+mounted-memory       0     15s     21 total
+demo-mounted         0      8s  原始数据 → /out/demo_mounted.jsonl
+mounted              0      9s  GATE PASS（10 条不变式全绿）
+frontend             0     15s  原始数据 → /e/曹浩冉/研究生/AI学习RAG与Agent/AGENT_exp/support-multiA
+retrieval            0     20s       ['629a1a48', '9e0ae92a', '06a67d6f'] scores=[0.752385, 0.741545, 0.729356] valu
+overhead             0      4s  原始数据 → E:\曹浩冉\研究生\AI学习RAG与Agent\AGENT_exp\support-multiA
+overhead-pg          0     24s  原始数据 → /out/orchestration_overhead_postgres.jsonl
+trace-baseline       0      1s  (1 row)
+compare              0      1s  → E:\曹浩冉\研究生\AI学习RAG与Agent\AGENT_exp\support-multiAgent\agent\ev
+mem-diff             0      2s  逐轮转写附录 → E:\曹浩冉\研究生\AI学习RAG与Agent\AGENT_exp\support-
+--- 19 项：计入失败的硬项 0 ---

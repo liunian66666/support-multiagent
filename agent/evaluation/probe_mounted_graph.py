@@ -262,6 +262,17 @@ async def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="")
     args = ap.parse_args()
+
+    # 2026-10-28：`app/services/four_agent.py` 已换成薄适配器（run_turn → agent.cutover → agent/ 图）。
+    # 本探针的桩全打在 app.multi_agent.graph.* 上，所以走 run_turn 的那些项会在模型解析处抛
+    # RuntimeError——那是**实现换了**，不是被测链路回退了。留档不等于还能跑：当前接法的同一套账本
+    # 在 probe_mounted_bridge.py（run_all.sh mounted 已经指过去）。这里宁可把话说清楚再退出，
+    # 也不要留一段 traceback 让下一个人去猜。
+    import inspect
+    if "agent.cutover" in inspect.getsource(four_agent.run_turn):
+        raise SystemExit(
+            "此探针只描述旧接法（app/multi_agent/graph.py）。当前工作树的挂载入口是 agent.cutover → agent/ 图，"
+            "请跑 agent/evaluation/probe_mounted_bridge.py（或 bash agent/evaluation/run_all.sh mounted）。")
     rows = []
 
     def emit(case, ok, **obs):

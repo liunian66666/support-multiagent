@@ -23,8 +23,8 @@
 #   bash agent/evaluation/run_all.sh overhead-pg [turns]   # 同上但用真实 PG，跑完自删线程
 #   bash agent/evaluation/run_all.sh guards      # Reviewer 对抗语料：改写后的违规是否仍被拦（0 泄漏 0 误拦）
 #   bash agent/evaluation/run_all.sh memory     # 四臂长对话记忆对照（确定性，宿主 venv 即可）
-#   bash agent/evaluation/run_all.sh mounted    # 已挂载 app 侧图实测账本（脚本化模型，零真实数据）
-#   bash agent/evaluation/run_all.sh mounted-guards # 同一份 30 例对抗语料打在挂载图的 Reviewer 上（两遍）
+#   bash agent/evaluation/run_all.sh mounted    # 挂载入口实测账本（2026-10-28 起 = four_agent→agent.cutover→agent/ 图，12 行，十条不变式进闸门）
+#   bash agent/evaluation/run_all.sh mounted-guards # 同一份 30 例对抗语料打在挂载入口的 Reviewer 上（两遍；现要求 0 漏放 0 误拦）
 #   bash agent/evaluation/run_all.sh demo-mounted # 开关那条路的演示记录（复合咨询+长对话续聊+重启）
 #   bash agent/evaluation/run_all.sh mounted-memory # 挂载图并入逐题记忆协议，产出两张五臂表（§6e）
 #   bash agent/evaluation/run_all.sh trace-baseline # 旧路径每轮耗时分布（只读聚合 agent_trace_runs）
@@ -173,12 +173,14 @@ PY
       -w /work/python_agent cs-test:agent \
       sh -c "${PG_ENV}python /work/agent/evaluation/verify_entrypoint_http.py ${2:-}" ;;
   mounted)
-    # 已挂载的 app 侧四 Agent 图（chat.py 的 FOUR_AGENT_GRAPH 分支）实测账本：
-    # 走生产入口 four_agent.run_turn，脚本化模型 + InMemorySaver，零模型调用、零真实数据写入。
+    # 挂载入口的实测账本（**2026-10-28 之后这条链是 four_agent → agent.cutover → agent/ 图**）。
+    # 旧接法（app/multi_agent/graph.py）的账本仍在工作树里做留档：probe_mounted_graph.py，
+    # 但它打不通生产入口了——它的桩在 app.multi_agent.graph.* 上，而现在没人从入口走那张图。
+    # 十条不变式进闸门（B2/B11 是缺口描述，故意不进闸门，见探针里的注释）。
     MSYS_NO_PATHCONV=1 docker run --rm -v "$ROOT:/work:ro" -v "$RUNS:/out" \
       -e PYTHONPATH=/work/python_agent:/work -e PYTHONPYCACHEPREFIX=/tmp/pyc \
       -w /work/python_agent cs-test:agent \
-      python /work/agent/evaluation/probe_mounted_graph.py --out /out/mounted_graph_probe.jsonl ;;
+      python /work/agent/evaluation/probe_mounted_bridge.py --out /out/mounted_bridge_ledger.jsonl --gate ;;
   mounted-guards)
     # 同一份 30 例对抗语料（§5d 用来打 agent/guards.py 的那一份）改打挂载图里的 Reviewer。
     # 两遍：corpus=语料原样（没委派，必触发"必须委派"），backed=先配好正确委派（只考内容级规则）。
@@ -392,13 +394,18 @@ PY
              --max-tokens $MT --model-name $NAME --out /out/summary_empty_probe_mt$MT.jsonl" ;;
   all)
     # 一条命令跑完今天"不需真实模型、不需额外授权"的全部验收项，逐条记退出码与耗时。
-    # 期望为负的那一项单列（§5f：挂载 Reviewer 今天必漏放），它进账本是为了别丢，不拖垮总退出码。
-    # mounted-fixed 是硬项：它的退出码 0 是**有内容的**——补丁组两遍 0 漏放 0 误拦 + 两臂逐题零回退零缺题（§5h/§5i），
-    # 反常地非 0 说明候选修法不再成立（app 侧代码变了或锚点被改动），必须让人看见。
-    HARD="test demo demo-pg pg pg-restart xproc http guards memory mounted-memory demo-mounted mounted mounted-fixed frontend retrieval overhead overhead-pg trace-baseline image compare mem-diff"
+    # mounted-fixed 已从硬项移出（2026-10-28）：它测的是**候选补丁打在 app 侧 graph.py / four_agent.py 上**，
+    # 而挂载入口已经换成 agent/ 那张图，那三份补丁的锚点所在实现已不在生产路径上。它现在退出码非 0
+    # （锚点缺失）是**预期**，不是回归；单独跑 `run_all.sh mounted-fixed` 仍能看它拦在哪里。
+    # 旧接法的 §5h/§5i 数字（语料 9→0、backed 22→0、挂载图 12 case 修好 2 零回退）留在报告里按"当时实测"引用。
+    HARD="test demo demo-pg pg pg-restart xproc http guards memory mounted-memory demo-mounted mounted frontend retrieval overhead overhead-pg trace-baseline image compare mem-diff"
+    # 2026-10-28：`mounted-guards --gate` 的**极性换了**——现在要求它放行。
+    # 换的原因不是判据放松，而是被测的 Reviewer 换了实现：four_agent 现在是薄适配器，挂载入口跑的就是 agent/ 那张图，
+    # 于是同一份 30 例对抗语料在新拓扑下 0 漏放 / 0 误拦（旧接法的 9/25→22/25 漏放见 §5f 留档，那份数字仍然成立，
+    # 只是它描述的实现已经不在生产入口上了）。
     # 带参数 = 只跑指定子集（CI/现场只想复查两三项时用）：bash agent/evaluation/run_all.sh all demo compare
     SOFT=1
-    if [ "$#" -gt 1 ]; then HARD="${@:2}"; SOFT=0; case " $HARD " in *" mounted-guards "*) SOFT=1 ;; esac; fi
+    if [ "$#" -gt 1 ]; then HARD="${@:2}"; SOFT=0; fi
     LOG="$(mktemp)"; fails=0; total=0; TABLE=""
     emit_line() {   # 同一份表既给终端看，也进账本——以前要人手 `| tee`，忘了就出现"文档说有账本、文件却是旧的"
       local line; line=$(printf '%-16s %5s %6ss  %s\n' "$1" "$2" "$3" "$4")
@@ -414,13 +421,16 @@ PY
       if [ "$rc" != 0 ]; then fails=$((fails + 1)); printf '>> %s 退出 %s，末尾输出已截进摘要\n' "$c" "$rc"; fi
       emit_line "$c" "$rc" "$el" "$last"
     done
-    # 软项：今天正确的结果就是"闸门拦住"（退出码 1）。反常地放行才是问题。
+    # 带 --gate 的那一项单列（它需要额外参数，循环里没法带）。
+    # 2026-10-28 起它**要求放行**：挂载入口的 Reviewer 已是 agent/guards.review，
+    # 新拓扑下 0 漏放 / 0 误拦才是预期；被拦住说明要么接法换回了 app 图、要么内容级规则又漏了。
     if [ "$SOFT" = 1 ]; then
       start=$SECONDS
       if bash "$0" mounted-guards --gate >"$LOG" 2>&1; then src=0; else src=$?; fi
       total=$((total + 1))
-      if [ "$src" = 1 ]; then note="已知为负（§5f 漏放），按预期被闸门拦住"
-      else note="反常：闸门今天放行了，§5f 的结论要重看"; fails=$((fails + 1)); fi
+      if [ "$src" = 0 ]; then note="GATE PASS（新拓扑下两遍 0 漏放 0 误拦；Reviewer=agent/guards.review）"
+      else note="闸门拦住了：看 mounted_guards_adversarial.json 的 implementation 字段判断是接法换回去了还是真漏放"
+           fails=$((fails + 1)); fi
       emit_line "mounted-guards" "$src" "$((SECONDS - start))" "$note"
     fi
     rm -f "$LOG"

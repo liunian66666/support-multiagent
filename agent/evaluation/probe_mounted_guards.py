@@ -53,7 +53,16 @@ def _load(rel: str, name: str):
 
 
 _pmg = _load("agent/evaluation/probe_mounted_graph.py", "_probe_mounted_graph")
+_pmb = _load("agent/evaluation/probe_mounted_bridge.py", "_probe_mounted_bridge")
 _pg = _load("agent/evaluation/probe_guards_adversarial.py", "_probe_guards_adversarial")
+
+# 2026-10-28：app/services/four_agent.py 变成薄适配器，run_turn 直接 import agent.cutover。
+# 于是"挂载 Reviewer"这一格测的东西也换了——不再是 app/multi_agent/graph.py 里那份独立实现，
+# 而是 agent/guards.review。这里**按来源检测**（读 run_turn 的源码里 import 的是谁），
+# 而不是靠"我记得它换了"；行为级的证明在 probe_mounted_bridge.py 的 B0（用计数器数过
+# agent.guards.review 开火 1 次、app 侧 review 开火 0 次）。
+import inspect                                    # noqa: E402
+VIA_BRIDGE = "agent.cutover" in inspect.getsource(_pmg.four_agent.run_turn)
 
 TENANT = "t_demo"
 # The two implementations use different literals for the same fact: the app-side business adapter
@@ -115,7 +124,7 @@ def mounted_view(delegations):
 
 async def one(case_id, category, question, draft, delegations, unsafe, *, mode):
     roles, calls = mounted_view(delegations)
-    app, model = _pmg.app_with()
+    app, model = (_pmb.app_with() if VIA_BRIDGE else _pmg.app_with())
     faq_call, order_call = calls.get("faq"), calls.get("order")
     if order_call and order_call["verified"]:
         order_result = _pmg.OrderLookup(order_call["verified"][0]["code"],
@@ -125,14 +134,26 @@ async def one(case_id, category, question, draft, delegations, unsafe, *, mode):
     faq = (_pmg.FaqDelegate(answer=(faq_call.get("answer") or draft), evidence=tuple(faq_call["evidence_ids"]),
                             search=faq_call["used_search"]) if faq_call else None)
     supervisor = _pmg.Supervisor(lambda _q: [CONSULT[r] for r in roles if r in CONSULT], draft)
-    _graph, state, _info = await _pmg.turn(app, model, supervisor, question,
-                                           thread=f"{TENANT}:guards-{mode}-{case_id}",
-                                           order_result=order_result, faq=faq)
-    reasons = [r for r in (state.get("review_feedback") or "").split("；") if r]
+    runner = _pmb.bturn if VIA_BRIDGE else _pmg.turn
+    _graph, state, _info = await runner(app, model, supervisor, question,
+                                        thread=f"{TENANT}:guards-{mode}-{case_id}",
+                                        order_result=order_result, faq=faq)
+    if VIA_BRIDGE:
+        # agent/ 侧 review 返回的是 (hard, soft) 两个列表，挂在 state["review_issues"] 上；
+        # app 侧把两档揉成一条 review_feedback 字符串。两种形状都在这里收口，
+        # 但**不共用 TAG 词表**：换了实现就不该假装规则名还是同一批。
+        raw = list(state.get("review_issues") or [])
+        reasons = raw
+        rules = raw
+    else:
+        reasons = [r for r in (state.get("review_feedback") or "").split("；") if r]
+        rules = [TAG.get(r, r) for r in reasons]
     answer = state.get("answer") or ""
     return {"mode": mode, "id": case_id, "category": category, "question": question, "draft": draft,
-            "unsafe": unsafe, "roles": roles, "blocked": bool(reasons),
-            "rules": [TAG.get(r, r) for r in reasons],
+            "unsafe": unsafe, "roles": roles, "blocked": bool(reasons), "reviewer": (
+                "agent/guards.review via agent.cutover" if VIA_BRIDGE
+                else "app/multi_agent/graph.review"),
+            "rules": rules,
             "leaked_draft": bool(unsafe and draft and draft in answer),
             "answer": answer[:60]}
 
@@ -194,6 +215,11 @@ def tally(rows, seeded_by_id=None, mode="corpus"):
 
 
 async def main(args: argparse.Namespace) -> None:
+    implementation = {"via_bridge": VIA_BRIDGE,
+                      "reviewer": ("agent/guards.review（挂载入口跑的是 agent/ 图）"
+                                   if VIA_BRIDGE else
+                                   "app/multi_agent/graph.review（旧接法）")}
+    print(f"挂载入口的 Reviewer 实现：{implementation['reviewer']}")
     report = {}
     for mode, view in (("corpus", lambda case: case[4]),
                        # benign controls keep their own (already correct) delegation
@@ -225,6 +251,7 @@ async def main(args: argparse.Namespace) -> None:
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps({"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                                   "implementation": implementation,
                                    "corpus": {k: v for k, v in report["corpus"].items()},
                                    "backed": {k: v for k, v in report["backed"].items()}},
                                   ensure_ascii=False, indent=1), encoding="utf-8")
