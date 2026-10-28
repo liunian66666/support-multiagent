@@ -1,0 +1,13 @@
+旧路径臂（arm=mem）：模型换成 deepseek-v4.1-flash（平台 key），patch 位点 ('app.agent.faq_agent', 'app.agent.intake_agent', 'app.services.compound', 'app.agent.builder')
+mem-01   recall=[False, False] 总耗时=34108.6ms
+mem-02   recall=[False, False] 总耗时=32687.6ms
+mem-03   recall=[False, False] 总耗时=29801.6ms
+mem-04   recall=[False, False] 总耗时=31458.6ms
+mem-05   recall=[False, False] 总耗时=30661.6ms
+mem-06   recall=[False, False] 总耗时=34136.4ms
+mem-07   recall=[False, False] 总耗时=34464.2ms
+mem-08   recall=[False, False] 总耗时=28908.9ms
+mem-09   recall=[False, False] 总耗时=33327.5ms
+mem-10   recall=[False, False] 总耗时=34171.4ms
+[cleanup] 残留行数: {"checkpoints": 0, "session_meta": 0, "kb_hits": 0, "token_usage": 0, "agent_trace_runs": 0}
+legacy mem: 10 条长对话，针全部命中 0，原始数据 → /out/legacy_mem_dsv41.jsonl

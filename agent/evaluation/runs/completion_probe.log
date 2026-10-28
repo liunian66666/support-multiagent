@@ -1,0 +1,3 @@
+tenant:t_demo            ok=False 2332ms OpenAIConnectionError: Connection error.
+platform:t_admin         ok=False 233ms OpenAIPermissionDeniedError: Error code: 403 - Free quota exhausted. To continue accessing the model on a paid basis, please add funds or disable the "use free tier only" mode in the management console.
+appended 2 row(s) → /out/model_availability.jsonl

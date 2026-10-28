@@ -1,0 +1,23 @@
+项              退出  耗时  摘要
+test                 0     17s  83 passed, 1 warning in 7.69s
+demo                 0      4s  注意：以上由脚本化模型驱动，只证明编排、守卫与记忆机制；
+demo-pg              0      6s  注意：以上由脚本化模型驱动，只证明编排、守卫与记忆机制；
+pg                   0      5s  PASS: PG checkpointer 持久化 / 重启续聊 / 重放幂等 / 水位线推进 / �
+pg-restart           0     10s  PASS: 真实 PG 检查点在独立进程重启后仍可续聊，且水位线记忆�
+xproc                0     23s  补丁组退出码=0（0＝加锁后零丢轮、零崩溃、零残留）
+http                 0      9s  PASS: 真实 PG 检查点之上，挂载入口的 JSON/SSE 一致、重放幂等、�
+guards               0      2s  注：本探针只是把 draft 直接喂给规则，不经过模型；它衡量的�
+memory               0     17s  → agent/evaluation/runs/memory_geometry_diff.md
+mounted-memory       0     16s     21 total
+demo-mounted         0      7s  原始数据 → /out/demo_mounted.jsonl
+mounted              0      8s  {"generated_at": "2026-10-27T20:50:31+00:00", "pass": 6, "findings": 6, "total": 12}
+mounted-fixed        0     38s  guards 闸门：对照组退出码=1（今天应为 1＝有漏放）  补丁组退�
+frontend             0      8s  原始数据 → /e/曹浩冉/研究生/AI学习RAG与Agent/AGENT_exp/support-multiA
+retrieval            0     19s       ['748353ea', '9e0ae92a', 'f6e68a21'] scores=[0.849517, 0.764239, 0.759556] valu
+overhead             0      3s  原始数据 → E:\曹浩冉\研究生\AI学习RAG与Agent\AGENT_exp\support-multiA
+overhead-pg          0     20s  原始数据 → /out/orchestration_overhead_postgres.jsonl
+trace-baseline       0      1s  (1 row)
+image                0     10s  {"checks": 11, "passed": 11, "failed": 0}
+compare              0      0s  → E:\曹浩冉\研究生\AI学习RAG与Agent\AGENT_exp\support-multiAgent\agent\ev
+mounted-guards       1      9s  已知为负（§5f 漏放），按预期被闸门拦住
+--- 21 项：计入失败的硬项 0 ---

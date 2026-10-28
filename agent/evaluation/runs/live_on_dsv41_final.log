@@ -1,0 +1,38 @@
+ho-t01     pass=True outcome=answered roles=['faq'] forbidden=[] missing=[] 7562.0ms
+ho-t02     pass=True outcome=answered roles=['faq', 'order'] forbidden=[] missing=[] 10332.6ms
+ho-t03     pass=True outcome=answered roles=['faq'] forbidden=[] missing=[] 7203.2ms
+ho-t04     pass=True outcome=answered roles=['faq'] forbidden=[] missing=[] 7671.4ms
+ho-t05     pass=True outcome=answered roles=['faq', 'order'] forbidden=[] missing=[] 13568.2ms
+ho-t06     pass=True outcome=answered roles=['faq'] forbidden=[] missing=[] 7890.0ms
+ho-t07     pass=False outcome=answered roles=['faq'] forbidden=[] missing=['买家'] 7352.8ms
+ho-t08     pass=True outcome=answered roles=['faq'] forbidden=[] missing=[] 5828.5ms
+ho-t09     pass=True outcome=answered roles=['faq'] forbidden=[] missing=[] 6902.0ms
+ho-t10     pass=True outcome=answered roles=['faq'] forbidden=[] missing=[] 6968.2ms
+ho-t11     pass=True outcome=answered roles=['faq'] forbidden=[] missing=[] 6727.1ms
+ho-t12     pass=True outcome=answered roles=['faq'] forbidden=[] missing=[] 4433.9ms
+ho-t13     pass=True outcome=answered roles=['faq'] forbidden=[] missing=[] 16006.8ms
+ho-t14     pass=True outcome=answered roles=['faq'] forbidden=[] missing=[] 6660.7ms
+ho-t15     pass=True outcome=answered roles=['faq'] forbidden=[] missing=[] 5762.8ms
+ho-t16     pass=True outcome=answered roles=['faq'] forbidden=[] missing=[] 6813.3ms
+ho-c01     pass=False outcome=answered roles=['faq', 'order'] forbidden=['48小时内发出'] missing=[] 9226.4ms
+ho-c02     pass=True outcome=answered roles=['faq', 'order'] forbidden=[] missing=[] 9613.5ms
+ho-c03     pass=True outcome=answered roles=['faq'] forbidden=[] missing=[] 8613.3ms
+ho-c04     pass=True outcome=answered roles=['faq'] forbidden=[] missing=[] 7511.0ms
+ho-c05     pass=True outcome=review_blocked roles=['faq'] forbidden=[] missing=[] 48658.1ms
+ho-c06     pass=True outcome=answered roles=['faq'] forbidden=[] missing=[] 7334.0ms
+ho-c07     pass=True outcome=answered roles=['faq', 'order'] forbidden=[] missing=[] 36274.4ms
+ho-c08     pass=True outcome=answered roles=['faq'] forbidden=[] missing=[] 10005.2ms
+ho-c09     pass=True outcome=answered roles=['faq'] forbidden=[] missing=[] 6930.3ms
+ho-c10     pass=True outcome=answered roles=['faq', 'order'] forbidden=[] missing=[] 10541.3ms
+ho-c11     pass=True outcome=answered roles=['general', 'faq'] forbidden=[] missing=[] 9624.3ms
+ho-c12     pass=True outcome=answered roles=['general', 'faq'] forbidden=[] missing=[] 10320.4ms
+ho-c13     pass=True outcome=answered roles=['faq', 'general'] forbidden=[] missing=[] 14259.5ms
+ho-c14     pass=True outcome=answered roles=['order'] forbidden=[] missing=[] 6366.4ms
+ho-c15     pass=True outcome=answered roles=['order'] forbidden=[] missing=[] 9008.4ms
+ho-c16     pass=True outcome=answered roles=[] forbidden=[] missing=[] 1886.1ms
+ho-c17     pass=True outcome=answered roles=['faq', 'general'] forbidden=[] missing=[] 12598.6ms
+ho-c18     pass=True outcome=answered roles=['faq', 'order'] forbidden=[] missing=[] 17668.7ms
+ho-c19     pass=True outcome=answered roles=['faq'] forbidden=[] missing=[] 11158.1ms
+ho-c20     pass=True outcome=answered roles=['faq'] forbidden=[] missing=[] 7101.7ms
+
+heldout: 36 例，字面判定通过 34，原始数据 → /out/live_on_dsv41_final.jsonl

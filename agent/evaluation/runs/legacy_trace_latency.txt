@@ -1,0 +1,12 @@
+route|n|model_free|p50_ms|p95_ms|min_ms|max_ms
+faq|1120|0|4774|12735|398|70787
+general|341|0|2836|5986|663|19902
+order|155|126|50|6525|34|21468
+handoff|100|99|28|43|20|203
+faq_fast|23|23|28|49|23|81
+|2|0|4735|8566|478|8992
+order_list|2|2|64|78|49|79
+(7 rows)
+total_runs|model_free_runs|pct_model_free|p50_all|p95_all|first_day|last_day
+1743|250|14.3|3738|11753|2026-10-21|2026-10-28
+(1 row)

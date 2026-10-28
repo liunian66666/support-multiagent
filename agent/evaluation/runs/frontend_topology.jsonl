@@ -1,0 +1,14 @@
+{"check":"agent_host_port","want":"internal-only","got":"internal-only","note":"compose 里 cs_agent 的端口列＝「8000/tcp」","verdict":"PASS"}
+{"check":"agent_direct_refused","want":"000","got":"000","note":"宿主直连 agent:8000 应被拒（curl 给 000）","verdict":"PASS"}
+{"check":"nginx_edge_rules","want":"2","got":"2","note":"容器里 conf.d/default.conf 中 api/agent 出现次数（两条 return 404）","verdict":"PASS"}
+{"check":"edge_404_1","want":"404","got":"404","note":"http://127.0.0.1:8080/py-api/api/agent/chat","verdict":"PASS"}
+{"check":"edge_404_2","want":"404","got":"404","note":"http://127.0.0.1:8080/api/agent/chat","verdict":"PASS"}
+{"check":"edge_404_3","want":"404","got":"404","note":"http://127.0.0.1:8080/agent/chat","verdict":"PASS"}
+{"check":"control_business_health","want":"200","got":"200","note":"同一台 nginx 上的业务健康检查（证明 404 是路由决策不是整站挂了）","verdict":"PASS"}
+{"check":"control_login_page","want":"200","got":"200","note":"前端壳可达；SDK 拼的是 <server>/chat/pc.html 的 iframe，聊天走 /ws/chat","verdict":"PASS"}
+{"check":"business_can_reach_agent","want":"ok","got":"ok","note":"business→agent 取到 OpenAPI：36 true true false ","verdict":"PASS"}
+{"check":"chat_route_in_live_image","want":"true","got":"true","note":"旧入口 /agent/chat 确实在跑着的服务里（探针不是对着空气测）","verdict":"PASS"}
+{"check":"v2_route_absent_in_live_image","want":"false","got":"false","note":"运行中的服务里没有 /agent/chat/v2 —— §5e「图只在工作树」的第三种独立测法","verdict":"PASS"}
+{"check":"business_agent_upstream_env","want":"http://agent:8000","got":"http://agent:8000","note":"身份头由 business 注入；客户面只到 /ws/chat（nginx 1.1 Upgrade → business:8001）","verdict":"PASS"}
+{"check":"specialist_column_width","want":"32","got":"32","note":"agent_trace_runs.specialist 的 varchar 宽度（现网 1743 行，实际最长 10 字符）","verdict":"PASS"}
+{"check":"mounted_worst_case_fits","want":"yes","got":"yes","note":"三条角色全委派＝17 字符 ≤ 宽度 32：今天不会撞墙。余量 15 字符——但 four_agent.py:63 把 specialist 截到 120，而 app/services/trace.py:62 的 try/except 只 logger.exception，将来角色变多或改名一旦超过宽度，代价是整行 trace 静默丢失（不是截断）。","verdict":"PASS"}
