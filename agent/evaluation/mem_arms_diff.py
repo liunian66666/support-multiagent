@@ -123,6 +123,7 @@ def compare(off: dict[str, dict], on: dict[str, dict]) -> tuple[list[dict], dict
             cls = "both"
         counts[cls] += 1
         state = (n or {}).get("memory_state") or {}
+        ledger = (n or {}).get("compact_ledger") or {}
         out.append({
             "id": cid, "class": cls,
             "off_pass": off_ok, "on_pass": on_ok,
@@ -134,6 +135,11 @@ def compare(off: dict[str, dict], on: dict[str, dict]) -> tuple[list[dict], dict
             "verbatim": state.get("verbatim"),
             "total": state.get("total"),
             "off_tokens": tokens(o), "on_tokens": tokens(n),
+            # 摘要这一路到底做了什么：只有带 compact_ledger 的新采集件才有（旧批次=None，
+            # 表格退回以前那种"只知道水位线是 0"的写法）。
+            "on_failed": ledger.get("failed"), "on_below": ledger.get("below_trigger"),
+            "on_fail_reasons": ledger.get("fail_reasons") or {},
+            "on_absorbed": ledger.get("absorbed"),
             "off_latency": (o or {}).get("latency_ms"), "on_latency": (n or {}).get("latency_ms"),
         })
     return out, counts
@@ -243,12 +249,23 @@ def render_proof(rows: list[dict], counts: dict[str, int]) -> list[str]:
     return lines
 
 
+def _one_line(text: str) -> str:
+    """把答复压成一行并把竖线转义——否则答复里的换行会把 markdown 表格劈成半行。
+
+    第一版没做这件事，附录里 mem-01 第 0 轮的新图答复带了三段换行，直接把整行的列错位
+    （看起来像"旧臂那一格是空的"，其实是被换行推下去了）。留档工具自己把数据弄脏，
+    比不修更糟。换行统一换成可见的 ⏎，正文一个字不删。
+    """
+    return str(text or "").replace("|", "\\|").replace("\r\n", "\n").replace("\n", " ⏎ ").strip()
+
+
 def render_transcripts(off: dict[str, dict], on: dict[str, dict]) -> str:
     """逐轮转写附录：每一例把 11 轮原话 + 两臂当时的答复开头并排写出来（缺字段的例如实留空）。"""
     lines = ["# 长对话逐轮转写（旧路径臂 vs 新图臂）", "",
              "用户原话逐轮全文；答复只截前 120 字（`answer_head`）+ 该轮墙钟，"
              "探针那一轮的答复全文在各自行内 `answer`。要更全的正文按 `thread` 回检查点/消息表取，"
              "但自建线程在采集收尾时会被清理——这份附录就是留档本身。",
+             "答复里的换行写成 ⏎（否则会把表格劈成半行），竖线已转义。",
              "空白列＝那一臂没落这个字段（旧数据），不是“没说话”。", ""]
     for cid in sorted(set(off) | set(on)):
         o, n = off.get(cid, {}), on.get(cid, {})
@@ -262,13 +279,35 @@ def render_transcripts(off: dict[str, dict], on: dict[str, dict]) -> str:
         for i in range(turns):
             ro = (o.get("per_turn") or [])[i] if i < len(o.get("per_turn") or []) else {}
             rn = (n.get("per_turn") or [])[i] if i < len(n.get("per_turn") or []) else {}
-            user = rn.get("user") or ro.get("user") or ""
-            lines.append(f"| {i} | {user} | {ro.get('answer_head', '')} | "
-                         f"{rn.get('answer_head', '')} | {'、'.join(rn.get('roles') or [])} |")
+            user = _one_line(rn.get("user") or ro.get("user") or "")
+            lines.append(f"| {i} | {user} | {_one_line(ro.get('answer_head', ''))} | "
+                         f"{_one_line(rn.get('answer_head', ''))} | "
+                         f"{'、'.join(rn.get('roles') or [])} |")
         lines += ["| 探针 | %s | %s | %s | %s |" % (
-            (n or o).get("probe", ""), (o.get("answer") or "")[:120],
-            (n.get("answer") or "")[:120], "、".join(n.get("roles") or [])), ""]
+            _one_line((n or o).get("probe", "")), _one_line((o.get("answer") or "")[:120]),
+            _one_line((n.get("answer") or "")[:120]), "、".join(n.get("roles") or [])), ""]
     return "\n".join(lines) + "\n"
+
+
+def watermark_cell(row: dict) -> str:
+    """水位线那一格，顺带把"为什么是 0"能说的都说了。
+
+    旧采集件没有 ``compact_ledger``，只能说"0 且不知道为什么"（``0 ⚠``，沿用以前的标记）；
+    新采集件能分开两种 0：**摘要调用失败**（机制真的没折叠）与**一轮都没到触发线**
+    （机制没坏，是配置/长度问题）。这两种在报告里过去被混成同一个"并发限流"。
+    """
+    wm = row.get("watermark")
+    if wm is None:
+        return "—"
+    if wm > 0:
+        return str(wm)
+    failed, below = row.get("on_failed"), row.get("on_below")
+    if failed is None:
+        return "0 ⚠"
+    reasons = "、".join(f"{k}×{v}" for k, v in (row.get("on_fail_reasons") or {}).items())
+    if failed:
+        return f"0 ⚠（摘要失败×{failed}{'：' + reasons if reasons else ''}）"
+    return f"0 ○（{below or 0} 轮都没到触发线，摘要没坏）"
 
 
 def render(rows: list[dict], counts: dict[str, int], off_name: str, on_name: str,
@@ -301,8 +340,7 @@ def render(rows: list[dict], counts: dict[str, int], off_name: str, on_name: str
             miss.append("旧:" + "、".join(r["off_missing"]))
         if r["on_missing"]:
             miss.append("新:" + "、".join(r["on_missing"]))
-        wm = r["watermark"]
-        wm_cell = "—" if wm is None else (f"{wm} ⚠" if wm == 0 else str(wm))
+        wm_cell = watermark_cell(r)
         lines.append(f"| {r['id']} | {CLASSES[r['class']]} | {_yes(r['off_pass'])} | "
                      f"{_yes(r['on_pass'])} | {'；'.join(miss) or '—'} | {wm_cell} | "
                      f"{r['summarized'] if r['summarized'] is not None else '—'} | "
@@ -317,10 +355,12 @@ def render(rows: list[dict], counts: dict[str, int], off_name: str, on_name: str
               "。行内 `latency_ms` 是**整条对话**（11 轮埋针/填充 + 探针轮）的墙钟，"
               "不是探针那一轮——单写“p50 33s”会被读成每轮 33s，这里明确单位与口径。",
               "",
-              "⚠ 表里带 ⚠ 的水位线＝0 不是「记忆机制失败」：那几例的摘要辅助调用因为两个臂并发打同一把 "
-              "key 被限流，`memory.compact` 走「摘要失败 ⇒ 一条都不删」分支，检查点仍是全量原文。"
-              "单独复跑（串行）时同样的前两例水位线推到 18 / 10 且两针全中，见 "
-              "`live_mem_recheck.jsonl` 与报告 §6f 第 1 条 / 陷阱 #23。",
+              "⚠ 表里带 ⚠ 的水位线＝0：摘要没把水位线推上去，检查点仍是全量原文（`compact` 走"
+              "「失败 ⇒ 一条都不删」，没丢东西）。**这一格的原因列以前是没有的**，四批数据（r1 并发 "
+              "4 例、r2 4 例、r3 串行 3 例、recheck 2 例 0）就一律被写成\"两臂并发打同一把 key 被限流\""
+              "（陷阱 #23 那条污染是真的，但它不是 0 的全部解释——串行照样出 0）。"
+              "从带 `compact_ledger` 的采集件起，0 分两种写法：`⚠（摘要失败×N：原因）` 与 "
+              "`○（N 轮都没到触发线，摘要没坏）`。旧 jsonl 没有这个字段，只能沿用 `0 ⚠`。",
               "",
               "读法提醒：`route=order` 且旧路径未命中的例子，失败在**规则路由把复述题判成订单查询、"
               "走未登录兜底句**，压根没读到历史（§6f 第 2 条）；新图未命中但水位线 > 0 的例子才是"

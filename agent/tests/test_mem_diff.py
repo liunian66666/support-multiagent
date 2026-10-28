@@ -6,9 +6,11 @@ different collectors with two different token shapes, and its job is to keep thr
 from being folded into one number:
 
 * a needle that is present with different spacing must still count (official ``norm``);
-* ``watermark == 0`` is a contamination flag (auxiliary summarisation call failed under a shared
-  key), **not** a memory failure — the table has to say so or the reader blames the mechanism
-  (pitfall #23);
+* ``watermark == 0`` is printed as a **measurement flag**, not as "memory broke" — the summary
+  never deletes anything on failure, so the transcript stays complete. But it is *not* the same
+  thing as "concurrency contaminated the run": a serial re-collection (r3) still produced three
+  zeros, so a row that carries ``compact_ledger`` now says **why** it is zero (摘要失败 vs 没到触发线),
+  and a row that predates that field says ``0 ⚠`` and nothing more (pitfall #23, corrected by §6g).
 * a case missing from one arm is a coverage gap, which blocks the gate but is not a 回退.
 
 The last test reads the two collected artifacts and pins their aggregate, so a silently
@@ -22,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from agent.evaluation.mem_arms_diff import compare, judge, render, tokens
+from agent.evaluation.mem_arms_diff import compare, judge, render, tokens, watermark_cell
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNS = ROOT / "agent" / "evaluation" / "runs"
@@ -90,6 +92,22 @@ def test_latency_is_rendered_as_whole_conversation_seconds() -> None:
                    {"fix": 1, "REG": 0, "keep": 0, "both": 0, "gap": 0}, "off.jsonl", "on.jsonl")
     assert "p50 33.0s" in table and "p50 180.0s" in table
     assert "整条对话" in table
+
+
+def test_watermark_zero_now_says_whether_the_summary_actually_broke() -> None:
+    """三种 0 不能写成同一句话：没记归因字段、记了且摘要失败、记了但一轮都没到触发线。
+
+    r1/r2 那批把 0 全归给"两臂并发限流"，r3 串行重采仍有 3/10 是 0 —— 解释不够用了。
+    带 ``compact_ledger`` 的采集件必须把两种 0 分开印出来（陷阱 #23 只说并发会污染辅助调用，
+    它不是"0 的唯一原因"）。
+    """
+    assert watermark_cell({"watermark": 0}) == "0 ⚠"                       # 旧采集件：不知道为什么
+    assert watermark_cell({"watermark": 16}) == "16"
+    broken = {"watermark": 0, "on_failed": 2, "on_below": 9,
+              "on_fail_reasons": {"summary_model_failed": 2}}
+    assert watermark_cell(broken) == "0 ⚠（摘要失败×2：summary_model_failed×2）"
+    quiet = {"watermark": 0, "on_failed": 0, "on_below": 12, "on_fail_reasons": {}}
+    assert watermark_cell(quiet) == "0 ○（12 轮都没到触发线，摘要没坏）"
 
 
 @pytest.mark.skipif(ARTIFACTS_MISSING, reason="collected real-model memory arms not present")

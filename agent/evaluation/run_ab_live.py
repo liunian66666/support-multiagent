@@ -41,6 +41,8 @@ import os
 import re
 import time
 import uuid
+from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -71,6 +73,40 @@ def _load_corpus():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _tap(sink: Any, box: list) -> Any:
+    """抄一份 ``memory`` 阶段的 trace 进 ``box``，其余原样交给平台 sink。
+
+    为什么在采集侧抄：compact 节点把"摘要失败 / 摘要为空 / 本轮没到触发线"的 reason 只写进
+    ``deps.trace``，而这一臂的 trace 既不落 PG（``agent_trace_runs`` 最新一行仍是 10-26）也不进行内，
+    于是 ``watermark=0`` 的例子只能靠猜（§6f 以前就把它一律记成"并发限流"）。这是只读旁路：
+    不改图、不改 state、不吞异常——平台 sink 抛什么，被测链路照抛什么。
+    """
+    def traced(stage: str, name: str, **attributes: Any) -> None:
+        if stage == "memory":
+            box.append({"name": name, **attributes})
+        return sink(stage, name, **attributes)
+
+    return traced
+
+
+def compact_ledger(events: list) -> dict:
+    """把每轮 compact 的结论折成一行，好让 ``watermark=0`` 能对回原因。
+
+    ``skipped`` 有两种，绝不能混在一起：``reason`` 为空是**没到触发线**（正常，摘要本来就不该每轮跑），
+    非空才是摘要这一路真出了事（``summary_model_failed`` / ``empty_summary`` / ``compactor_error``）。
+    以前行内只有 ``watermark`` 一个数，两者长得一模一样——这就是 §6f 把 4 例 0 水位线全归给
+    "并发限流"、而串行重采仍剩 3 例 0 的根源。
+    """
+    compacted = [e for e in events if e.get("name") == "compacted"]
+    failed = [e for e in events if e.get("name") == "skipped" and e.get("reason")]
+    idle = [e for e in events if e.get("name") == "skipped" and not e.get("reason")]
+    return {"turns": len(events), "compacted": len(compacted), "below_trigger": len(idle),
+            "failed": len(failed), "fail_reasons": dict(Counter(e.get("reason") for e in failed)),
+            "absorbed": sum(int(e.get("absorbed") or 0) for e in compacted),
+            "restored": sum(int(e.get("restored") or 0) for e in compacted)}
+
 
 # [ours] identical to python_agent/evaluation/score_heldout.norm — the ruler the frozen
 # off-baseline (ho_off_r4_checklist.jsonl) was scored with. Stripping emphasis alone is
@@ -205,9 +241,13 @@ async def run_mem(app: Any, args: argparse.Namespace) -> list[dict]:
     for case in (long_cases()[: args.limit]):
         thread = f"{TENANT}:v2mem-{case['id']}-{uuid.uuid4().hex[:6]}"
 
+        # 摘要为什么没推水位线，进行内而不是靠猜：见 _tap 的注释。
+        memory_events: list[dict] = []
+
         async def deps_for_tenant(target: str, _app=app) -> Any:
-            return await deps_for_app(_app, target, reuse_faq_agent=args.parity,
+            base = await deps_for_app(_app, target, reuse_faq_agent=args.parity,
                                       model_source=args.model, model_name=args.model_name)
+            return replace(base, trace=_tap(base.trace, memory_events))
 
         service = SupportService(deps_for_tenant, checkpointer=InMemorySaver(),
                                  graph_kwargs={"compact_trigger": args.trigger,
@@ -240,6 +280,7 @@ async def run_mem(app: Any, args: argparse.Namespace) -> list[dict]:
                      "containment": [norm(term) in text for term in case["expect"]],
                      "all_needles_recalled": all(norm(term) in text for term in case["expect"]),
                      "turns": len(case["turns"]) + 1, "memory_state": state,
+                     "compact_ledger": compact_ledger(memory_events),
                      "tokens_total": tokens, "latency_ms": round((time.perf_counter() - started) * 1000, 1),
                      "per_turn": per_turn, "mode": "parity" if args.parity else "shadow",
                      "model": args.model, "model_name": args.model_name or "",

@@ -23,12 +23,15 @@ import pytest
 
 from agent.evaluation.mem_arms_diff import (main, render_proof, render_transcripts,
                                             rows_by_id, selfproof)
-from agent.evaluation.mem_corpus import ANSWER_HEAD_CHARS, fingerprint, script, transcript_complete, turn_row
+from agent.evaluation.mem_corpus import (ANSWER_HEAD_CHARS, fingerprint, script,
+                                         transcript_complete, turn_row)
+from agent.evaluation.run_ab_live import compact_ledger
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNS = ROOT / "agent" / "evaluation" / "runs"
 OFF_ARTIFACT = RUNS / "legacy_mem_dsv41.jsonl"
 ON_ARTIFACT = RUNS / "live_mem_dsv41.jsonl"
+MOCK_ARTIFACT = RUNS / "mock_mem.jsonl"
 ARTIFACTS_MISSING = not (OFF_ARTIFACT.exists() and ON_ARTIFACT.exists())
 
 CASE = {"id": "mem-01", "probe": "我最开始那单的抬头是哪家？",
@@ -142,6 +145,45 @@ def test_transcript附录把两臂并排且缺字段留空(tmp_path: Path) -> No
     half = proven_off()
     half["per_turn"] = half["per_turn"][:2]
     assert render_transcripts({"mem-01": half}, {"mem-01": proven_on()}).count("| 0 |") == 1
+
+
+def test_transcript行不会被答复里的换行劈成半行() -> None:
+    """留档工具自己把数据弄脏，比不修更糟：第一版没转义换行，mem-01 第 0 行的三段换行
+    把整行推到下一行去，看上去像"旧臂那一格是空的"。"""
+    row = proven_on()
+    row["per_turn"][1]["answer_head"] = "第一段\n第二段 | 带竖线\n第三段"
+    text = render_transcripts({"mem-01": proven_off()}, {"mem-01": row})
+    lines = [line for line in text.splitlines() if line.startswith("| 1 |")]
+    assert len(lines) == 1, lines
+    assert "第一段 ⏎ 第二段 \\| 带竖线 ⏎ 第三段" in lines[0]
+    assert "\n| | " not in text                       # 不该出现被换行撕出来的碎行
+
+
+def test_compact_ledger_keeps_below_trigger_apart_from_a_real_summary_failure() -> None:
+    """水位线没动有两种原因，长得一样、结论完全不同：没到触发线 vs 摘要这一路失败了。
+
+    §6f 以前只有 ``watermark`` 一个数，把 4 例 0 一律写成"并发限流"；串行重采（r3）仍有 3 例 0，
+    那句解释就站不住了。从这一版起行内带 ``compact_ledger``，0 水位线必须能对回 ``fail_reasons``。
+    """
+    events = ([{"name": "skipped", "reason": ""}] * 10
+              + [{"name": "skipped", "reason": "summary_model_failed", "absorbed": 0},
+                 {"name": "compacted", "absorbed": 8, "restored": 2}])
+    assert compact_ledger(events) == {"turns": 12, "compacted": 1, "below_trigger": 10,
+                                      "failed": 1,
+                                      "fail_reasons": {"summary_model_failed": 1},
+                                      "absorbed": 8, "restored": 2}
+    quiet = compact_ledger([{"name": "skipped", "reason": ""}] * 12)
+    assert quiet["failed"] == 0 and quiet["below_trigger"] == 12   # 全没到触发线 ≠ 摘要坏了
+
+
+@pytest.mark.skipif(not MOCK_ARTIFACT.exists(), reason="mock memory arm not collected")
+def test_mock_arm_row_carries_an_attributable_compact_ledger() -> None:
+    """采集件自证的第二层：``absorbed`` 合计必须等于水位线，否则这个字段本身在说谎。"""
+    row = json.loads(MOCK_ARTIFACT.read_text(encoding="utf-8").splitlines()[0])
+    ledger = row.get("compact_ledger") or {}
+    assert ledger, "mock 臂这一行没有 compact_ledger——采集器旁路没接上"
+    assert ledger["absorbed"] == row["memory_state"]["watermark"], (ledger, row["memory_state"])
+    assert ledger["compacted"] + ledger["below_trigger"] + ledger["failed"] == ledger["turns"]
 
 
 @pytest.mark.skipif(ARTIFACTS_MISSING, reason="collected real-model memory arms not present")
