@@ -426,8 +426,9 @@ PY
     rm -f "$LOG"
     echo "--- $total 项：计入失败的硬项 $fails ---"
     [ "$fails" = 0 ] || echo "有项反常：见上面带 >> 的行，或单独重跑该项"
-    { printf '=== %s  run_all.sh all：%s 项，失败硬项 %s（软项 mounted-guards 期望为负）\n' \
-              "$(date -Iseconds)" "$total" "$fails"
+    { if [ "$SOFT" = 1 ]; then SCOPE="全量清单（软项 mounted-guards 期望为负，已跑）"; else SCOPE="子集（带参数跑的，软项未进；实际项见下表）"; fi
+      printf '=== %s  run_all.sh all：%s 项，失败硬项 %s ｜ %s\n' \
+              "$(date -Iseconds)" "$total" "$fails" "$SCOPE"
       printf '%s' "$TABLE"
       printf -- '--- %s 项：计入失败的硬项 %s ---\n' "$total" "$fails"
     } >> "$RUNS/acceptance_ledger.txt"
