@@ -159,6 +159,30 @@ def test_transcript行不会被答复里的换行劈成半行() -> None:
     assert "\n| | " not in text                       # 不该出现被换行撕出来的碎行
 
 
+def test_附录把三种空格子分开写() -> None:
+    """没落字段 ≠ 空答复 ≠ 空答复且被转成待办审批。
+
+    真实数据里旧臂 10 例的第 1 轮（"实付 X 元 + 退货运费谁出"）全是
+    `success=true / is_interrupt=true / answer=""`：旧路径那一句直接转成 HITL 待办，
+    客户那一轮一个字都没拿到，但会话继续记。以前 `per_turn` 只有 `{turn,error,latency_ms}`
+    且 `error` 为空，这整块空白根本看不见（陷阱 #26 那条"空答复"在长对话臂上的形状）。
+    """
+    legacy_interrupt = proven_off()
+    legacy_interrupt["per_turn"][1] = {"turn": 1, "user": CASE["turns"][1], "answer_chars": 0,
+                                       "answer_head": "", "latency_ms": 31.1,
+                                       "success": True, "is_interrupt": True}
+    old_shape = proven_off()
+    old_shape["per_turn"] = [{"turn": i, "error": "", "latency_ms": 1.0} for i in range(5)]
+    text = render_transcripts({"mem-01": legacy_interrupt}, {"mem-01": proven_on()})
+    text2 = render_transcripts({"mem-01": old_shape}, {"mem-01": proven_on()})
+    # 只看表格行：图例那几行本来就把三种标记都写了一遍，拿全文做子串断言会自证通过。
+    rows = [line for line in text.splitlines() if line.startswith("| ")]
+    rows2 = [line for line in text2.splitlines() if line.startswith("| ")]
+    assert any("（空答复，HITL 中断）" in line for line in rows)
+    assert any("—（这一臂没落这个字段）" in line for line in rows2)
+    assert not any("空答复" in line for line in rows2)
+
+
 def test_compact_ledger_keeps_below_trigger_apart_from_a_real_summary_failure() -> None:
     """水位线没动有两种原因，长得一样、结论完全不同：没到触发线 vs 摘要这一路失败了。
 

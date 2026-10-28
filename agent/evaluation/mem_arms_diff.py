@@ -261,12 +261,28 @@ def _one_line(text: str) -> str:
 
 def render_transcripts(off: dict[str, dict], on: dict[str, dict]) -> str:
     """逐轮转写附录：每一例把 11 轮原话 + 两臂当时的答复开头并排写出来（缺字段的例如实留空）。"""
+    def _head(entry: dict) -> str:
+        """三种"看上去是空的"必须分开：没落字段、空答复、空答复且是 HITL 中断。
+
+        真数据里旧臂每一例的第 1 轮（"实付 X 元 + 退货运费谁出"）都是 `success=true /
+        is_interrupt=true / answer=""`——旧路径把这句复合问转成了待办审批，客户那一轮其实没拿到
+        任何文字。以前 `per_turn` 只有 `{turn,error,latency_ms}` 且 error 为空，这一整轮的空白
+        完全看不见（陷阱 #26 那条"空答复"在长对话臂上的形状）。
+        """
+        if not entry or ("user" not in entry and "answer_chars" not in entry):
+            return "—（这一臂没落这个字段）"
+        if not entry.get("answer_chars", 0):
+            return "（空答复，HITL 中断）" if entry.get("is_interrupt") else "（空答复）"
+        return _one_line(entry.get("answer_head", ""))
+
     lines = ["# 长对话逐轮转写（旧路径臂 vs 新图臂）", "",
              "用户原话逐轮全文；答复只截前 120 字（`answer_head`）+ 该轮墙钟，"
              "探针那一轮的答复全文在各自行内 `answer`。要更全的正文按 `thread` 回检查点/消息表取，"
              "但自建线程在采集收尾时会被清理——这份附录就是留档本身。",
              "答复里的换行写成 ⏎（否则会把表格劈成半行），竖线已转义。",
-             "空白列＝那一臂没落这个字段（旧数据），不是“没说话”。", ""]
+             "空格子分三种，别再误读成同一件事：`—（这一臂没落这个字段）` ＝旧数据缺字段；"
+             "`（空答复）` ＝模型真的一个字都没回；`（空答复，HITL 中断）` ＝旧路径把这轮转成了"
+             "待办审批（`success=true / is_interrupt=true`），客户侧没有任何文字，但会话照记。", ""]
     for cid in sorted(set(off) | set(on)):
         o, n = off.get(cid, {}), on.get(cid, {})
         lines += [f"## {cid} · 语料指纹 旧 {o.get('script_sha', '—')} / "
@@ -280,8 +296,8 @@ def render_transcripts(off: dict[str, dict], on: dict[str, dict]) -> str:
             ro = (o.get("per_turn") or [])[i] if i < len(o.get("per_turn") or []) else {}
             rn = (n.get("per_turn") or [])[i] if i < len(n.get("per_turn") or []) else {}
             user = _one_line(rn.get("user") or ro.get("user") or "")
-            lines.append(f"| {i} | {user} | {_one_line(ro.get('answer_head', ''))} | "
-                         f"{_one_line(rn.get('answer_head', ''))} | "
+            lines.append(f"| {i} | {user} | {_head(ro)} | "
+                         f"{_head(rn)} | "
                          f"{'、'.join(rn.get('roles') or [])} |")
         lines += ["| 探针 | %s | %s | %s | %s |" % (
             _one_line((n or o).get("probe", "")), _one_line((o.get("answer") or "")[:120]),
