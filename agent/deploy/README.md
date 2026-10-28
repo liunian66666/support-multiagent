@@ -39,7 +39,7 @@ agent 服务的代码烤在镜像里（`build: ./python_agent`，唯一挂载是
 | `FOUR_AGENT_GRAPH` | `python_agent/app/services/four_agent.py:24` | 未设 = off | `on/true/1` 才走 app 侧那张图；否则走旧路径（`decide_turn` + specialist） |
 | `MEMORY_INJECT` | `python_agent/app/services/memory.py:57` | 未设 = on | **三级开关的最后一档**：① Redis `cs:memory:inject=off` 平台级一票否决（不用重启）② 租户级 `tenants.memory_enabled`（默认 1，取失败**按开**，降级行为同旧版）③ 本 env。任一为 off 即不注入摘要段 |
 | `AGENT_RECURSION_LIMIT` | `python_agent/app/api/chat.py:38` | 0 = 不收紧 | 沿用 LangGraph 缺省 25；设 `>0` 显式收紧，超限抛 `GraphRecursionError` 走既有友好错误路径 |
-| `SUPPORT_V2_THREAD_LOCK` | `agent/entrypoint.py:61` | 未设 = 不接锁 | 只对 `agent/` 那条路生效，且要同时给 `POSTGRES_DSN` 才接（按 thread key 的 advisory 锁，§4b）；单进程部署不用开 |
+| `SUPPORT_V2_THREAD_LOCK` | `agent/entrypoint.py:61` | 未设 = 不接锁 | 只对 `agent/` 那条路生效，且要同时给 `POSTGRES_DSN` 才接（按 thread key 的 advisory 锁，§4b）；单进程部署不用开。**2026-10-28 起挂载入口也吃这一个开关**——`agent/cutover.py` 建 service 时同样调 `_guard_from_env()`，所以开关置 on 之后两条路的跨进程保护是同一份（§5j 的 B10/B11） |
 
 ⚠ **切流前有一件事必须有人拍板，而它不在这四个开关里**：两条路对"能不能复述客户自己说过的单号"
 已经写了**相反**的答案——`app/services/memory.py:29-31` 的 banner 明文允许
@@ -58,7 +58,12 @@ grep -nE '^(FOUR_AGENT_GRAPH|MEMORY_INJECT|AGENT_RECURSION_LIMIT|SUPPORT_V2_THRE
 
 ## 打开与回退（app 侧图那条路）
 
-> **今天给出的结论是"先别开"**。下面第 0 步的两份离线账本里，`mounted-guards` 是实测**有回退**的：
+> ⚠ **2026-10-28 更新：这一段写的"两张图"已经合成一张了**。`app/services/four_agent.py` 现在是薄适配器，`run_turn` 里 `from agent.cutover import run_turn` ⇒ 置 on 之后跑的就是 `agent/` 那张图，而不是下面这些数字所描述的 `app/multi_agent/graph.py`。同一套账本在新接法下重测的结果在报告 §5j：Reviewer 0 漏放 / 0 误拦、失败轮与安全规则都由 `agent/` 那份实现兜住。
+> 下面这段保留，是因为它记的是**当时那份独立实现**的实测（§5e/§5f/§5h/§5i 的数字没有作废，只是不再描述生产入口）；
+> 而"先别开"这个结论**今天仍然成立**，理由换成了三条：镜像里仍然没有 `agent/` 包（第 0 步）、
+> `ChatRequest` 仍然没有 `turn_id`（§5j 的 B2：跨请求重试仍算两轮）、以及起第二个 worker/副本时> 必须同时打开 `SUPPORT_V2_THREAD_LOCK`（§5j 的 B11：两个实例写同一线程实测 6 轮落 3）。
+
+> ~~今天给出的结论是"先别开"~~（原文，描述旧接法）。下面第 0 步的两份离线账本里，`mounted-guards` 是实测**有回退**的：
 > 同一份 30 例对抗语料（25 例不安全草稿）打在这张图自己的 Reviewer 上，漏放 **9/25**；把该配的委派
 > 配齐、只考内容级规则时漏放 **22/25**（原始 24，其中 `val-01/02` 逐例改判——它们复述的正是那份证据的原文），
 > 跨客户单号 5 例、内部泄漏 3 例、禁用交易改写 7 例在这条路上全部原样发给客户（`../实际效果报告.md` §5f）。
