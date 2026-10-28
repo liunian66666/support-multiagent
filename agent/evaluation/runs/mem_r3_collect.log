@@ -1,0 +1,134 @@
+[r3] 2026-10-28T08:34:28+08:00 ROOT=/e/曹浩冉/研究生/AI学习RAG与Agent/AGENT_exp/support-multiAgent N=1 日志=/e/曹浩冉/研究生/AI学习RAG与Agent/AGENT_exp/support-multiAgent/agent/evaluation/runs/mem_r3_collect.log
+[r3] 2026-10-28T08:34:28+08:00 起：旧路径臂 1 条
+旧路径臂（arm=mem）：模型换成 deepseek-v4.1-flash（平台 key），patch 位点 ('app.agent.faq_agent', 'app.agent.intake_agent', 'app.services.compound', 'app.agent.builder')
+mem-01   recall=[False, False] 总耗时=30853.4ms
+[cleanup] 残留行数: {"checkpoints": 0, "session_meta": 0, "kb_hits": 0, "token_usage": 0, "agent_trace_runs": 0}
+legacy mem: 1 条长对话，针全部命中 0，原始数据 → /out/legacy_mem_dsv41_r3.jsonl
+[r3] 2026-10-28T08:35:07+08:00 旧路径臂退出码 0
+[r3] 2026-10-28T08:35:07+08:00 起：新图臂 1 条
+mem-01   recall=[False, False] watermark=10 tokens=71433 176696.5ms
+
+mem: 1 例，字面判定通过 0，原始数据 → /out/live_mem_dsv41_r3.jsonl
+[r3] 2026-10-28T08:38:11+08:00 新图臂退出码 0
+[r3] 2026-10-28T08:38:12+08:00 起：strict 对照表
+# 长对话记忆逐题对照（真实模型 · legacy_mem_dsv41_r3.jsonl vs live_mem_dsv41_r3.jsonl）
+
+判据：探针答复必须字面含住**全部**针（订单号 + 发票抬头），尺子 = `evaluation.score_heldout.norm`（与旧基线、与 §8g 那张 36 题表同源，此处**重新计算**，不采信行内 `containment`）。
+
+| 例 | 判定 | 旧路径 | 新图 | 未命中针（旧 / 新） | 新图水位线 | 摘要条数 | 原文条数 | 旧route | 旧token | 新token |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| mem-01 | 保持失败 | ✗ | ✗ | 旧:ORD-2024-701、星辰科技；新:ORD-2024-701、星辰科技 | 10 | 10 | 14 | order | 17754 | 71433 |
+
+合计：**翻正 0 / 回退 0 / 保持通过 0 / 保持失败 1 / 未采集 0**。
+
+成本（每条对话一整条链路，不是单轮）：旧路径 token 合计 17,754 · p50 17,754；新图 token 合计 71,433 · p50 71,433；旧路径墙钟 p50 30.9s；新图墙钟 p50 176.7s。行内 `latency_ms` 是**整条对话**（11 轮埋针/填充 + 探针轮）的墙钟，不是探针那一轮——单写“p50 33s”会被读成每轮 33s，这里明确单位与口径。
+
+⚠ 表里带 ⚠ 的水位线＝0 不是「记忆机制失败」：那几例的摘要辅助调用因为两个臂并发打同一把 key 被限流，`memory.compact` 走「摘要失败 ⇒ 一条都不删」分支，检查点仍是全量原文。单独复跑（串行）时同样的前两例水位线推到 18 / 10 且两针全中，见 `live_mem_recheck.jsonl` 与报告 §6f 第 1 条 / 陷阱 #23。
+
+读法提醒：`route=order` 且旧路径未命中的例子，失败在**规则路由把复述题判成订单查询、走未登录兜底句**，压根没读到历史（§6f 第 2 条）；新图未命中但水位线 > 0 的例子才是记忆／安全规则层面的事。两者修法不同，不要用同一个分数混起来。
+
+
+## 数据自证性（这两行是不是同一段对话？失手能不能复核？）
+
+对照表只回答“探针答没答对”；这一节回答它的**前提**——两臂跑的确实是同一批话，而且每一轮说过什么、模型当时答了什么留在原始数据里可翻。语料指纹 = `agent/evaluation/mem_corpus.fingerprint`（12 句话按发送顺序 sha1 前 12 位），两臂同值才叫“同一对话”；`转写` = 逐轮行数/应有行数（应有 = 总轮数-1，探针答复在行内 `answer`）；`thread` = 这一例跑在哪条线程上，用来与 `token_usage`、检查点、消息表对账（采集器跑完会自清理自建线程，所以回查窗口是采集当时，不是永久）。
+
+| 例 | 语料指纹（旧｜新） | 轮数（旧/新） | 转写（旧/新） | thread（旧/新） | 结论 |
+| --- | --- | --- | --- | --- | --- |
+| mem-01 | aa9ee4194744 ｜ aa9ee4194744 | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+
+合计：**可自证 1 / 不可证 0 / 冲突 0**。
+
+读法：**“不可证”不是回退，是这一批数据只能证明“探针那一轮的答案”——**埋针与填充轮的原话没落盘，两臂语料一致目前只能靠“两边都 import 同一个 `cases()`”这个代码结构上的承诺担保。要把它变成可查的数，就得用现在这版采集器重采（字段已就位）。
+“冲突”才是硬问题：两臂写的指纹/问法/轮数对不上，那张对照表就没有意义，先修采集再谈分数。
+
+闸门：**回退 0、未采集 0 ⇒ 放行（退出码 0）**。回退=0 才允许把这条链路往前推；未采集不是回退，但没测过就不算证明。
+
+原始表 → E:\曹浩冉\研究生\AI学习RAG与Agent\AGENT_exp\support-multiAgent\agent\evaluation\runs\mem_diff_dsv41_r3_off_vs_on.md
+逐轮转写附录 → E:\曹浩冉\研究生\AI学习RAG与Agent\AGENT_exp\support-multiAgent\agent\evaluation\runs\mem_diff_dsv41_r3_off_vs_on_transcripts.md
+[r3] 2026-10-28T08:38:13+08:00 mem-diff 退出码 0
+[r3] 2026-10-28T08:38:13+08:00 全部结束
+[r3] 2026-10-28T08:38:23+08:00 ROOT=/e/曹浩冉/研究生/AI学习RAG与Agent/AGENT_exp/support-multiAgent N=10 日志=/e/曹浩冉/研究生/AI学习RAG与Agent/AGENT_exp/support-multiAgent/agent/evaluation/runs/mem_r3_collect.log
+[r3] 2026-10-28T08:38:23+08:00 起：旧路径臂 10 条
+旧路径臂（arm=mem）：模型换成 deepseek-v4.1-flash（平台 key），patch 位点 ('app.agent.faq_agent', 'app.agent.intake_agent', 'app.services.compound', 'app.agent.builder')
+mem-01   recall=[False, False] 总耗时=30676.9ms
+mem-02   recall=[False, False] 总耗时=34659.3ms
+mem-03   recall=[False, False] 总耗时=32659.2ms
+mem-04   recall=[False, False] 总耗时=27978.9ms
+mem-05   recall=[False, False] 总耗时=26093.0ms
+mem-06   recall=[False, False] 总耗时=30538.6ms
+mem-07   recall=[False, False] 总耗时=30347.3ms
+mem-08   recall=[False, False] 总耗时=32787.1ms
+mem-09   recall=[False, False] 总耗时=36061.3ms
+mem-10   recall=[False, False] 总耗时=26949.5ms
+[cleanup] 残留行数: {"checkpoints": 0, "session_meta": 0, "kb_hits": 0, "token_usage": 0, "agent_trace_runs": 0}
+legacy mem: 10 条长对话，针全部命中 0，原始数据 → /out/legacy_mem_dsv41_r3.jsonl
+[r3] 2026-10-28T08:43:40+08:00 旧路径臂退出码 0
+[r3] 2026-10-28T08:43:40+08:00 起：新图臂 10 条
+mem-01   recall=[True, True] watermark=10 tokens=80551 178669.6ms
+mem-02   recall=[True, True] watermark=8 tokens=70290 159988.0ms
+mem-03   recall=[True, True] watermark=10 tokens=81572 195794.5ms
+mem-04   recall=[False, False] watermark=16 tokens=74038 200057.4ms
+mem-05   recall=[True, True] watermark=12 tokens=84010 191564.3ms
+mem-06   recall=[True, True] watermark=8 tokens=66258 159798.7ms
+mem-07   recall=[False, False] watermark=0 tokens=106141 261284.3ms
+mem-08   recall=[False, False] watermark=0 tokens=76032 204357.5ms
+mem-09   recall=[False, False] watermark=0 tokens=57967 196645.4ms
+mem-10   recall=[True, False] watermark=8 tokens=73536 178665.3ms
+
+mem: 10 例，字面判定通过 5，原始数据 → /out/live_mem_dsv41_r3.jsonl
+[r3] 2026-10-28T09:15:55+08:00 新图臂退出码 0
+[r3] 2026-10-28T09:15:55+08:00 起：strict 对照表
+# 长对话记忆逐题对照（真实模型 · legacy_mem_dsv41_r3.jsonl vs live_mem_dsv41_r3.jsonl）
+
+判据：探针答复必须字面含住**全部**针（订单号 + 发票抬头），尺子 = `evaluation.score_heldout.norm`（与旧基线、与 §8g 那张 36 题表同源，此处**重新计算**，不采信行内 `containment`）。
+
+| 例 | 判定 | 旧路径 | 新图 | 未命中针（旧 / 新） | 新图水位线 | 摘要条数 | 原文条数 | 旧route | 旧token | 新token |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| mem-01 | 翻正（旧失败 → 新通过） | ✗ | ✓ | 旧:ORD-2024-701、星辰科技 | 10 | 10 | 14 | order | 17290 | 80551 |
+| mem-02 | 翻正（旧失败 → 新通过） | ✗ | ✓ | 旧:ORD-2024-702、云帆贸易 | 8 | 8 | 16 | order | 18761 | 70290 |
+| mem-03 | 翻正（旧失败 → 新通过） | ✗ | ✓ | 旧:ORD-2024-703、澜山食品 | 10 | 10 | 14 | order | 17509 | 81572 |
+| mem-04 | 保持失败 | ✗ | ✗ | 旧:ORD-2024-704、墨白文化；新:ORD-2024-704、墨白文化 | 16 | 16 | 8 | order | 17549 | 74038 |
+| mem-05 | 翻正（旧失败 → 新通过） | ✗ | ✓ | 旧:ORD-2024-705、启元电子 | 12 | 12 | 12 | order | 16900 | 84010 |
+| mem-06 | 翻正（旧失败 → 新通过） | ✗ | ✓ | 旧:ORD-2024-706、禾风家居 | 8 | 8 | 16 | order | 17803 | 66258 |
+| mem-07 | 保持失败 | ✗ | ✗ | 旧:ORD-2024-707、川流物流；新:ORD-2024-707、川流物流 | 0 ⚠ | 0 | 24 | order | 16832 | 106141 |
+| mem-08 | 保持失败 | ✗ | ✗ | 旧:ORD-2024-708、柏舟服饰；新:ORD-2024-708、柏舟服饰 | 0 ⚠ | 0 | 24 | order | 17432 | 76032 |
+| mem-09 | 保持失败 | ✗ | ✗ | 旧:ORD-2024-709、朗越传媒；新:ORD-2024-709、朗越传媒 | 0 ⚠ | 0 | 24 | order | 19349 | 57967 |
+| mem-10 | 保持失败 | ✗ | ✗ | 旧:ORD-2024-710、叙白医药；新:叙白医药 | 8 | 8 | 16 | order | 17233 | 73536 |
+
+合计：**翻正 5 / 回退 0 / 保持通过 0 / 保持失败 5 / 未采集 0**。
+
+成本（每条对话一整条链路，不是单轮）：旧路径 token 合计 176,658 · p50 17,470；新图 token 合计 770,395 · p50 75,035；旧路径墙钟 p50 30.6s；新图墙钟 p50 193.7s。行内 `latency_ms` 是**整条对话**（11 轮埋针/填充 + 探针轮）的墙钟，不是探针那一轮——单写“p50 33s”会被读成每轮 33s，这里明确单位与口径。
+
+⚠ 表里带 ⚠ 的水位线＝0 不是「记忆机制失败」：那几例的摘要辅助调用因为两个臂并发打同一把 key 被限流，`memory.compact` 走「摘要失败 ⇒ 一条都不删」分支，检查点仍是全量原文。单独复跑（串行）时同样的前两例水位线推到 18 / 10 且两针全中，见 `live_mem_recheck.jsonl` 与报告 §6f 第 1 条 / 陷阱 #23。
+
+读法提醒：`route=order` 且旧路径未命中的例子，失败在**规则路由把复述题判成订单查询、走未登录兜底句**，压根没读到历史（§6f 第 2 条）；新图未命中但水位线 > 0 的例子才是记忆／安全规则层面的事。两者修法不同，不要用同一个分数混起来。
+
+
+## 数据自证性（这两行是不是同一段对话？失手能不能复核？）
+
+对照表只回答“探针答没答对”；这一节回答它的**前提**——两臂跑的确实是同一批话，而且每一轮说过什么、模型当时答了什么留在原始数据里可翻。语料指纹 = `agent/evaluation/mem_corpus.fingerprint`（12 句话按发送顺序 sha1 前 12 位），两臂同值才叫“同一对话”；`转写` = 逐轮行数/应有行数（应有 = 总轮数-1，探针答复在行内 `answer`）；`thread` = 这一例跑在哪条线程上，用来与 `token_usage`、检查点、消息表对账（采集器跑完会自清理自建线程，所以回查窗口是采集当时，不是永久）。
+
+| 例 | 语料指纹（旧｜新） | 轮数（旧/新） | 转写（旧/新） | thread（旧/新） | 结论 |
+| --- | --- | --- | --- | --- | --- |
+| mem-01 | aa9ee4194744 ｜ aa9ee4194744 | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+| mem-02 | c059a6c87c22 ｜ c059a6c87c22 | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+| mem-03 | 22caca693d32 ｜ 22caca693d32 | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+| mem-04 | dcf6635e5c21 ｜ dcf6635e5c21 | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+| mem-05 | 27aab8fd6592 ｜ 27aab8fd6592 | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+| mem-06 | b2955d4063a8 ｜ b2955d4063a8 | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+| mem-07 | 2a71ab648b0e ｜ 2a71ab648b0e | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+| mem-08 | cd8b02b7f06d ｜ cd8b02b7f06d | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+| mem-09 | d40d716cdaa8 ｜ d40d716cdaa8 | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+| mem-10 | ec2794068416 ｜ ec2794068416 | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+
+合计：**可自证 10 / 不可证 0 / 冲突 0**。
+
+读法：**“不可证”不是回退，是这一批数据只能证明“探针那一轮的答案”——**埋针与填充轮的原话没落盘，两臂语料一致目前只能靠“两边都 import 同一个 `cases()`”这个代码结构上的承诺担保。要把它变成可查的数，就得用现在这版采集器重采（字段已就位）。
+“冲突”才是硬问题：两臂写的指纹/问法/轮数对不上，那张对照表就没有意义，先修采集再谈分数。
+
+闸门：**回退 0、未采集 0 ⇒ 放行（退出码 0）**。回退=0 才允许把这条链路往前推；未采集不是回退，但没测过就不算证明。
+
+原始表 → E:\曹浩冉\研究生\AI学习RAG与Agent\AGENT_exp\support-multiAgent\agent\evaluation\runs\mem_diff_dsv41_r3_off_vs_on.md
+逐轮转写附录 → E:\曹浩冉\研究生\AI学习RAG与Agent\AGENT_exp\support-multiAgent\agent\evaluation\runs\mem_diff_dsv41_r3_off_vs_on_transcripts.md
+[r3] 2026-10-28T09:15:57+08:00 mem-diff 退出码 0
+[r3] 2026-10-28T09:15:57+08:00 全部结束

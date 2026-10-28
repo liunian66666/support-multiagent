@@ -1,0 +1,85 @@
+[r4] 2026-10-28T10:14:37+08:00 ROOT=/e/曹浩冉/研究生/AI学习RAG与Agent/AGENT_exp/support-multiAgent N=10 日志=/e/曹浩冉/研究生/AI学习RAG与Agent/AGENT_exp/support-multiAgent/agent/evaluation/runs/mem_r4_collect.log
+[r4] 2026-10-28T10:14:37+08:00 起：旧路径臂 10 条
+旧路径臂（arm=mem）：模型换成 deepseek-v4.1-flash（平台 key），patch 位点 ('app.agent.faq_agent', 'app.agent.intake_agent', 'app.services.compound', 'app.agent.builder')
+mem-01   recall=[False, False] 总耗时=42299.9ms
+mem-02   recall=[False, False] 总耗时=31648.0ms
+mem-03   recall=[False, False] 总耗时=34763.2ms
+mem-04   recall=[False, False] 总耗时=41869.6ms
+mem-05   recall=[False, False] 总耗时=41341.3ms
+mem-06   recall=[False, False] 总耗时=46537.1ms
+mem-07   recall=[False, False] 总耗时=31744.9ms
+mem-08   recall=[False, False] 总耗时=29928.7ms
+mem-09   recall=[False, False] 总耗时=34198.7ms
+mem-10   recall=[False, False] 总耗时=34920.3ms
+[cleanup] 残留行数: {"checkpoints": 0, "session_meta": 0, "kb_hits": 0, "token_usage": 0, "agent_trace_runs": 0}
+legacy mem: 10 条长对话，针全部命中 0，原始数据 → /out/legacy_mem_dsv41_r4.jsonl
+[r4] 2026-10-28T10:20:59+08:00 旧路径臂退出码 0
+[r4] 2026-10-28T10:20:59+08:00 起：新图臂 10 条
+mem-01   recall=[True, True] watermark=16 tokens=67106 180665.8ms
+mem-02   recall=[True, True] watermark=10 tokens=68112 176621.3ms
+mem-03   recall=[False, False] watermark=0 tokens=62594 219862.5ms
+mem-04   recall=[False, True] watermark=10 tokens=90564 200145.3ms
+mem-05   recall=[True, True] watermark=8 tokens=69794 152074.1ms
+mem-06   recall=[False, True] watermark=10 tokens=97002 252242.7ms
+mem-07   recall=[False, False] watermark=0 tokens=60868 176554.3ms
+mem-08   recall=[False, False] watermark=10 tokens=76295 203365.4ms
+mem-09   recall=[True, True] watermark=12 tokens=75966 170253.3ms
+mem-10   recall=[False, False] watermark=0 tokens=79270 212332.0ms
+
+mem: 10 例，字面判定通过 4，原始数据 → /out/live_mem_dsv41_r4.jsonl
+[r4] 2026-10-28T10:53:35+08:00 新图臂退出码 0
+[r4] 2026-10-28T10:53:35+08:00 起：strict 对照表
+# 长对话记忆逐题对照（真实模型 · legacy_mem_dsv41_r4.jsonl vs live_mem_dsv41_r4.jsonl）
+
+判据：探针答复必须字面含住**全部**针（订单号 + 发票抬头），尺子 = `evaluation.score_heldout.norm`（与旧基线、与 §8g 那张 36 题表同源，此处**重新计算**，不采信行内 `containment`）。
+
+| 例 | 判定 | 旧路径 | 新图 | 未命中针（旧 / 新） | 新图水位线 | 摘要条数 | 原文条数 | 旧route | 旧token | 新token |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| mem-01 | 翻正（旧失败 → 新通过） | ✗ | ✓ | 旧:ORD-2024-701、星辰科技 | 16 | 16 | 8 | order | 18925 | 67106 |
+| mem-02 | 翻正（旧失败 → 新通过） | ✗ | ✓ | 旧:ORD-2024-702、云帆贸易 | 10 | 10 | 14 | order | 17382 | 68112 |
+| mem-03 | 保持失败 | ✗ | ✗ | 旧:ORD-2024-703、澜山食品；新:ORD-2024-703、澜山食品 | 0 ⚠（摘要失败×6：empty_summary×6） | 0 | 24 | order | 18252 | 62594 |
+| mem-04 | 保持失败 | ✗ | ✗ | 旧:ORD-2024-704、墨白文化；新:ORD-2024-704 | 10 | 10 | 14 | order | 19312 | 90564 |
+| mem-05 | 翻正（旧失败 → 新通过） | ✗ | ✓ | 旧:ORD-2024-705、启元电子 | 8 | 8 | 16 | order | 19956 | 69794 |
+| mem-06 | 保持失败 | ✗ | ✗ | 旧:ORD-2024-706、禾风家居；新:ORD-2024-706 | 10 | 10 | 14 | order | 17245 | 97002 |
+| mem-07 | 保持失败 | ✗ | ✗ | 旧:ORD-2024-707、川流物流；新:ORD-2024-707、川流物流 | 0 ⚠（摘要失败×6：empty_summary×6） | 0 | 24 | order | 17769 | 60868 |
+| mem-08 | 保持失败 | ✗ | ✗ | 旧:ORD-2024-708、柏舟服饰；新:ORD-2024-708、柏舟服饰 | 10 | 10 | 14 | order | 18223 | 76295 |
+| mem-09 | 翻正（旧失败 → 新通过） | ✗ | ✓ | 旧:ORD-2024-709、朗越传媒 | 12 | 12 | 12 | order | 18093 | 75966 |
+| mem-10 | 保持失败 | ✗ | ✗ | 旧:ORD-2024-710、叙白医药；新:ORD-2024-710、叙白医药 | 0 ⚠（摘要失败×6：empty_summary×6） | 0 | 24 | order | 18830 | 79270 |
+
+合计：**翻正 4 / 回退 0 / 保持通过 0 / 保持失败 6 / 未采集 0**。
+
+成本（每条对话一整条链路，不是单轮）：旧路径 token 合计 183,987 · p50 18,237；新图 token 合计 747,571 · p50 72,880；旧路径墙钟 p50 34.8s；新图墙钟 p50 190.4s。行内 `latency_ms` 是**整条对话**（11 轮埋针/填充 + 探针轮）的墙钟，不是探针那一轮——单写“p50 33s”会被读成每轮 33s，这里明确单位与口径。
+
+⚠ 表里带 ⚠ 的水位线＝0：摘要没把水位线推上去，检查点仍是全量原文（`compact` 走「失败 ⇒ 一条都不删」，没丢东西）。**这一格的原因列以前是没有的**，四批数据（r1 并发 4 例、r2 4 例、r3 串行 3 例、recheck 2 例 0）就一律被写成"两臂并发打同一把 key 被限流"（陷阱 #23 那条污染是真的，但它不是 0 的全部解释——串行照样出 0）。从带 `compact_ledger` 的采集件起，0 分两种写法：`⚠（摘要失败×N：原因）` 与 `○（N 轮都没到触发线，摘要没坏）`。旧 jsonl 没有这个字段，只能沿用 `0 ⚠`。
+
+读法提醒：`route=order` 且旧路径未命中的例子，失败在**规则路由把复述题判成订单查询、走未登录兜底句**，压根没读到历史（§6f 第 2 条）；新图未命中但水位线 > 0 的例子才是记忆／安全规则层面的事。两者修法不同，不要用同一个分数混起来。
+
+
+## 数据自证性（这两行是不是同一段对话？失手能不能复核？）
+
+对照表只回答“探针答没答对”；这一节回答它的**前提**——两臂跑的确实是同一批话，而且每一轮说过什么、模型当时答了什么留在原始数据里可翻。语料指纹 = `agent/evaluation/mem_corpus.fingerprint`（12 句话按发送顺序 sha1 前 12 位），两臂同值才叫“同一对话”；`转写` = 逐轮行数/应有行数（应有 = 总轮数-1，探针答复在行内 `answer`）；`thread` = 这一例跑在哪条线程上，用来与 `token_usage`、检查点、消息表对账（采集器跑完会自清理自建线程，所以回查窗口是采集当时，不是永久）。
+
+| 例 | 语料指纹（旧｜新） | 轮数（旧/新） | 转写（旧/新） | thread（旧/新） | 结论 |
+| --- | --- | --- | --- | --- | --- |
+| mem-01 | aa9ee4194744 ｜ aa9ee4194744 | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+| mem-02 | c059a6c87c22 ｜ c059a6c87c22 | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+| mem-03 | 22caca693d32 ｜ 22caca693d32 | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+| mem-04 | dcf6635e5c21 ｜ dcf6635e5c21 | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+| mem-05 | 27aab8fd6592 ｜ 27aab8fd6592 | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+| mem-06 | b2955d4063a8 ｜ b2955d4063a8 | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+| mem-07 | 2a71ab648b0e ｜ 2a71ab648b0e | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+| mem-08 | cd8b02b7f06d ｜ cd8b02b7f06d | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+| mem-09 | d40d716cdaa8 ｜ d40d716cdaa8 | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+| mem-10 | ec2794068416 ｜ ec2794068416 | 12/12 | 11/11｜11/11 | ✓/✓ | 可自证 |
+
+合计：**可自证 10 / 不可证 0 / 冲突 0**。
+
+读法：**“不可证”不是回退，是这一批数据只能证明“探针那一轮的答案”——**埋针与填充轮的原话没落盘，两臂语料一致目前只能靠“两边都 import 同一个 `cases()`”这个代码结构上的承诺担保。要把它变成可查的数，就得用现在这版采集器重采（字段已就位）。
+“冲突”才是硬问题：两臂写的指纹/问法/轮数对不上，那张对照表就没有意义，先修采集再谈分数。
+
+闸门：**回退 0、未采集 0 ⇒ 放行（退出码 0）**。回退=0 才允许把这条链路往前推；未采集不是回退，但没测过就不算证明。
+
+原始表 → E:\曹浩冉\研究生\AI学习RAG与Agent\AGENT_exp\support-multiAgent\agent\evaluation\runs\mem_diff_dsv41_r4_off_vs_on.md
+逐轮转写附录 → E:\曹浩冉\研究生\AI学习RAG与Agent\AGENT_exp\support-multiAgent\agent\evaluation\runs\mem_diff_dsv41_r4_off_vs_on_transcripts.md
+[r4] 2026-10-28T10:53:37+08:00 mem-diff 退出码 0
+[r4] 2026-10-28T10:53:37+08:00 全部结束

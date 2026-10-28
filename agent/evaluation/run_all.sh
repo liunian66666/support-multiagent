@@ -307,9 +307,11 @@ PY
     # 回退>0 或未采集>0 ⇒ 退出码 1。两个 jsonl 都是已采到的原始数据，跑它不需要模型、不需要授权。
     # 第 4 个参数=输出 md（逐轮转写附录自动跟着叫 *_transcripts.md）；第 5 个参数写 strict 时，
     # 数据自证性也进门禁（缺语料指纹/缺逐轮转写/两臂指纹冲突 ⇒ 退 1）。
-    OFF="${2:-$ROOT/agent/evaluation/runs/legacy_mem_dsv41.jsonl}"
-    ON="${3:-$ROOT/agent/evaluation/runs/live_mem_dsv41.jsonl}"
-    OUT_MD="${4:-$ROOT/agent/evaluation/runs/mem_diff_dsv41_off_vs_on.md}"
+    # 默认臂换成 r4 旧臂 vs r5 新臂：这是唯一"两臂都可自证 + 摘要输出预算已修"的一对（§6g 发现三），
+    # 读数 旧 0/10 vs 新 9/10、回退 0。r1/r2/r3 那几批仍在 runs/ 下，按参数指名即可复算。
+    OFF="${2:-$ROOT/agent/evaluation/runs/legacy_mem_dsv41_r4.jsonl}"
+    ON="${3:-$ROOT/agent/evaluation/runs/live_mem_dsv41_r5.jsonl}"
+    OUT_MD="${4:-$ROOT/agent/evaluation/runs/mem_diff_dsv41_r4_off_vs_r5_on.md}"
     EXTRA=""
     [ "${5:-}" = "strict" ] && EXTRA="--require-selfproof"
     .venv/Scripts/python.exe agent/evaluation/mem_arms_diff.py --off "$OFF" --on "$ON" \
@@ -376,6 +378,18 @@ PY
       -e BUSINESS_API=http://business:8001 -e ORDER_BUSINESS_API=http://business:8001 \
       -w /work/python_agent cs-test:agent \
       sh -c "${PG_ENV}python /work/agent/evaluation/run_ab_live.py $ARM --model custom --mock --limit $N --out /out/mock_${ARM}.jsonl" ;;
+  summary-probe)
+    # §6g 发现三：摘要那一次补全为什么会"200 成功、正文为空"。把 content / reasoning_content /
+    # finish_reason / output_tokens 全打出来，并可用第 2 个参数覆盖输出预算（0=继承生产的 1024）。
+    # 只做补全、不写业务数据；真实模型臂在跑时别插进来（同一把 key，辅助调用会先掉队）。
+    N="${2:-4}"; MT="${3:-0}"; NAME="${4:-deepseek-v4.1-flash}"
+    MSYS_NO_PATHCONV=1 docker run --rm --env-file "$ENV_WIN" --network "$NET" \
+      -v "$ROOT:/work:ro" -v "$RUNS:/out" -e PYTHONPATH=/work:/work/python_agent \
+      -e PYTHONPYCACHEPREFIX=/tmp/pyc -e QDRANT_URL=http://qdrant:6333 \
+      -e BUSINESS_API=http://business:8001 -e ORDER_BUSINESS_API=http://business:8001 \
+      -w /work/python_agent cs-test:agent \
+      sh -c "${PG_ENV}python /work/agent/evaluation/probe_summary_empty.py --long --repeat $N \
+             --max-tokens $MT --model-name $NAME --out /out/summary_empty_probe_mt$MT.jsonl" ;;
   all)
     # 一条命令跑完今天"不需真实模型、不需额外授权"的全部验收项，逐条记退出码与耗时。
     # 期望为负的那一项单列（§5f：挂载 Reviewer 今天必漏放），它进账本是为了别丢，不拖垮总退出码。
