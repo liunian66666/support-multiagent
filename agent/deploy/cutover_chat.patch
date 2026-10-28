@@ -1,0 +1,14 @@
+--- a/python_agent/app/api/chat.py
++++ b/python_agent/app/api/chat.py
+@@ -22,7 +22,10 @@
+ from app.services.dialog import _record_to_checkpoint, _record_usage_after_chat
+ # [ours] S3 经验召回（默认 off：影子模式只记事件，注入模式才改 prompt）
+ from app.services.experience_recall import augment_message, recall_for_turn
+-from app.services import four_agent
++try:  # [cutover] 新链路在仓库根 agent/；镜像里缺它必须退回旧实现，不能让服务起不来
++    from agent import cutover as four_agent
++except ImportError:  # pragma: no cover - 部署期兜底
++    from app.services import four_agent
+ from app.services.specialists import execute_shortcut
+ from app.services.supervisor import _compound_plan as _compound_plan
+ from app.services.supervisor import decide_turn

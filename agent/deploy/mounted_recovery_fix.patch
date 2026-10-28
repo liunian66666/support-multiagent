@@ -1,0 +1,41 @@
+--- a/app\services\four_agent.py
++++ b/app\services\four_agent.py
+@@ -37,6 +37,9 @@
+     return graphs[tenant_id]
+ 
+ 
++SAFE_FAILURE_ANSWER = "目前无法可靠核实这项信息。请稍后再试，或回复「转人工」由客服协助。"
++
++
+ async def run_turn(app, tenant_id: str, thread_id: str, user_message: str,
+                  turn_id: str = "") -> dict:
+     """Run one turn and return the final, reviewed graph state.
+@@ -64,7 +67,17 @@
+             history = await recent_messages(app, thread_id)
+             incoming = [*history, *incoming]
+             trace.record("memory", "legacy_import", messages=len(history))
+-        result = await graph.ainvoke({"messages": incoming, "turn_id": turn_id}, config=config)
++        try:
++            result = await graph.ainvoke({"messages": incoming, "turn_id": turn_id}, config=config)
++        except Exception as exc:
++            # 失败轮也要"有人回答"：把安全答复与原因写进同一线程的检查点，
++            # 这样历史里不会出现一条悬空的客户问句；随后原样抛出，交给 chat.py 的降级分支。
++            detail = f"{type(exc).__name__}: {exc}"[:200]
++            await graph.aupdate_state(config, {"answer": SAFE_FAILURE_ANSWER,
++                                               "last_error": detail,
++                                               "messages": [AIMessage(content=SAFE_FAILURE_ANSWER)]})
++            trace.record("error", "model_failure", detail=detail)
++            raise
+     run = trace.current()
+     if run:
+         run.route = "multi_agent"
+--- a/app\multi_agent\graph.py
++++ b/app\multi_agent\graph.py
+@@ -167,6 +167,7 @@
+     review_feedback: str
+     attempts: int
+     turn_id: str
++    last_error: str
+     delegations: list[dict]
+     model_messages: list
+ 

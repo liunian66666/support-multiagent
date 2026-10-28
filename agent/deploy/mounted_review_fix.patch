@@ -1,0 +1,201 @@
+--- a/app\multi_agent\graph.py
++++ b/app\multi_agent\graph.py
+@@ -29,6 +29,132 @@
+ _ORDER = re.compile(r"(?:ORD-[A-Za-z0-9-]+|TB\d+|JD\d+|PDD\d+|我的订单|查.*订单|订单.*状态)", re.I)
+ _UNSUPPORTED_ACTION = re.compile(r"(?:已为您|已经)(?:退款|支付|退货|创建工单|转接人工)")
+ _POLICY_NUMBER = re.compile(r"\d+(?:\.\d+)?\s*(?:元|天|小时|工作日|%)")
++
++
++# --- 内容级规则：谓词抄自 agent/guards.py（§5d 实测 0 漏放 / 0 误拦）---
++# agent/ 不在生产镜像里（§5e 实测），app 侧无法 import 它，只能自带一份。
++# 收敛方向是抽一个两套实现共用的规则模块，而不是长期维护两份正则。
++import unicodedata
++from decimal import Decimal, InvalidOperation
++
++EXECUTED_CLAIM = re.compile(
++    r"(?:已(?:经)?(?:为您)?|现在已)(退款|退还|打款|支付|扣款|开通|取消订单|发货|退货|换货|"
++    r"创建工单|建工单|转接人工|转人工|提交申请|安排上门)")
++EXEC_ACTION = re.compile(r"(退款申请|申请退款|退款|退了款|退回款项|退还|打款|款项打回|退回.{0,3}账户"
++                         r"|支付|付款|扣款|开通|取消订单|建工单|创建工单|工单|转接人工|转人工"
++                         r"|提交.{0,4}申请|申请.{0,4}提交|上门取件|安排上门|改地址|修改地址|变更地址|地址"
++                         r"|换货|退货|发货)")
++PERFECT = re.compile(r"(已经|已|刚刚|现已|这边已|随后会?已)[^。！？;；]{0,14}?"
++                     r"(提交|办理|建好|建了|开好|改好|改完|打回|退回|安排|处理|完成|操作|转接|扣|支付|开通)"
++                     r"|(?:把|将)[^。！？;；]{0,10}?(?:改好|改完|办好|弄好|处理好|完成|打回|退回|退了|退了款)"
++                     r"|(退了款|建好了|改好了|办好了|打回了|退回去了)")
++NEVER_EVIDENCABLE = {"退还", "打款", "支付", "扣款", "开通", "取消订单", "创建工单", "建工单",
++                     "转接人工", "转人工", "提交申请", "安排上门",
++                     "退款", "退款申请", "申请退款", "退了款", "退回款项", "款项打回", "付款",
++                     "上门取件", "改地址", "修改地址", "变更地址", "地址", "工单", "打回"}
++EXEC_PROMISE = re.compile(r"(?:帮|给|替)您?[^。！？;；]{0,6}?(?:把|将)?[^。！？;；]{0,6}?"
++                          r"(退款|支付|打款|扣款|取消订单|换货|退货|开票)[^。！？;；]{0,8}?"
++                          r"(操作|完成|办理|办好|搞定|处理完)")
++INTERNAL_LEAK = re.compile(r"\[K\d+\]|知识库片段|检索片段|chunk_id|doc_id|score\s*[:=]")
++ORDER_ID_IN_TEXT = re.compile(
++    r"(?<![A-Za-z0-9-])(?:ORD-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*|"
++    r"(?:TB|JD|PDD|DY|TMALL|1688|SF)[ -]?\d{6,20})(?![A-Za-z0-9-])", re.I)
++POLICY_NUMBER = re.compile(r"(\d+(?:\.\d+)?|[零一二两三四五六七八九十百千半]{1,6})\s*"
++                           r"(元|天|日|周|年|个工作日|工作日|小时|个月|月|%)")
++MONEY_PREFIX = re.compile(r"(?:￥|¥|RMB)\s*(\d+(?:\.\d+)?)")
++UNIT_ALIASES = {"个工作日": "工作日", "日": "天", "月": "个月"}
++ORDER_FIELD = re.compile(r"(?:状态|金额|价格|物流|发货|签收|下单时间|订单号)\s*[:：]")
++NOT_SHIPPED = re.compile(r"未支付|待支付|未发货|待发货|已取消|已退款|退款成功")
++CLAIM_SHIPPED = re.compile(r"已发货|已签收|运输中|已揽收|包裹已|快件已|正在派送")
++NON_ASSERTIVE = re.compile(r"[?？]|建议|请以|为准|无法|暂不|不确定|请(?:提供|补充|稍后|核对)|"
++                           r"未(?:说明|提及)|需要.{0,6}核实")
++_CN_DIGITS = {"零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6,
++              "七": 7, "八": 8, "九": 9}
++_CN_UNITS = {"十": 10, "百": 100, "千": 1000}
++
++
++def _is_ok(code: Any) -> bool:
++    # 两套实现对同一个业务码用了不同字面量：app 侧 "OK"，agent/ 侧 "ok"。
++    return str(code or "").lower() == "ok"
++
++
++def _to_decimal(value: str):
++    try:
++        return Decimal(value)
++    except InvalidOperation:
++        return None
++
++
++def _from_chinese(value: str):
++    total, current = Decimal(0), Decimal(0)
++    for ch in value:
++        if ch not in _CN_DIGITS and ch not in _CN_UNITS:
++            return None
++        if ch in _CN_UNITS:
++            total += (current or Decimal(1)) * _CN_UNITS[ch]
++            current = Decimal(0)
++        else:
++            current += Decimal(_CN_DIGITS[ch])
++    return total + current
++
++
++def _numbers_with_unit(text: str) -> set:
++    """数值必须与单位成对比较：「7 天」永远不能给「7 元」背书。"""
++    found = set()
++    for value, unit in POLICY_NUMBER.findall(text):
++        number = _to_decimal(value) if value[0].isdigit() else _from_chinese(value)
++        if number is not None:
++            found.add((number, UNIT_ALIASES.get(unit, unit)))
++    for amount in MONEY_PREFIX.findall(text):
++        number = _to_decimal(amount)
++        if number is not None:
++            found.add((number, "元"))
++    return found
++
++
++def _evidence_text(delegations: list) -> str:
++    """本轮所有可核文本：专职 Agent 的原话 + 只读接口返回的原文。"""
++    parts = [str(item.get("answer") or "") for item in delegations]
++    parts += [str(result.get("text") or "") for item in delegations
++              for result in (item.get("verified_results") or [])]
++    return " ".join(parts)
++
++
++def _verified_order_ids(delegations: list) -> set:
++    ids = set()
++    for item in delegations:
++        for result in (item.get("verified_results") or []):
++            if _is_ok(result.get("code")):
++                ids.update(_ids(str(result.get("text") or "")))
++        if item.get("specialist") == "order":
++            ids.update(_ids(str(item.get("answer") or "")))
++    return ids
++
++
++def _ids(text: str) -> set:
++    """全角也要认。「ＴＢ１２３４５６７」和「TB1234567」是同一个单号，
++    不归一化就会让跨客户单号从正则底下漏过去（ord-05 实测就是这样）。"""
++    return {str(identifier) for identifier in
++            ORDER_ID_IN_TEXT.findall(unicodedata.normalize("NFKC", text))}
++
++
++def _unbacked_claims(text: str, delegations: list) -> list:
++    verified = " ".join(str(result.get("text") or "") for item in delegations
++                        for result in (item.get("verified_results") or []) if _is_ok(result.get("code")))
++    offenders = set(EXECUTED_CLAIM.findall(text))
++    for clause in re.split(r"[。！!？?；;，,、\n]", text):
++        action = EXEC_ACTION.search(clause)
++        if action and PERFECT.search(clause):
++            offenders.add(action.group(1))
++    return [verb for verb in dict.fromkeys(offenders)
++            if verb in NEVER_EVIDENCABLE or verb not in verified]
++
++
++def _evidence_supported(text: str, delegations: list) -> bool:
++    claims = _numbers_with_unit(text)
++    if not claims:
++        return True
++    return claims <= _numbers_with_unit(_evidence_text(delegations))
+ 
+ 
+ class SupportState(MessagesState):
+@@ -179,37 +305,60 @@
+ 
+     def review(state: SupportState) -> dict:
+         question = _last_user(state["messages"])
+-        roles = {item.get("specialist") for item in state.get("delegations", [])}
++        delegations = state.get("delegations", [])
++        roles = {item.get("specialist") for item in delegations}
+         draft = state.get("draft", "")
++        ok_results = [result for item in delegations
++                      for result in (item.get("verified_results") or []) if _is_ok(result.get("code"))]
+         issues = []
+         if _POLICY.search(question) and "faq" not in roles:
+             issues.append("政策问题必须委派 FAQ Agent")
+         if _ORDER.search(question) and "order" not in roles:
+             issues.append("个人订单问题必须委派 Order Agent")
+         if _ORDER.search(question) and "order" in roles and not any(
+-            item.get("verified_results") for item in state.get("delegations", [])
++            item.get("verified_results") for item in delegations
+             if item.get("specialist") == "order"
+         ):
+             issues.append("订单 Agent 未调用受保护的只读订单工具")
+         if _UNSUPPORTED_ACTION.search(draft):
+             issues.append("不得声称已经执行退款、支付、退货、建工单或转人工")
+         if _POLICY_NUMBER.search(draft) and _POLICY.search(question):
+-            if not any(item.get("evidence_ids") for item in state.get("delegations", [])
++            if not any(item.get("evidence_ids") for item in delegations
+                        if item.get("specialist") == "faq"):
+                 issues.append("政策数值没有当轮知识库证据")
+         if _POLICY.search(question) and "faq" in roles and not any(
+-            item.get("used_search") for item in state.get("delegations", [])
++            item.get("used_search") for item in delegations
+             if item.get("specialist") == "faq"
+         ):
+             issues.append("FAQ Agent 未调用知识库检索工具")
+         if _ORDER.search(question) and re.search(r"状态[:：]|金额[:：]", draft):
+-            if not any(result.get("code") == "OK" for item in state.get("delegations", [])
++            if not any(result.get("code") == "OK" for item in delegations
+                        if item.get("specialist") == "order"
+                        for result in item.get("verified_results", [])):
+                 issues.append("订单事实没有通过本人订单接口核验")
++
++        # --- §5f 实测缺口的补法：原实现只看"证据字段非空"，从不比对草稿内容 ---
++        offenders = _unbacked_claims(draft, delegations)
++        if offenders:
++            issues.append("声称已执行" + "、".join(offenders) + "等未被授权或无核验依据的操作")
++        if EXEC_PROMISE.search(draft):
++            issues.append("承诺代为执行退款/支付等已关闭的操作")
++        if INTERNAL_LEAK.search(draft):
++            issues.append("向客户暴露内部检索片段或编号")
++        if not _evidence_supported(draft, delegations):
++            issues.append("政策或订单数值没有当轮证据支持")
++        quoted = _ids(draft)
++        if quoted - _verified_order_ids(delegations):
++            issues.append("引用了本轮未经业务接口核验归属的订单号")
++        if ORDER_FIELD.search(draft) and not ok_results:
++            issues.append("订单事实未经本人订单接口核验")
++        if any(NOT_SHIPPED.search(str(result.get("text") or "")) for result in ok_results) \
++                and CLAIM_SHIPPED.search(draft):
++            issues.append("回答与已核验的订单状态冲突")
+         feedback = "；".join(issues)
+         trace.record("review", "result", passed=not bool(feedback), reasons=issues)
+         return {"review_feedback": feedback}
++
+ 
+     def should_continue(state: SupportState) -> str:
+         """Explicit bounded conditional edge to retry or end the turn."""

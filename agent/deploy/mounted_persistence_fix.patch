@@ -1,0 +1,59 @@
+--- a/app\services\four_agent.py
++++ b/app\services\four_agent.py
+@@ -37,7 +37,8 @@
+     return graphs[tenant_id]
+ 
+ 
+-async def run_turn(app, tenant_id: str, thread_id: str, user_message: str) -> dict:
++async def run_turn(app, tenant_id: str, thread_id: str, user_message: str,
++                 turn_id: str = "") -> dict:
+     """Run one turn and return the final, reviewed graph state.
+ 
+     A separate thread key prevents an old approval checkpoint from being read
+@@ -50,12 +51,20 @@
+     async with lock:
+         config = {"configurable": {"thread_id": key}, "recursion_limit": 16}
+         old = await graph.aget_state(config)
+-        incoming = [HumanMessage(content=user_message)]
++        previous = old.values or {}
++        # 只有"同一 turn_id 且上一轮已经答完"才算重放；中途失败的轮次要重跑，
++        # 否则会把半成品状态当成答复返回给客户（这是 §5e 那条发现里唯一的小心处）。
++        if turn_id and previous.get("turn_id") == turn_id and previous.get("answer"):
++            trace.record("memory", "replay_skipped", turn_id=turn_id)
++            return dict(previous)
++        # 人消息带确定性 id：重跑时 add_messages 按 id 替换，转写不会多出一条。
++        incoming = [HumanMessage(content=user_message,
++                                 id=f"{turn_id}:user" if turn_id else None)]
+         if not old.values:
+             history = await recent_messages(app, thread_id)
+             incoming = [*history, *incoming]
+             trace.record("memory", "legacy_import", messages=len(history))
+-        result = await graph.ainvoke({"messages": incoming}, config=config)
++        result = await graph.ainvoke({"messages": incoming, "turn_id": turn_id}, config=config)
+     run = trace.current()
+     if run:
+         run.route = "multi_agent"
+--- a/app\multi_agent\graph.py
++++ b/app\multi_agent\graph.py
+@@ -166,6 +166,7 @@
+     answer: str
+     review_feedback: str
+     attempts: int
++    turn_id: str
+     delegations: list[dict]
+     model_messages: list
+ 
+@@ -371,7 +372,12 @@
+             answer = "目前无法可靠核实这项信息。请补充具体问题，或回复「转人工」由客服协助。"
+         else:
+             answer = state.get("draft") or "请再描述一下您需要咨询的问题。"
+-        return {"answer": answer, "messages": [AIMessage(content=answer)]}
++        # 答复也带确定性 id（与 agent/ 的 answer_id 同构）：同一 turn_id 重跑时
++        # add_messages 是替换而不是追加，历史里不会出现两条一样的助手消息。
++        return {"answer": answer,
++                "messages": [AIMessage(content=answer,
++                                       id=(f"{state.get('turn_id')}:assistant"
++                                           if state.get("turn_id") else None))]}
+ 
+     async def summarize(state: SupportState) -> dict:
+         # LangGraph's documented summary + RemoveMessage pattern is applied
