@@ -25,7 +25,7 @@ router = APIRouter()
 # ============================================================================
 
 def require_platform():
-    """对齐 Go PlatformAdminOnly：仅平台管理员，非平台管理员 403 仅平台管理员可操作。"""
+    """行为约定：仅平台管理员，非平台管理员 403 仅平台管理员可操作。"""
     def guard(admin: Admin = Depends(current_admin)) -> Admin:
         if not admin.is_platform_admin:
             deny(403, "仅平台管理员可操作")
@@ -33,17 +33,16 @@ def require_platform():
     return guard
 
 
-# ---------- 代理到 Agent（Go ProxyToAgent 的等价物） ----------
+# ---------- 代理到 Agent ----------
 
 def agent_call(method, path, query="", body=None, content_type="", trace_id="",
                tenant_id="", timeout=60):
-    """对齐 Go agent.AgentRequest：透传 query/body/Content-Type/Trace/Tenant + 内部 token。
+    """透传 query/body/Content-Type/Trace/Tenant + 内部 token。
 
-    返回 (bytes, None) 或 (None, err_text)。Go 侧不检查 Agent 的 HTTP 状态，
-    拿到什么原样回写 200，这里保持一致。
+    返回 (bytes, None) 或 (None, 错误文本)。代理转发不检查 Agent 的 HTTP 状态，
+    拿到什么原样回写 200。
 
-    timeout 对齐 Go 的两个 client：业务读写 60s（httpClient），
-    管理台透传 120s（adminHTTPClient，Prompt/知识库可能耗时较长）。
+    timeout：业务读写 60s，管理台透传 120s（Prompt/知识库可能耗时较长）。
     """
     url = AGENT_URL + path + (("?" + query) if query else "")
     headers = {}
@@ -67,9 +66,8 @@ def agent_call(method, path, query="", body=None, content_type="", trace_id="",
 def agent_payload_response(data):
     """把 Agent 的原始字节回写给前端，并按 body.code 改写 HTTP 状态码。
 
-    Go 侧这里有两层：`ProxyToAgent` 写的是 `c.Data(http.StatusOK, "application/json", data)`，
-    随后**全局 StatusCode 中间件**按 body.code 把状态改写（403→403、400→400、500→500）。
-    所以端到端看到的状态码是 body.code 映射出来的，不是固定的 200。
+    代理转发先返回 200 + JSON，随后全局状态码中间件按 body.code 改写
+    （403→403、400→400、500→500）。所以端到端看到的状态码来自 body.code，不是固定 200。
     非 JSON 的响应体（例如 Agent 直接回的 "Internal Server Error" 纯文本）不改写，仍是 200。
     """
     status = 200
@@ -137,7 +135,7 @@ async def admin_token_usage(request: Request,
 # ---------- 运营看板 ----------
 
 def build_dashboard(tenant_id):
-    """逐字对齐 Go repository.BuildDashboard。"""
+    """运营看板聚合查询。"""
     ov = one(
         "SELECT "
         " (SELECT COUNT(DISTINCT m.thread_id) FROM messages m WHERE m.tenant_id = %s) AS total_sessions,"
@@ -161,7 +159,7 @@ def build_dashboard(tenant_id):
         "open_tickets": int(ov.get("open_tickets") or 0),
         "handoff_sessions": int(ov.get("handoff_sessions") or 0),
         "avg_rating": float(ov.get("avg_rating") or 0),
-        # 无评价时 Go 侧是 NULL，float64 零值输出 0
+        # 无评价时 无评价时为 NULL，float64 零值输出 0
         "satisfaction_rate": float(ov["satisfaction_rate"])
         if ov.get("satisfaction_rate") is not None else 0.0,
         "rating_count": int(ov.get("rating_count") or 0),
@@ -201,7 +199,7 @@ def build_dashboard(tenant_id):
             "GROUP BY handler_name ORDER BY total DESC", (tenant_id,))
     ]
     return {"overview": overview, "trend": trend, "tickets": tickets,
-            # Go 这里是 nil slice（无数据时 JSON 为 null），不是空数组
+            # 这里是空列表（无数据时 JSON 为 null），不是空数组
             "agents": agents or None}
 
 
@@ -224,8 +222,8 @@ def admin_audit_logs(page: str = "1", page_size: str = "20", action: str = "",
                      time_from: str = "", time_to: str = "",
                      admin: Admin = Depends(require_perm("audit:view",
                                                          biz_scope=False))):
-    # 注意：Go 里 page/pageSize 既用于查询也用于回显，但钳制发生在 repository 内部，
-    # handler 回显的是 Atoi 得到的原始值（非法 → 0；page_size=999 也原样回显 999）
+    # 注意：page/page_size 既用于查询也用于回显，但钳制发生在数据访问层内部，
+    # 处理器回显的是整数解析得到的原始值（非法 → 0；page_size=999 也原样回显 999）
     echo_page = to_int(page, 0)
     echo_size = to_int(page_size, 0)
     p, size = echo_page, echo_size
@@ -271,7 +269,7 @@ def admin_audit_logs(page: str = "1", page_size: str = "20", action: str = "",
         "object_type": row["object_type"], "object_id": row["object_id"],
         "detail": row["detail"], "ip": row["ip"], "created_at": iso(row["created_at"]),
     } for row in rows]
-    # GORM 的 Find 会把目标切片初始化为空切片，所以无数据时是 []（不是 null）
+    # 查询结果初始化为空列表，所以无数据时是 []（不是 null）
     return {"code": 0, "data": {"list": items, "total": total, "page": echo_page,
                                 "page_size": echo_size}}
 
@@ -303,7 +301,7 @@ def count_archivable_messages(days, tenant_id):
 
 
 def archive_old_messages(days, tenant_id):
-    """对齐 Go ArchiveOldMessages：分批（500）迁移，单批事务，失败即停并返回已归档数。"""
+    """行为约定：分批（500）迁移，单批事务，失败即停并返回已归档数。"""
     cutoff = datetime.now() - timedelta(days=days)
     total = 0
     while True:
@@ -347,10 +345,10 @@ def archive_old_messages(days, tenant_id):
 @router.get("/api/admin/messages/archive-count")
 def admin_archive_count(days: str = "90",
                         admin: Admin = Depends(require_perm("session:cleanup"))):
-    # 已知矛盾（Go 侧）：handler 注释写明「平台管理员全览」，tenant_id 传空即归档
-    # 全部租户；但这两条路由挂在 Go 的 biz 组（BusinessOnly），平台管理员在进
-    # handler 之前就被 403，空租户分支当前不可达。保持鉴权不变（改分组会让已验收
-    # 的「平台管理员 403」行为漂移），分支代码保留，待 Go 下线时统一处理。
+    # 已知边界：处理器注释写的是「平台管理员全览」，但路由鉴权要求租户业务权限，
+    # 平台管理员在进入处理器前就会被拦截，tenant_id 为空的分支当前不可达。
+    # 保持鉴权不变（改分组会让已验收的「平台管理员 403」行为漂移），分支代码保留，
+    # 待后续统一处理。
     tenant_id = "" if admin.is_platform_admin else admin.tenant_id
     try:
         count = count_archivable_messages(archive_days(days), tenant_id)
@@ -362,14 +360,14 @@ def admin_archive_count(days: str = "90",
 @router.post("/api/admin/messages/archive")
 def admin_archive_messages(days: str = "90",
                            admin: Admin = Depends(require_perm("session:cleanup"))):
-    # 注意：Go 从 query 读 days（不是 body），POST 也一样
+    # 注意：从 query 读 days（不是 body），POST 也一样
     # 平台管理员全租户分支当前不可达，原因见 admin_archive_count 上方注释
     tenant_id = "" if admin.is_platform_admin else admin.tenant_id
     archived = archive_old_messages(archive_days(days), tenant_id)
     return {"code": 0, "msg": "归档完成", "data": {"archived": archived}}
 
 
-# ---------- API Key 加密（与 Go crypto 包二进制兼容） ----------
+# ---------- API Key 加密（兼容既有密文格式） ----------
 
 MODEL_KEY_DEV = "cs_prod_default_encrypt_key_2026!"
 
@@ -391,7 +389,7 @@ def encrypt_api_key(plain):
 
 
 def decrypt_api_key(encrypted):
-    """解密失败一律返回空串 —— Go 侧调用方全部忽略 err，行为等价。"""
+    """解密失败一律返回空串 —— 调用方全部忽略错误，行为等价。"""
     if not encrypted:
         return ""
     try:
@@ -400,7 +398,7 @@ def decrypt_api_key(encrypted):
             return ""
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
         return AESGCM(model_key_bytes()).decrypt(data[:12], data[12:], None).decode()
-    except Exception:                              # noqa: BLE001 - 与 Go 一致：坏密文当空
+    except Exception:                              # noqa: BLE001 - 与既有行为一致：坏密文当空
         return ""
 
 
@@ -508,7 +506,7 @@ def _num(value):
 
 
 def update_model_config(tenant_id, body):
-    """对齐 Go service.UpdateModelConfig：逐字段与库中现值比较，只把真正变化的写入。"""
+    """行为约定：逐字段与库中现值比较，只把真正变化的写入。"""
     row = tenant_config_row(tenant_id)
     if not row:
         raise LookupError("租户不存在")
@@ -635,7 +633,7 @@ async def admin_model_config_update(request: Request,
         soft(500, str(exc))
     if updates is None:
         soft(400, "没有需要更新的字段")
-    # 通知 Agent 清除该租户模型配置缓存（失败不影响主流程，同 Go）
+    # 通知 Agent 清除该租户模型配置缓存（失败不影响主流程，保持该行为）
     try:
         cache().publish("cs:model:cache:invalidate", json.dumps(
             {"tenant_id": admin.tenant_id, "scope": model_update_scope(updates)},
@@ -653,13 +651,13 @@ def default_extract_rules_json():
     return [{"field": field, "pattern": pattern} for field, pattern in DEFAULT_EXTRACT_RULES]
 
 
-# Go uses RE2 (regexp.Compile): no lookaround, no backreferences.
+# 使用 RE2 语义：不支持 lookaround 和 backreferences。
 RE2_UNSUPPORTED = (("(?=", "(?="), ("(?!", "(?!"), ("(?<=", "(?<="), ("(?<!", "(?<!"),
                    ("\\1", "\\1"))
 
 
 def compile_extract_pattern(pattern):
-    """用 Go 的 RE2 语义校验；不通过时抛 ValueError，文案对齐 Go regexp 包。"""
+    """使用 RE2 语义校验；不通过时抛 ValueError，文案与正则编译错误保持一致。"""
     for token, _ in RE2_UNSUPPORTED:
         if token in pattern:
             raise ValueError("error parsing regexp: invalid or unsupported Perl syntax: `"
@@ -702,7 +700,7 @@ async def admin_extract_rules_update(request: Request,
     if not isinstance(body, list):
         soft(400, "参数错误: json: cannot unmarshal object into Go value of type "
                   "[]model.ExtractRule")
-    # 已修复（Go 侧缺陷）：Go 先 DELETE 全表再逐条校验，任一条 field/pattern 非法
+    # 已修复的历史缺陷：曾先 DELETE 全表再逐条校验，任一条 field/pattern 非法
     # 都会留下「旧规则已删、新规则只写了一部分」的中间态。这里先把整批校验完，
     # 全部通过才落库，失败时保持原规则不变。
     rules = []
@@ -728,7 +726,7 @@ async def admin_extract_rules_update(request: Request,
         write("INSERT INTO platform_config (config_key, config_value, description, "
               "created_at, updated_at) VALUES (%s, %s, %s, %s, %s)",
               ("cs_extract_rule_" + field, pattern, "客户信息提取规则-" + field, now, now))
-    # Go 侧 extractRulesCache 是进程内缓存，不会感知本层的写入 → 主动失效（best effort）
+    # 提取规则缓存是进程内缓存，不会感知本层的写入 → 主动失效（best effort）
     reload_go_extract_rules()
     return {"code": 0, "msg": "提取规则已更新"}
 

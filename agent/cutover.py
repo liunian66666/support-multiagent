@@ -1,45 +1,26 @@
 # ruff: noqa: RUF001
-"""Drop-in replacement for ``app.services.four_agent``, same two functions.
+"""Production bridge from ``app.services.four_agent`` into the durable graph.
 
-``python_agent/app/api/chat.py`` already runs the old and new paths in parallel: both
-the JSON branch and the SSE branch call ``four_agent.enabled(...)`` and then
-``four_agent.run_turn(app, tenant_id, thread_id, user_message)``, and read exactly two
-fields out of the result — ``state["answer"]`` and ``state.get("model_messages", [])``.
-So switching the default entry over is one import alias, not a rewrite:
-
-    - from app.services import four_agent
-    + from agent import cutover as four_agent
-
-See ``agent/cutover.patch`` for that diff, prepared but deliberately **not applied**.
-
-This module keeps the legacy contract in full, including the parts chat.py does not
-read but the console does: the same ``FOUR_AGENT_GRAPH`` env flag, the same
-``support_v2:`` checkpoint namespace, the per-thread serialising lock, the one-time
-legacy-history import on a thread's first turn, and the ``trace`` route/specialist
-attribution. Dropping any of those would silently change behaviour the acceptance
-criteria depend on (HITL threads staying put, trace showing which agents ran).
+The app adapter calls this module for a reviewed turn. It preserves
+the ``support_v2:`` checkpoint namespace, legacy history import, trace attribution,
+and a stable turn ID used by both JSON and SSE replies.
 """
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from .legacy_bindings import deps_for_app, legacy_history
+from .rollout import graph_enabled
 from .service import SupportService, thread_key
-
-# The rollout flag chat.py already uses. Keeping the name means operators do not have to
-# learn a second switch, and a rollback is the same env change that always was.
-ENV_FLAG = "FOUR_AGENT_GRAPH"
 
 _services: dict[str, SupportService] = {}
 
 
 def enabled(*, pending_ticket: bool = False) -> bool:
-    """Same rule as the legacy adapter: an unfinished approval stays on its old graph."""
-    import os
-
-    return (not pending_ticket
-            and os.getenv(ENV_FLAG, "off").strip().lower() in {"on", "true", "1"})
+    """Use the new graph except while resolving an unfinished approval."""
+    return graph_enabled(pending_ticket=pending_ticket)
 
 
 async def _service_for(app, tenant_id: str) -> SupportService:
@@ -53,15 +34,32 @@ async def _service_for(app, tenant_id: str) -> SupportService:
     if service is not None:
         return service
 
-    async def deps_for_tenant(target: str) -> Any:
-        return await deps_for_app(app, target, reuse_faq_agent=True)
+    model_name = os.getenv("FOUR_AGENT_MODEL_NAME", "").strip()
 
-    service = SupportService(deps_for_tenant, checkpointer=getattr(app.state, "checkpointer", None))
+    async def deps_for_tenant(target: str) -> Any:
+        return await deps_for_app(app, target, reuse_faq_agent=True,
+                                  model_source="platform" if model_name else "tenant",
+                                  model_name=model_name)
+
+    from .entrypoint import _guard_from_env
+
+    service = SupportService(deps_for_tenant,
+                             checkpointer=getattr(app.state, "checkpointer", None),
+                             thread_guard=_guard_from_env())
     _services[tenant_id] = service
     return service
 
 
-async def run_turn(app, tenant_id: str, thread_id: str, user_message: str) -> dict[str, Any]:
+def clear_services(tenant_id: str | None = None) -> None:
+    """Drop model-bound graphs after a tenant or platform model configuration change."""
+    if tenant_id is None:
+        _services.clear()
+    else:
+        _services.pop(tenant_id, None)
+
+
+async def run_turn(app, tenant_id: str, thread_id: str, user_message: str,
+                   turn_id: str = "") -> dict[str, Any]:
     """Run one turn and return the final, reviewed state in the legacy dict shape."""
     # Identity first, service second. Building a service is what later builds the graph,
     # and a graph build reaches the model and the knowledge base: an unverifiable thread
@@ -71,12 +69,28 @@ async def run_turn(app, tenant_id: str, thread_id: str, user_message: str) -> di
 
     history = await service.history(tenant_id, thread_id)
     imports = None if history else await legacy_history(app, thread_id)
-    result = await service.run_turn(tenant_id, thread_id, user_message, import_history=imports)
+    result = await service.run_turn(tenant_id, thread_id, user_message,
+                                    turn_id=turn_id or None, import_history=imports)
 
     _attribute_trace(result)
+    from langchain_core.messages import AIMessage
+
+    usage = result.usage
+    model_name = os.getenv("FOUR_AGENT_MODEL_NAME", "").strip()
+    billed = ([AIMessage(content="", response_metadata={
+        "model_name": model_name, "model_source": "platform" if model_name else "",
+        "model_override": bool(model_name),
+    }, usage_metadata={
+        "input_tokens": int(usage.get("input_tokens", 0)),
+        "output_tokens": int(usage.get("output_tokens", 0)),
+        "total_tokens": int(usage.get("total_tokens", 0)),
+    })] if usage.get("total_tokens") else [])
     return {"answer": result.answer,
+            "turn_id": result.turn_id,
             "outcome": result.outcome,
-            "model_messages": result.model_messages,
+            "usage": usage,
+            "model_messages": billed,
+            "_replayed": result.replayed,
             "evidence_ids": result.evidence_ids,
             "review_issues": result.review_issues,
             "attempts": result.attempts,

@@ -21,7 +21,7 @@ def _llm_max_retries() -> int:
         return 0
 
 _tenant_model_cache: dict = {}
-# 配置缓存有效期（秒），避免每次对话都请求 Go 后端
+# 配置缓存有效期（秒），避免每次对话都请求 业务层
 _MODEL_CONFIG_TTL = 300
 
 
@@ -41,7 +41,7 @@ def clear_model_cache(tenant_id: str | None = None, scope: str = "all"):
       - "all"       ：全部清除
     说明：租户配置缓存（tenant_id 键）是 chat+embedding 合并存储的，
     任一变更都需刷新（仅多一次 HTTP 拉取）；模型实例缓存按前缀精确清理。
-    进程内缓存天然随本函数清空；多 worker/多实例部署时由 Go 广播调用，逐个实例清空。
+    进程内缓存天然随本函数清空；多 worker/多实例部署时由业务层广播调用，逐个实例清空。
     """
     if tenant_id:
         # 租户配置缓存合并存储（chat+embedding），任一变更都刷新
@@ -155,7 +155,7 @@ async def get_platform_embeddings(app):
 
 
 async def get_tenant_model_config(app, tenant_id: str) -> dict:
-    """从 Go 后端获取租户模型配置，带缓存"""
+    """从 业务层获取租户模型配置，带缓存"""
     import time
     now = time.time()
     cached = _tenant_model_cache.get(tenant_id)
@@ -173,7 +173,7 @@ async def get_tenant_model_config(app, tenant_id: str) -> dict:
             timeout=5.0,
         )
         data = resp.json()
-        # Go 瞬时未就绪可能返回 null/非对象：按失败处理（不抛 NoneType 异常），下次请求重试
+        # 业务层瞬时未就绪可能返回 null/非对象：按失败处理（不抛 NoneType 异常），下次请求重试
         if isinstance(data, dict) and data.get("code") == 0 and data.get("data"):
             cfg = data["data"]
             cfg["_ts"] = now

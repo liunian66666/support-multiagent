@@ -46,9 +46,38 @@ def test_hard_unit_mismatch_is_not_covered_by_another_number() -> None:
     assert any("证据" in issue for issue in hard)
 
 
+def test_verified_amount_with_currency_unit_supports_normalized_decimal() -> None:
+    order = {"code": "ok", "text": "订单 TB202410180001 状态：已发货；金额：159.0 元"}
+    hard, _ = guards.review("TB202410180001订单状态", "TB202410180001 已发货；金额：159.00 元。",
+                            [finding("order", answer=order["text"], verified=[order])])
+    assert not any("数值" in issue for issue in hard), hard
+    hard, _ = guards.review("TB202410180001订单状态", "TB202410180001 已发货；金额：199 元。",
+                            [finding("order", answer=order["text"], verified=[order])])
+    assert any("数值" in issue for issue in hard), hard
+
+
 def test_hard_foreign_order_reference() -> None:
     hard, _ = guards.review("ORD-2222 的状态？", "订单 ORD-2222 状态：已发货。",
                             [finding("order", answer="查到 1 笔", verified=[OK_ORDER[0]])])
+    assert any("订单号" in issue for issue in hard)
+
+
+def test_customer_may_only_restate_an_order_id_from_this_thread() -> None:
+    question = "我最早说的那个订单号是什么？"
+    draft = "您先前提供的订单号是 ORD-8888；尚未核验订单归属。"
+    hard, soft = guards.review(question, draft, [], customer_order_ids={"ORD-8888"})
+    assert hard == soft == []
+    hard, _ = guards.review(question, draft, [], customer_order_ids=set())
+    assert any("订单号" in issue for issue in hard)
+    hard, _ = guards.review(question, "您的订单 ORD-8888 已发货；尚未核验归属。", [],
+                            customer_order_ids={"ORD-8888"})
+    assert hard
+    hard, _ = guards.review(question, "您的订单号是 ORD-8888。", [],
+                            customer_order_ids={"ORD-8888"})
+    assert any("订单号" in issue for issue in hard)
+    hard, _ = guards.review(question,
+                            "您先前提供的订单号是 ORD-8888；尚未核验归属，但正在配送。", [],
+                            customer_order_ids={"ORD-8888"})
     assert any("订单号" in issue for issue in hard)
 
 
@@ -71,6 +100,25 @@ def test_hard_conflict_with_verified_state() -> None:
     hard, _ = guards.review("ORD-1001 到哪了？", "订单 ORD-1001 已发货。",
                             [finding("order", answer="未发货", verified=verified)])
     assert any("冲突" in issue for issue in hard)
+
+
+def test_order_list_with_mixed_statuses_is_not_a_conflict() -> None:
+    listed = {"code": "ok", "text": (
+        "以下是您最近的订单：\n- ORD-2024-001｜会员｜已发货\n"
+        "- ORD-2024-003｜课程｜待发货")}
+    draft = "您的订单：ORD-2024-001 已发货；ORD-2024-003 待发货。"
+    hard, _ = guards.review("查询我的订单", draft,
+                            [finding("order", answer=draft, verified=[listed])])
+    assert not any("冲突" in issue for issue in hard), hard
+
+    wrong = "您的订单：ORD-2024-001 已发货；ORD-2024-003 已发货。"
+    hard, _ = guards.review("查询我的订单", wrong,
+                            [finding("order", answer=wrong, verified=[listed])])
+    assert any("冲突" in issue for issue in hard), hard
+
+    hard, _ = guards.review("查询我的订单", "您的订单已发货。",
+                            [finding("order", answer="待发货", verified=[listed])])
+    assert any("冲突" in issue for issue in hard), hard
 
 
 def test_hard_internal_leak() -> None:

@@ -492,6 +492,10 @@ function connectWS(){
     };
     ws.onclose = function(){
       wsConnected = false; stopHeartbeat();
+      if (streamingEl || document.getElementById('typingInd')) {
+        hideTyping(); cancelStreaming();
+        addSystem('连接已断开，正在重连。若未收到回答，请重新发送。');
+      }
       document.getElementById('chatStatus').textContent = '重连中...';
       if (kickedFlag) return; // 已在其他窗口建立连接，停止重连
       // 恢复的会话被服务端拒绝（token 过期/被吊销）：清掉旧会话重新登录一次
@@ -657,26 +661,44 @@ function addSystem(text,noScroll){
 // 导致助手气泡一直为空（消息已发出、服务端已答复，页面却什么也不显示）。
 var streamingEl = null;   // 当前正在流式输出的消息元素
 var streamingText = '';   // 已接收的流式文本
+var pendingTimers = [];
+
+function clearPendingTimers(){
+  pendingTimers.forEach(clearTimeout);
+  pendingTimers = [];
+}
+
+function setPendingText(text){
+  var bubble = document.querySelector('#typingInd .bubble');
+  if (bubble) bubble.textContent = text;
+}
 
 function startStreaming(){
   hideTyping();
   var w=document.getElementById('welcomeMsg'); if(w) w.style.display='none';
   var d=document.createElement('div'); d.className='msg ai'; d.id='streamingMsg';
-  d.innerHTML='<div style="font-size:22px;flex-shrink:0;margin-top:6px">🤖</div><div><div class="bubble"></div><div class="time"></div></div>';
+  d.innerHTML='<div style="font-size:22px;flex-shrink:0;margin-top:6px">🤖</div><div><div class="bubble" role="status" aria-live="polite"></div><div class="time"></div></div>';
   d.querySelector('.time').textContent=fmtTime();
   document.getElementById('chatBody').appendChild(d);
   streamingEl=d; streamingText='';
   scrollBottom();
 }
 function appendStreamChunk(chunk){
+  if(!chunk) return;
   if(!streamingEl) startStreaming();
   streamingText += chunk;
   streamingEl.querySelector('.bubble').textContent=streamingText;
   scrollBottom();
 }
 function endStreaming(fullText){
+  hideTyping();
   if(streamingEl){
     if(fullText){ streamingText=fullText; streamingEl.querySelector('.bubble').textContent=fullText; }
+    if(!streamingText){
+      streamingEl.remove(); streamingEl=null;
+      addSystem('暂时没有收到回复，请重试。');
+      return;
+    }
     streamingEl.id=''; streamingEl=null;
     scrollBottom();
     return;
@@ -692,11 +714,13 @@ function cancelStreaming(){
 function showTyping(){
   hideTyping();
   var d=document.createElement('div'); d.className='typing'; d.id='typingInd';
-  d.innerHTML='<div style="font-size:22px;flex-shrink:0;margin-top:6px">🤖</div><div class="bubble"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>';
+  d.innerHTML='<div style="font-size:22px;flex-shrink:0;margin-top:6px">🤖</div><div class="bubble" role="status" aria-live="polite">正在处理您的问题…</div>';
   document.getElementById('chatBody').appendChild(d);
+  pendingTimers.push(setTimeout(function(){ setPendingText('仍在处理，请稍候…'); }, 8000));
+  pendingTimers.push(setTimeout(function(){ setPendingText('问题较复杂，正在继续处理…'); }, 25000));
   scrollBottom();
 }
-function hideTyping(){ var t=document.getElementById('typingInd'); if(t) t.remove(); }
+function hideTyping(){ clearPendingTimers(); var t=document.getElementById('typingInd'); if(t) t.remove(); }
 
 function fmtTime(t){
   if(!t){var d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes());}

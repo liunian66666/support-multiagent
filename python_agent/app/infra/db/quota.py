@@ -59,7 +59,7 @@ async def check_kb_quota(conn: psycopg.AsyncConnection, app, tenant_id: str) -> 
 
 
 async def check_concurrent_sessions(conn: psycopg.AsyncConnection, app, tenant_id: str) -> Optional[dict]:
-    """并发会话配额校验（实时在线连接数，由 Go ws hub 统计），超限返回错误 dict，否则 None"""
+    """并发会话配额校验（实时在线连接数，由 业务层 WebSocket hub 统计），超限返回错误 dict，否则 None"""
     q = await get_tenant_quota(app, tenant_id)
     limit = int(q.get("max_concurrent_sessions") or 0)
     if limit <= 0:

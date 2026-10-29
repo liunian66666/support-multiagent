@@ -19,9 +19,9 @@ from business.infra.storage import many, one, write
 router = APIRouter()
 
 # ==========================================================================
-# 阶段 3-2：在线客服状态 / 会话记录 / 客户档案 / 客户名册
-# 全部为租户业务数据（Go 的 biz 分组），平台管理员访问一律 403。
-# 说明：Go 侧大量失败分支是 HTTP 200 + body code（gin.H{"code":500"}), 这里用 soft() 原样保留。
+# 在线客服状态 / 会话记录 / 客户档案 / 客户名册
+# 全部为租户业务数据，平台管理员访问一律 403。
+# 失败分支保持 HTTP 200 + body code 的软失败约定，用 soft() 原样保留。
 # ==========================================================================
 
 MSG_FILE_ROOT = "/app/msg_files"
@@ -32,13 +32,13 @@ MSG_VIDEO_EXTS = {".mp4", ".webm"}
 
 
 def tenant_of_thread(thread_id):
-    """对齐 Go auth.TenantFromThreadID：首个冒号前的段，无冒号返回空串。"""
+    """行为约定：首个冒号前的段，无冒号返回空串。"""
     head, sep, _ = (thread_id or "").partition(":")
     return head if sep else ""
 
 
 def thread_in_tenant(thread_id, tenant_id):
-    """对齐 Go threadOwnedByTenant（auth 已启用，租户非空时校验 thread 前缀）。"""
+    """租户归属校验（租户非空时校验 thread 前缀）。"""
     if not tenant_id:
         return
     if tenant_of_thread(thread_id) != tenant_id:
@@ -117,7 +117,7 @@ HANDOFF_HAVING = " HAVING COALESCE(MAX(CASE WHEN t.status IN (0,1) THEN 1 ELSE 0
 
 
 def session_filter(tenant_id, keyword, date_from, date_to, tag):
-    """对齐 Go ListSessions 的动态 where（COUNT 与主查询共用，tag 子查询在后）。"""
+    """会话列表的动态 where（COUNT 与主查询共用，tag 子查询在后）。"""
     where, args = ["m.tenant_id = %s"], [tenant_id]
     if keyword:
         where.append("(m.thread_id LIKE %s OR cp.name LIKE %s OR cp.phone LIKE %s "
@@ -138,7 +138,7 @@ def session_filter(tenant_id, keyword, date_from, date_to, tag):
 
 def list_sessions(tenant_id, page, size, keyword, date_from, date_to, handoff, tag):
     clause, args = session_filter(tenant_id, keyword, date_from, date_to, tag)
-    # 已修复：Go 侧的 total 用 Distinct().Count()，只带 where、不带 handoffFilter，
+    # 已修复：total 曾用去重计数，只带 where、不带 handoffFilter，
     # 导致 handoff=1 时 total 远大于实际行数（分页控件显示错乱）。这里把 HAVING
     # 包进子查询，让 total 与列表行数口径一致。
     # 注意：HAVING 引用 t.status，子查询必须带上与主查询相同的 tickets JOIN，
@@ -172,7 +172,7 @@ def list_sessions(tenant_id, page, size, keyword, date_from, date_to, handoff, t
     }
     items = []
     for row in rows:
-        # Go 侧按会话逐条补最后一条消息内容（分页量小，可接受）
+        # 按会话逐条补最后一条消息内容（分页量小，可接受）
         last = one("SELECT content FROM messages WHERE thread_id = %s "
                    "ORDER BY id DESC LIMIT 1", (row["thread_id"],))
         profile = profiles.get(row["thread_id"]) or {}
@@ -201,7 +201,7 @@ def list_sessions(tenant_id, page, size, keyword, date_from, date_to, handoff, t
 def admin_sessions(page: str = "1", size: str = "20", q: str = "", start: str = "",
                    end: str = "", handoff: str = "", tag: str = "",
                    admin: Admin = Depends(require_perm("session:view"))):
-    p = max(1, to_int(page, 0))          # Go: Atoi 忽略错误 → 0 → 收敛为 1
+    p = max(1, to_int(page, 0))          # 整数解析忽略错误 → 0 → 收敛为 1
     limit = to_int(size, 0)
     if limit < 1 or limit > 100:
         limit = 20
@@ -228,7 +228,7 @@ MESSAGE_ARCHIVE_SQL = (
 
 
 def customer_profile(thread_id):
-    """对齐 Go GetCustomerProfile：查不到返回 None（JSON null），不报错。"""
+    """行为约定：查不到返回 None（JSON null），不报错。"""
     row = one(
         "SELECT id, thread_id, tenant_id, name, phone, address, email, remark, "
         "extract_status, created_at, updated_at FROM customer_profiles "
@@ -259,7 +259,7 @@ def message_with_archive(thread_id):
             "created_at": iso(row["created_at"]),
             "archived": bool(row["archived"]),
         }
-        # Go 侧 ticket_id 带 omitempty：NULL 时整个字段省略
+        # ticket_id 为 NULL 时整个字段省略
         if row["ticket_id"] is not None:
             item["ticket_id"] = row["ticket_id"]
         data.append(item)
@@ -289,7 +289,7 @@ class CustomerProfileBody(BaseModel):
 
 
 def save_customer_profile(tenant_id, thread_id, body):
-    """对齐 Go SaveCustomerProfile：thread_id 唯一键 upsert，人工填写标记 2。"""
+    """行为约定：thread_id 唯一键 upsert，人工填写标记 2。"""
     values = (body.name, body.phone, body.address, body.email, body.remark)
     write(
         "INSERT INTO customer_profiles (thread_id, tenant_id, name, phone, address, email, "
@@ -318,7 +318,7 @@ async def admin_session_profile(thread_id: str, request: Request,
     return {"code": 0, "msg": "客户信息已保存"}
 
 
-# Go 默认提取规则（零配置可用）：platform_config 中无 cs_extract_rule_* 时生效
+# 默认提取规则（零配置可用）：platform_config 中无 cs_extract_rule_* 时生效
 DEFAULT_EXTRACT_RULES = (
     ("phone", r"(?:\+?86[\s-]?)?1[3-9]\d[\s-]?\d{4}[\s-]?\d{4}"),
     ("email", r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"),
@@ -348,11 +348,11 @@ def clean_phone(text):
 
 
 def extract_from_content(content):
-    """对齐 Go extractFromContent：只取每条规则的首个命中，phone 额外校数字边界。"""
+    """行为约定：只取每条规则的首个命中，phone 额外校数字边界。"""
     found = {}
     for field, pattern in extract_rules():
         try:
-            # re.ASCII：Go RE2 的 \d \s \w 只认 ASCII，不能让它按 Unicode 语义放宽
+            # re.ASCII：RE2 的 \d \s \w 只认 ASCII，不能按 Unicode 语义放宽
             match = re.search(pattern, content or "", re.ASCII)
         except re.error:                    # 保存时已校验，这里仅防御
             continue
@@ -360,7 +360,7 @@ def extract_from_content(content):
             continue
         value = match.group(0)
         if field == "phone":
-            # RE2 不支持 lookbehind，Go 用代码校验边界，防止从长数字串里截 11 位
+            # RE2 不支持 lookbehind，用代码校验边界，防止从长数字串里截 11 位
             before = content[match.start() - 1] if match.start() > 0 else ""
             after = content[match.end()] if match.end() < len(content) else ""
             if (before.isdigit() and before.isascii()) or (after.isdigit() and after.isascii()):
@@ -372,7 +372,7 @@ def extract_from_content(content):
 
 
 def upsert_extracted_profile(thread_id, tenant_id, extracted):
-    """对齐 Go upsertExtractedProfile：只写 phone/email，保留人工填写字段。"""
+    """行为约定：只写 phone/email，保留人工填写字段。"""
     if not extracted:
         return
     row = one("SELECT id, phone, email FROM customer_profiles "
@@ -431,7 +431,7 @@ async def admin_session_tags_update(thread_id: str, request: Request,
         soft(400, "参数错误: EOF")
     tags = str(body.get("tags") or "").strip()
     try:
-        # session_tags 无软删除，Go 侧是「有则更新、无则插入」的 upsert
+        # session_tags 无软删除，使用「有则更新、无则插入」的 upsert
         write("INSERT INTO session_tags (tenant_id, thread_id, tags, updated_at) "
               "VALUES (%s, %s, %s, NOW()) "
               "ON DUPLICATE KEY UPDATE tags = %s, updated_at = NOW()",
@@ -530,8 +530,8 @@ def list_customers(tenant_id, page, size, keyword):
             "remark": row["remark"] or "",
             "extract_status": int(row["extract_status"] or 0),
             "last_active_at": iso(row["last_active_at"]),
-            # 已修复：Go 侧 query 取 msg_count 而 model.CustomerItem 字段映射 message_count，
-            # GORM Scan 匹配不上 → 恒 0。这里按 thread 统计 messages + messages_archive。
+            # 已修复：曾因查询字段名与结果模型不一致导致计数恒为 0。
+            # 这里按 thread 统计 messages + messages_archive。
             "message_count": int(row["message_count"] or 0),
             "created_at": iso(row["created_at"]),
             "updated_at": iso(row["updated_at"]),
@@ -551,7 +551,7 @@ def admin_customers(page: str = "1", size: str = "20", q: str = "",
         items, total = list_customers(admin.tenant_id, p, limit, keyword)
     except pymysql.MySQLError as exc:
         soft(500, str(exc))
-    # Go 侧 `var items []CustomerItem` 为空时序列化成 null，不是 []（会话列表相反）
+    # 客户列表为空时序列化成 null，不是 []（会话列表相反）
     return {"code": 0, "data": {"list": items or None, "total": total,
                                 "page": p, "size": limit, "q": keyword}}
 

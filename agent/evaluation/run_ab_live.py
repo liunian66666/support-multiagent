@@ -141,7 +141,7 @@ def literal_score(answer: str, case: dict) -> dict[str, Any]:
     return {
         "required_missing": missing,
         "forbidden_hit": tripped,
-        "literal_pass": not missing and not tripped,
+        "literal_pass": bool(text) and not missing and not tripped,
         "numeric_with_refusal": numeric_claim and refusal,
         "needs_manual_review": bool(case.get("manual")) and (not missing or tripped or refusal),
     }
@@ -291,20 +291,9 @@ async def run_mem(app: Any, args: argparse.Namespace) -> list[dict]:
 
 
 async def main(args: argparse.Namespace) -> None:
-    if args.model == "platform" and args.parity:
-        # The production FAQ agent builds its own model from the tenant config, which
-        # is exactly the endpoint being overridden here. Silently mixing the two would
-        # produce an arm whose supervisor and delegate run on different backends.
-        raise SystemExit("--model platform 必须配合 shadow FAQ（去掉 --parity）")
     if args.model_name and args.model != "platform":
         raise SystemExit("--model-name 只在 --model platform 下有效：换 key 的方式只有两种，"
                          "custom 走环境变量，tenant 不换 key 就不许换模型名")
-    if args.model_name and args.parity:
-        raise SystemExit("--model-name 必须配合 shadow FAQ：生产 FAQ 用租户自己配置的模型，"
-                         "一轮里会同时打到两个后端")
-    if args.model == "custom" and args.parity:
-        raise SystemExit("--model custom 必须配合 shadow FAQ：生产 FAQ 会用租户自己配置的模型，"
-                         "两条后端混在一轮里就没法解释结果")
     stats_url = ""
     if args.model == "custom":
         if args.mock:

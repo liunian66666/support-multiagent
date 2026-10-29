@@ -265,8 +265,11 @@ PY
     # 候选镜像离线自检：单独 build 一个 tag，绝不 compose build agent（那会替换运行中的服务）。
     # 只 import、只问开关语义；DSN/URL 全指向不存在的地址，本脚本不会发起任何连接或写入。
     # 构建上下文由 Windows 侧的 docker 客户端读取，必须给 Windows 路径（同 ENV_WIN 的处理）。
+    # --build-context agent_src：Dockerfile 里 `COPY --from=agent_src . /app/agent` 依赖它。
+    # 默认入口现在就是 agent/ 那张图，所以这条上下文不再是可选项 —— 不传会直接 build 失败。
     ROOT_WIN="$(cd "$ROOT" && pwd -W)"
-    MSYS_NO_PATHCONV=1 docker build -q -t cs-agent-candidate "$ROOT_WIN/python_agent" >/dev/null
+    MSYS_NO_PATHCONV=1 docker build -q -t cs-agent-candidate \
+      --build-context "agent_src=$ROOT_WIN/agent" "$ROOT_WIN/python_agent" >/dev/null
     MSYS_NO_PATHCONV=1 docker run --rm --entrypoint python -w /app \
       -v "$ROOT:/work:ro" -e PYTHONPATH=/app -e PYTHONPYCACHEPREFIX=/tmp/pyc \
       -e POSTGRES_DSN='postgresql://nobody:none@127.0.0.1:1/nonexistent' \

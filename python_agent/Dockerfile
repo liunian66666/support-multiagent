@@ -30,6 +30,7 @@ WORKDIR /app
 COPY --from=builder /install /usr/local
 # 复制项目源码
 COPY --from=builder /build /app
+COPY --from=agent_src . /app/agent
 
 EXPOSE 8000
 CMD ["python","main.py"]

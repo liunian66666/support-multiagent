@@ -3,8 +3,8 @@
 
 重点锁三类：
 1. 聚合口径：看板 SQL 的租户作用域、7 天补零、空集输出形态（null vs []）
-2. 代理语义：Go ProxyToAgent 无视 Agent 状态码、恒回 200 + 裸 body
-3. 模型配置：与 Go crypto 包二进制兼容的 AES-GCM 加解密 / 掩码 / 逐字段 diff
+2. 代理语义：历史实现 ProxyToAgent 无视 Agent 状态码、恒回 200 + 裸 body
+3. 模型配置：与历史实现 crypto 包二进制兼容的 AES-GCM 加解密 / 掩码 / 逐字段 diff
 """
 
 import hashlib
@@ -146,7 +146,7 @@ class Stage34Test(unittest.TestCase):
     # ---------- 运营看板 ----------
 
     def test_dashboard_shape_and_tenant_scope(self):
-        self.trend_rows = [{"day": datetime(2026, 10, 20), "sessions": 78, "messages": 199}]
+        self.trend_rows = [{"day": datetime.now(), "sessions": 78, "messages": 199}]
         self.ticket_dist = [{"status": 0, "count": 20}, {"status": 3, "count": 2}]
         self.agent_rows = [{"handler_name": "t_demo", "total": 5, "open": 3}]
         data = self.client.get("/api/admin/ops/dashboard", headers=self.auth()).json()["data"]
@@ -156,8 +156,8 @@ class Stage34Test(unittest.TestCase):
         # 7 天补零；按日期定位而非写死 [-1]，避免跨天后断言失效
         self.assertEqual(len(data["trend"]), 7)
         by_date = {row["date"]: row for row in data["trend"]}
-        self.assertEqual(by_date["2026-10-20"]["sessions"], 78)
-        self.assertEqual(by_date["2026-10-20"]["messages"], 199)
+        self.assertEqual(by_date[self.today(0)]["sessions"], 78)
+        self.assertEqual(by_date[self.today(0)]["messages"], 199)
         self.assertEqual(data["trend"][0], {"date": self.today(-6), "sessions": 0,
                                             "messages": 0})
         # 状态名映射（GROUP BY status 缺的档位不补）
@@ -169,8 +169,8 @@ class Stage34Test(unittest.TestCase):
     def test_dashboard_empty_agents_is_null_not_array(self):
         self.agent_rows = []
         payload = self.client.get("/api/admin/ops/dashboard", headers=self.auth()).json()
-        self.assertIsNone(payload["data"]["agents"])     # Go nil slice
-        self.assertEqual(payload["data"]["tickets"], [])  # Go 空数组
+        self.assertIsNone(payload["data"]["agents"])     # 历史实现 nil slice
+        self.assertEqual(payload["data"]["tickets"], [])  # 历史实现空数组
 
     def test_dashboard_platform_admin_rejected(self):
         self.tenant_platform = 1
@@ -230,9 +230,9 @@ class Stage34Test(unittest.TestCase):
         self.audit_total = 0
         data = self.client.get("/api/admin/audit-logs?page=0&page_size=999",
                                headers=self.auth()).json()["data"]
-        # 回显的是 Atoi 原始值（0 / 999），钳制只作用于查询
+        # 回显的是整数解析原始值（0 / 999），钳制只作用于查询
         self.assertEqual((data["page"], data["page_size"]), (0, 999))
-        self.assertEqual(data["list"], [])                # GORM Find → 空切片不是 null
+        self.assertEqual(data["list"], [])                # 查询结果 → 空列表不是 null
         _, args = self.sql_matching("FROM audit_logs")[-1]
         self.assertEqual(args[-2:], (20, 0))              # size 收敛 20，offset (1-1)*20
         data = self.client.get("/api/admin/audit-logs?page=abc&page_size=5",
@@ -265,7 +265,7 @@ class Stage34Test(unittest.TestCase):
         self.assertEqual(call["tenant_id"], "t_demo")
 
     def test_proxy_ignores_agent_status(self):
-        # Go 的 ProxyToAgent 不看 Agent 状态码，一律 200 + 裸 body
+        # 历史实现的 ProxyToAgent 不看 Agent 状态码，一律 200 + 裸 body
         self.agent_body = b'{"code":0,"data":null}'
         response = self.client.post("/api/admin/session/cleanup?days=7",
                                     headers=self.auth(), json={"keep": 1})
@@ -278,7 +278,7 @@ class Stage34Test(unittest.TestCase):
         self.assertEqual(call["content_type"], "application/json")
 
     def test_proxy_agent_failure_returns_code_500(self):
-        """Agent 不可达 → body code 500，且 Go 的 StatusCode 中间件把 HTTP 也改成 500。"""
+        """Agent 不可达 → body code 500，且状态码中间件把 HTTP 也改成 500。"""
         self.agent_error = "connect refused"
         response = self.client.get("/api/admin/session/cleanup-count", headers=self.auth())
         self.assertEqual(response.status_code, 500)
@@ -317,7 +317,7 @@ class Stage34Test(unittest.TestCase):
 
     def test_archive_rejects_platform_admin(self):
         # 归档在 biz 组内：平台管理员先被 BusinessOnly 拦掉，
-        # 因此 Go 里 `tenantID = ""`（全租户归档）那条分支实际不可达
+        # 因此 历史实现里 `tenantID = ""`（全租户归档）那条分支实际不可达
         self.tenant_platform = 1
         self.assertEqual(self.client.get("/api/admin/messages/archive-count",
                                          headers=self.auth()).status_code, 403)
@@ -441,7 +441,7 @@ class Stage34Test(unittest.TestCase):
         self.assertEqual(response.json()["msg"], "自定义对话模型必须填写 API Key")
 
     def test_model_config_put_star_masked_key_is_ignored(self):
-        # Go isMaskedKey 的判定是「含 *」，所以 sk-*** 这类会被当成未修改
+        # 历史实现 isMaskedKey 的判定是「含 *」，所以 sk-*** 这类会被当成未修改
         self.tenant_row["model_api_key"] = main.encrypt_api_key("sk-real-key-9999")
         self.client.put("/api/admin/model-config", headers=self.auth(),
                         json={"model_config": {"model_name": "m1",
@@ -491,7 +491,7 @@ class Stage34Test(unittest.TestCase):
         self.assertFalse(main.is_masked_key("sk-live-key"))
 
     def test_crypto_matches_go_format(self):
-        """Go 的密文布局是 base64(nonce[12] || AES-GCM(plaintext))，这里手工拼一份验证可解。
+        """历史实现的密文布局是 base64(nonce[12] || AES-GCM(plaintext))，这里手工拼一份验证可解。
 
         密钥取自 model_key_bytes()（部署环境注入了 MODEL_KEY_ENCRYPT_KEY，
         硬编码 DEV 默认密钥会让本用例在容器里恒失败）。
@@ -531,14 +531,14 @@ class Stage34Test(unittest.TestCase):
         self.assertEqual(len(inserts), 1)                # 空字段被跳过
         self.assertEqual(inserts[0][1][0], "cs_extract_rule_phone")
         self.assertEqual(inserts[0][1][2], "客户信息提取规则-phone")
-        self.assertEqual(len(self.reloads), 1)           # 必须通知 Go 失效内存缓存
+        self.assertEqual(len(self.reloads), 1)           # 必须通知 历史实现失效内存缓存
 
     def test_extract_rules_put_rejects_bad_regexp(self):
         self.tenant_platform = 1
         response = self.client.put("/api/admin/extract-rules", headers=self.auth(),
                                    json=[{"field": "phone", "pattern": "([a-"}])
         self.assertEqual(response.status_code, 500)
-        # 文案对齐 Go regexp 包
+        # 文案对齐历史实现 regexp 包
         self.assertEqual(response.json()["msg"],
                          "error parsing regexp: missing closing ]: `[a-`")
 

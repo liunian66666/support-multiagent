@@ -9,7 +9,7 @@ import time as _time
 # 缓存5分钟
 KB_CACHE_TTL = 300
 
-# key: "tenant_id:query_hash", value: (expire_time, result)
+# key: "tenant_id:query_hash", value: (expire_time, result, evidence_ids)
 _kb_cache = {}
 
 
@@ -21,19 +21,25 @@ def _kb_cache_key(tenant_id: str, query: str) -> str:
 
 def _kb_cache_get(tenant_id: str, query: str):
     """获取缓存，过期返回None"""
+    item = _kb_cache_get_entry(tenant_id, query)
+    return item[0] if item is not None else None
+
+
+def _kb_cache_get_entry(tenant_id: str, query: str):
+    """Return the cached text and its evidence snapshot together."""
     key = _kb_cache_key(tenant_id, query)
     item = _kb_cache.get(key)
     if item and item[0] > _time.time():
-        return item[1]
+        return item[1], tuple(item[2]) if len(item) > 2 else ()
     if item:
         del _kb_cache[key]  # 清理过期缓存
     return None
 
 
-def _kb_cache_set(tenant_id: str, query: str, result: str):
+def _kb_cache_set(tenant_id: str, query: str, result: str, evidence_ids=()):
     """设置缓存"""
     key = _kb_cache_key(tenant_id, query)
-    _kb_cache[key] = (_time.time() + KB_CACHE_TTL, result)
+    _kb_cache[key] = (_time.time() + KB_CACHE_TTL, result, tuple(evidence_ids))
 
 
 def _kb_cache_cleanup():

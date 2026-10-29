@@ -21,7 +21,7 @@ router = APIRouter()
 # ==========================================================================
 # 阶段 3-3：工单域（12 条）
 # 这批端点不是纯 SQL：接管/回复/关闭/转交要推 WS、待处理接管还要唤醒 Agent 的 HITL 中断。
-# 客户与管理端的长连接仍握在 Go 进程里，所以推送走 Go 的内部桥
+# 客户与管理端的长连接由业务层 WebSocket Hub 维护，推送走本地 Hub
 # POST /api/agent/ws/broadcast（本轮新增，仅转发不落库），保证只有一个 WS Hub。
 # ==========================================================================
 
@@ -37,7 +37,7 @@ TICKET_COLUMNS = ("id, thread_id, ticket_no, user_id, reason, status, priority, 
 TICKET_LOG_COLUMNS = ("id, ticket_id, thread_id, tenant_id, action, old_status, new_status, "
                       "old_priority, new_priority, operator, remark, created_at")
 
-# 权限目录全量（Go permission.AllCodes()），用于 IsAdminUser 判定
+# 权限目录全量（用于 IsAdminUser 判定）
 ALL_PERMISSIONS = {
     "session:view", "session:profile:edit", "session:cleanup",
     "ticket:view", "ticket:handle", "customer:view", "dashboard:view",
@@ -63,7 +63,7 @@ def reload_go_extract_rules():
 
 
 def agent_resume(thread_id, confirmed, wait_time, ticket_no, trace_id=""):
-    """对齐 Go agent.CallAgentResume：POST {agent}/agent/resume，传输失败重试一次。"""
+    """行为约定：POST {agent}/agent/resume，传输失败重试一次。"""
     payload = {"thread_id": thread_id, "confirmed": confirmed,
                "wait_time": wait_time, "ticket_id": ticket_no}
     headers = {"X-Internal-Token": os.getenv("INTERNAL_API_TOKEN", ""),
@@ -81,7 +81,7 @@ def agent_resume(thread_id, confirmed, wait_time, ticket_no, trace_id=""):
 
 
 def save_message(thread_id, role, content, msg_type="", ticket_id=None, answer_id=""):
-    """对齐 Go repository.saveMessage：用户消息默认已读，其余未读；文本消息触发客户信息提取。
+    """行为约定：用户消息默认已读，其余未读；文本消息触发客户信息提取。
 
     [ours] S1：answer_id 为 agent 返回的轮次归因锚点，仅 AI 消息携带，默认空串。
     """
@@ -111,7 +111,7 @@ def add_ticket_log(ticket, action, old_status, new_status, old_priority, new_pri
 
 
 def adjust_handling(tenant_id, user_id, delta):
-    """对齐 Go AdjustHandlingCount：达上限转忙碌(2)，否则在线(1)；离线(0)不联动。"""
+    """行为约定：达上限转忙碌(2)，否则在线(1)；离线(0)不联动。"""
     if not tenant_id or not user_id:
         return
     row = one("SELECT id, status, handling_count, max_concurrent FROM agent_status "
@@ -129,7 +129,7 @@ def adjust_handling(tenant_id, user_id, delta):
 
 
 def update_ticket_status(ticket, status):
-    """对齐 Go UpdateTicketStatus：关闭/取消时补 closed_at（工单消息窗口上界）。"""
+    """行为约定：关闭/取消时补 closed_at（工单消息窗口上界）。"""
     ticket["status"] = status
     if status in (TICKET_STATUS_CANCELED, TICKET_STATUS_CLOSED):
         write("UPDATE tickets SET status = %s, closed_at = NOW() WHERE id = %s",
@@ -153,15 +153,15 @@ def ticket_json(ticket, unread=0):
         "handler_name": ticket["handler_name"] or "",
     }
     if ticket.get("closed_at"):
-        item["closed_at"] = iso(ticket["closed_at"])   # Go: *time.Time + omitempty
+        item["closed_at"] = iso(ticket["closed_at"])   # 关闭时间为 NULL 时整个字段省略
     item["created_at"] = iso(ticket["created_at"])
-    # Go 的 Ticket.UnreadCount 是 gorm:"-" 字段，详情/推送里恒为 0，列表里才填充
+    # UnreadCount 是只读字段，详情/推送里恒为 0，列表里才填充
     item["unread_count"] = unread
     return item
 
 
 def ticket_id_of(raw):
-    """对齐 Go strconv.ParseUint：非数字/负数/越界都算参数错误。"""
+    """行为约定：非数字/负数/越界都算参数错误。"""
     try:
         value = int(raw)
     except (TypeError, ValueError):
@@ -182,7 +182,7 @@ def load_ticket(raw_id, tenant_id):
 
 
 def can_handle_ticket(admin, ticket):
-    """对齐 Go canHandleTicket：app_key 管理员 / 全权限管理员 / 本人工单。"""
+    """行为约定：app_key 管理员 / 全权限管理员 / 本人工单。"""
     if admin.user_id == 0:
         return True
     if ALL_PERMISSIONS <= user_perms(admin.user_id):
@@ -195,7 +195,7 @@ def handler_label(name):
 
 
 def current_handler_name(admin):
-    """对齐 Go currentHandlerName：子账号昵称优先，无则用户名；app_key 管理员记租户 ID。"""
+    """行为约定：子账号昵称优先，无则用户名；app_key 管理员记租户 ID。"""
     if admin.user_id > 0:
         row = one("SELECT nickname, username FROM users WHERE id = %s AND deleted_at = 0 "
                   "LIMIT 1", (admin.user_id,))
@@ -287,7 +287,7 @@ def ticket_message(row, *, archived=False):
         "thread_id": row["thread_id"],
         "role": row["role"],
         "content": row["content"],
-        # Go 合并归档时构造 model.Message 但没带 MsgType → 归档消息 msg_type 恒为空串
+        # 合并归档时构造消息模型但没带 MsgType → 归档消息 msg_type 恒为空串
         "msg_type": "" if archived else row["msg_type"],
         "tenant_id": row["tenant_id"],
         "is_read": int(row["is_read"] or 0),
@@ -299,7 +299,7 @@ def ticket_message(row, *, archived=False):
 
 
 def ticket_messages(ticket):
-    """对齐 Go GetTicketMessages 的窗口上界：待处理=创建+2s；接管中=now；已关闭/取消=关闭+2s。"""
+    """行为约定：待处理=创建+2s；接管中=now；已关闭/取消=关闭+2s。"""
     status = int(ticket["status"] or 0)
     if status == TICKET_STATUS_PENDING:
         upper = ticket["created_at"] + timedelta(seconds=2)
@@ -368,18 +368,32 @@ def takeover_ticket(ticket, wait_time, trace_id, handler_uid, handler_name):
     if int(ticket["status"] or 0) == TICKET_STATUS_HANDLING:
         return "该工单已在人工接管中"
     msg = ""
-    if int(ticket["status"] or 0) == TICKET_STATUS_PENDING:
-        # 线程处于 HITL 中断，先恢复 Agent 会话（best effort，失败不阻断人工接管）
-        try:
-            msg = agent_resume(ticket["thread_id"], True, wait_time, ticket["ticket_no"],
-                               trace_id)
-        except RuntimeError as exc:
-            msg = "接管成功，但恢复Agent会话失败:" + str(exc)
+    status = int(ticket["status"] or 0)
+    claimed = True
     handler_name = handler_name or "system"
-    ticket["handler_uid"] = handler_uid
-    ticket["handler_name"] = handler_name
-    write("UPDATE tickets SET handler_uid = %s, handler_name = %s WHERE id = %s",
-          (handler_uid, handler_name, ticket["id"]))
+    if status == TICKET_STATUS_PENDING:
+        # [ours] CAS：单条 autocommit UPDATE 的 WHERE 谓词在 InnoDB 行锁下按最新已提交
+        # 版本求值，并发接管的第二方会阻塞到第一方提交后得到 rowcount=0，即抢锁失败。
+        # 抢锁必须在唤醒 Agent 之前 —— 否则两个客服都会各调一次 /agent/resume，
+        # 用户收到重复系统消息、handler 被后写者覆盖、handling_count 双计。
+        claimed = bool(write(
+            "UPDATE tickets SET handler_uid = %s, handler_name = %s WHERE id = %s AND status = %s",
+            (handler_uid, handler_name, ticket["id"], TICKET_STATUS_PENDING)))
+        if claimed:
+            ticket["handler_uid"] = handler_uid
+            ticket["handler_name"] = handler_name
+            # 线程处于 HITL 中断，恢复 Agent 会话（best effort，失败不阻断人工接管）
+            try:
+                msg = agent_resume(ticket["thread_id"], True, wait_time, ticket["ticket_no"],
+                                   trace_id)
+            except RuntimeError as exc:
+                msg = "接管成功，但恢复Agent会话失败:" + str(exc)
+    if not claimed:
+        # 抢锁失败：不写状态/日志/消息/计数/广播。用 deny 而非 soft —— soft() 不置
+        # request.state.denied，会经 audit_writes 中间件多落一条 audit_logs，
+        # 与本仓「仅成功变更写审计」的约定和 stage33 的审计条数断言冲突。
+        # 出口体仍是 soft 错误格式：{"code":409,"msg":...}，与同端点的 403 分支一致。
+        deny(409, "该工单已被其他客服接管")
     adjust_handling(ticket["tenant_id"], handler_uid, 1)
     update_ticket_status(ticket, TICKET_STATUS_HANDLING)
     add_ticket_log(ticket, "takeover", TICKET_STATUS_PENDING, TICKET_STATUS_HANDLING,
@@ -400,7 +414,7 @@ async def admin_ticket_takeover(id: str, request: Request,
     body = await body_json(request)
     wait_time = body.get("wait_time") if isinstance(body, dict) else None
     if isinstance(wait_time, bool) or not isinstance(wait_time, int):
-        wait_time = 0                     # Go 忽略 bind 错误，WaitTime 保持零值
+        wait_time = 0                     # 忽略绑定错误，WaitTime 保持零值
     status = int(ticket["status"] or 0)
     if status == TICKET_STATUS_CLOSED:
         soft(400, "工单已关闭")
@@ -448,7 +462,7 @@ def close_ticket(ticket, operator):
     if int(ticket["status"] or 0) == TICKET_STATUS_CLOSED:
         return
     operator = operator or "system"
-    # 已修复（Go 侧缺陷）：Go 写死 old_status=Handling，关闭一个「待处理」工单时
+    # 已修复的历史缺陷：曾写死 old_status=Handling，关闭一个「待处理」工单时
     # 日志会显示 handling → closed，与实际状态流转不符。这里取关闭前的真实状态。
     old_status = int(ticket["status"] or 0)
     update_ticket_status(ticket, TICKET_STATUS_CLOSED)
@@ -485,7 +499,7 @@ async def admin_ticket_priority(id: str, request: Request,
                                 admin: Admin = Depends(require_perm("ticket:handle"))):
     body = await body_json(request)
     priority = body.get("priority") if isinstance(body, dict) else None
-    # Go 的 binding:"required" 对 int 生效 → 0 也被判为未提供
+    # 优先级必填：0 视为未提供。
     if isinstance(priority, bool) or not isinstance(priority, int) or priority == 0:
         soft(400, "参数错误：priority 必填")
     remark = body.get("remark") or ""
@@ -545,7 +559,7 @@ async def admin_ticket_transfer(id: str, request: Request,
                      "工单已转交给客服 " + to_name + "，请继续为您服务", "text", ticket["id"])
     except pymysql.MySQLError as exc:
         soft(500, str(exc))
-    # Go 这里除中间件自动审计外，还额外手写了一条带 detail 的审计，两条都要有
+    # 除中间件自动审计外，还额外手写了一条带 detail 的审计，两条都要有
     try:
         write_audit(admin, request, "update", str(ticket["id"]),
                     "/api/admin/tickets",
@@ -566,7 +580,7 @@ async def admin_ticket_approve(request: Request,
         soft(400, "参数错误")
     confirmed = body.get("confirmed", False)
     wait_time = body.get("wait_time", 0)
-    # Go 的 bool/int 强类型绑定：类型不符直接算绑定失败
+    # bool/int 强类型绑定：类型不符直接算绑定失败
     if (not isinstance(confirmed, bool) or isinstance(wait_time, bool)
             or not isinstance(wait_time, int)):
         soft(400, "参数错误")
@@ -578,7 +592,7 @@ async def admin_ticket_approve(request: Request,
         deny(403, "无权访问该租户工单")
     trace_id = request.headers.get("X-Trace-Id", "")
     if not confirmed:
-        # 取消转接：先改状态，再唤醒 Agent（与 Go 的次序一致 —— Agent 失败时状态已改）
+        # 取消转接：先改状态，再唤醒 Agent（保持该次序 —— Agent 失败时状态已改）
         try:
             update_ticket_status(ticket, TICKET_STATUS_CANCELED)
             add_ticket_log(ticket, "cancel", TICKET_STATUS_PENDING, TICKET_STATUS_CANCELED,

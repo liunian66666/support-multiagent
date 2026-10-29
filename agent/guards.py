@@ -166,6 +166,15 @@ def _ids(text: str) -> set[str]:
             ORDER_ID_IN_TEXT.findall(unicodedata.normalize("NFKC", text))}
 
 
+def _order_segments(text: str) -> dict[str, str]:
+    """Associate each status phrase with its own order, even in a multi-order list."""
+    normalized = unicodedata.normalize("NFKC", text)
+    matches = list(ORDER_ID_IN_TEXT.finditer(normalized))
+    return {match.group(0).upper(): normalized[match.end():
+            matches[index + 1].start() if index + 1 < len(matches) else len(normalized)]
+            for index, match in enumerate(matches)}
+
+
 def verified_order_ids(delegations: list[Delegation]) -> set[str]:
     ids: set[str] = set()
     for item in delegations:
@@ -197,7 +206,8 @@ def unbacked_claims(text: str, delegations: list[Delegation]) -> list[str]:
             if verb in NEVER_EVIDENCABLE or verb not in verified]
 
 
-def review(question: str, draft: str, delegations: list[Delegation]) -> tuple[list[str], list[str]]:
+def review(question: str, draft: str, delegations: list[Delegation],
+           *, customer_order_ids: set[str] | None = None) -> tuple[list[str], list[str]]:
     """Return ``(hard, soft)`` issue lists for one turn."""
     if not draft.strip():
         return [], ["空草稿：本轮没有可校验的回答"]
@@ -220,17 +230,34 @@ def review(question: str, draft: str, delegations: list[Delegation]) -> tuple[li
         hard.append("政策或订单数值没有当轮证据支持")
 
     quoted = _ids(draft)
-    if quoted - verified_order_ids(delegations):
+    recall_request = bool(re.search(r"(?:之前|先前|刚才|最早|前面|我说|提到).*?(?:订单号|单号)", question))
+    restatement = unicodedata.normalize("NFKC", draft)
+    restatement = ORDER_ID_IN_TEXT.sub("__ID__", restatement)
+    limited_wording = bool(re.fullmatch(
+        r"(?:您|你)?(?:先前|之前|最开始|最早|刚才|前面)?(?:在本会话中)?"
+        r"(?:提供|说过|提到)的?(?:订单号|单号)(?:是|为)[:：]?\s*__ID__"
+        r"[；;，,。 ]*(?:该)?(?:订单)?(?:尚未|未曾|还未|没有|未)核验(?:订单)?归属[。！!]?",
+        restatement.strip()))
+    only_restatement = (recall_request and len(quoted) == 1 and limited_wording
+                        and quoted <= (customer_order_ids or set())
+                        )
+    if quoted - verified_order_ids(delegations) and not only_restatement:
         hard.append("引用了本轮未经业务接口核验归属的订单号")
 
-    if ORDER_FIELD.search(draft) and is_assertive(draft) and not ok_results:
+    if ORDER_FIELD.search(draft) and is_assertive(draft) and not ok_results and not only_restatement:
         hard.append("订单事实未经本人订单接口核验")
-    if any(NOT_SHIPPED.search(r.get("text", "")) for r in ok_results) and CLAIM_SHIPPED.search(draft):
+    verified_states = {order_id for result in ok_results
+                       for order_id, segment in _order_segments(result.get("text", "")).items()
+                       if NOT_SHIPPED.search(segment)}
+    claimed_shipped = {order_id for order_id, segment in _order_segments(draft).items()
+                       if CLAIM_SHIPPED.search(segment)}
+    unscoped_shipped_claim = CLAIM_SHIPPED.search(draft) and not _order_segments(draft)
+    if (verified_states & claimed_shipped) or (verified_states and unscoped_shipped_claim):
         hard.append("回答与已核验的订单状态冲突")
 
     if is_policy_question(question) and "faq" not in roles and is_assertive(draft):
         soft.append("政策问题必须委派 FAQ Agent")
-    if is_order_question(question) and "order" not in roles and is_assertive(draft):
+    if is_order_question(question) and "order" not in roles and is_assertive(draft) and not only_restatement:
         soft.append("个人订单问题必须委派 Order Agent")
     if faq and is_policy_question(question) and is_assertive(draft) \
             and not any(item["used_search"] for item in faq):

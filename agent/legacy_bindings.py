@@ -110,9 +110,11 @@ async def deps_for_app(app: Any, tenant_id: str, *, reuse_faq_agent: bool = True
             key, base = cfg.get("api_key") or "", cfg.get("api_base") or ""
             if not key or not base:
                 raise RuntimeError("t_admin 缺 api_key/api_base，无法按名字换模型")
+            model_options = {"reasoning_effort": "low"} if model_name == "glm-5.3" else {}
             return _thinking_disabled(init_chat_model(model=model_name, model_provider="openai",
                                                       temperature=0, max_tokens=1024, timeout=60,
-                                                      api_key=key, base_url=base))
+                                                      api_key=key, base_url=base,
+                                                      **model_options))
         if model_source == "custom":
             # An explicitly supplied OpenAI-compatible endpoint. Exists so the live arms'
             # transport can be exercised without the tenant's (currently dead) gateway:
@@ -180,7 +182,9 @@ async def deps_for_app(app: Any, tenant_id: str, *, reuse_faq_agent: bool = True
         if not reuse_faq_agent:
             return await shadow_faq_agent()
         from app.agent.faq_agent import faq_agent as existing_faq_agent
-        return await existing_faq_agent(app, tenant_id)
+        if model_source == "tenant" and not substituted:
+            return await existing_faq_agent(app, tenant_id)
+        return await existing_faq_agent(app, tenant_id, model_override=await model())
 
     def _trace_cursor() -> int:
         run = trace.current()

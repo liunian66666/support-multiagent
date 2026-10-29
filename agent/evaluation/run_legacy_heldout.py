@@ -69,8 +69,10 @@ async def build_model(app: Any, name: str) -> Any:
     key, base = cfg.get("api_key") or "", cfg.get("api_base") or ""
     if not key or not base:
         raise SystemExit("平台 key/base 取不到，旧路径臂无法跑")
+    model_options = {"reasoning_effort": "low"} if name == "glm-5.3" else {}
     model = init_chat_model(model=name, model_provider="openai", temperature=0,
-                            max_tokens=1024, timeout=90, api_key=key, base_url=base)
+                            max_tokens=1024, timeout=90, api_key=key, base_url=base,
+                            **model_options)
     if name.startswith("qwen3.8"):
         model = model.bind(extra_body={"enable_thinking": False})
     return model

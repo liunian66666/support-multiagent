@@ -76,8 +76,8 @@ class Customer:
     customer_id: str
     thread_id: str
     session_id: str
-    is_guest: bool
-    is_preview: bool
+    is_guest: bool #游客创建的访客会话
+    is_preview: bool #租户创建的预览会话
 
 
 def customer_from_row(row, *, tenant_id, customer_id=None, thread_id=None):
@@ -155,7 +155,7 @@ def allow_login(request, *, purpose, limit):
 
 
 def issue_session(tenant_id, customer_id, *, is_guest=False, is_preview=False):
-    """Issue a Go-compatible customer token and persist its server-side session."""
+    """Issue a customer token compatible with the existing format. and persist its server-side session."""
     tenant_row = tenant(tenant_id)
     session_id = secrets.token_hex(16)
     thread_id = (f"{customer_id}:"
@@ -240,7 +240,7 @@ def logout(authorization: str | None = Header(default=None),
     try:
         cache().set("cs:tok:bl:" + token, "1", ex=TOKEN_TTL)
     except redis.RedisError:
-        # The session row is already gone; both Go and FastAPI reject this token.
+        # The session row is already gone; both the legacy gateway and FastAPI reject this token.
         pass
     return {"code": 0, "msg": "已登出"}
 
@@ -294,11 +294,11 @@ TICKET_STATUS = {0: "pending", 1: "handling", 2: "cancelled", 3: "closed"}
 
 
 def iso(value):
-    """对齐 Go `time.Time` 的 RFC3339 序列化。
+    """RFC3339 时间序列化。
 
     MySQL DATETIME 不带时区，容器 TZ=Asia/Shanghai 下按本地时区补偏移，
-    结果形如 `2026-10-20T21:03:17.123+08:00`；Go 在微秒为 0 时省略小数位，
-    这里同样裁剪，避免时间字段在新旧两层之间出现字符串差异。
+    结果形如 `2026-10-20T21:03:17.123+08:00`；微秒为 0 时省略小数位，
+    避免时间字段在前端出现字符串差异。
     """
     if not value:
         return None
@@ -314,7 +314,7 @@ def iso(value):
 def customer_messages(customer, limit, before_id):
     """按会话取聊天记录。
 
-    Go 侧 `GET /api/user/messages` 一次性返回全部消息，长会话会把整表塞给前端；
+    既有接口曾一次性返回全部消息，长会话会把整表塞给前端；
     这里保留相同字段，但默认只取最近 200 条、可用 before_id 往前翻页。
     """
     if limit is None or limit < 1:
@@ -330,7 +330,7 @@ def customer_messages(customer, limit, before_id):
     sql += " ORDER BY id DESC LIMIT %s"
     args.append(limit)
     rows = list(many(sql, tuple(args)))  # pymysql.fetchall() 返回 tuple，需转列表才能 reverse
-    rows.reverse()  # 返回给前端时按时间正序，与 Go 的 ORDER BY id ASC 一致
+    rows.reverse()  # 返回给前端时按时间正序，与既定的 ORDER BY id ASC 一致
     for row in rows:
         row["created_at"] = iso(row["created_at"])
     return {"code": 0, "data": rows}
@@ -373,7 +373,7 @@ def upsert_rating(customer, body):
         (customer.tenant_id, customer.thread_id),
     )
     if existing:
-        # 同一会话重复评价覆盖旧值，与 Go 侧语义一致（answer_id 归属首轮不改）
+        # 同一会话重复评价覆盖旧值，与既有语义一致（answer_id 归属首轮不改）
         write(
             "UPDATE satisfaction_ratings SET score = %s, tags = %s, comment = %s, "
             "updated_at = NOW() WHERE id = %s",

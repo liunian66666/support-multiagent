@@ -22,16 +22,15 @@ router = APIRouter()
 # ============================================================================
 # 阶段 3-7：代理域（Prompt / 知识库 / 平台设置 / 模型可用性测试）
 #
-# 这一批和前五批性质不同：19 条路由里 18 条在 Go 侧只是「鉴权 + 审计 + 原样转发
-# 给 Python Agent」，业务逻辑本来就在 Agent 里。所以迁移重点是**把 Go 的转发语义
-# 逐一复刻**，而不是重写业务：
+# 这一批路由主要是「鉴权 + 审计 + 原样转发」给 Python Agent，
+# 业务逻辑本来就在 Agent 里。因此重点是**保持既有转发语义**，而不是重写业务：
 #
 #   1. 请求侧：原样透传 raw query 与 raw body（含 Content-Type），
 #      附加 X-Trace-Id / X-Tenant-Id / X-Internal-Token 三个头
 #   2. 响应侧：**不看 Agent 的 HTTP 状态码**，拿到什么字节就回写 200 + application/json
 #   3. 失败侧：连不上 Agent → HTTP 200 + {"code":500,"msg":"调用agent失败:<err>"}
 #      （注意是 200 而不是 5xx —— 前端统一按 body.code 判断）
-#   4. 特殊分支：ProxyPrompt 的 ?scope=platform、ProxyKbUpload 的 multipart 重组
+#   4. 特殊分支：Prompt 代理 的 ?scope=platform、知识库上传代理 的 multipart 重组
 #
 # 唯一有本地逻辑的是 POST /api/admin/model-config/test：它不走 Agent，
 # 直接用表单里的模型名/Base/Key 打一次第三方 OpenAI 兼容接口。
@@ -41,7 +40,7 @@ PLATFORM_SCOPE = "__platform__"
 
 
 async def proxy_prompt(request, method, agent_path, admin):
-    """对齐 Go `ProxyPrompt`：`?scope=platform` 时仅平台管理员可操作平台级 Prompt。
+    """行为约定：`?scope=platform` 时仅平台管理员可操作平台级 Prompt。
 
     平台级 Prompt 在库里是 `tenant_id=''` 的全局行，Agent 侧用特殊租户标识
     `__platform__` 映射过去；普通租户仍走原租户隔离逻辑。
@@ -55,9 +54,9 @@ async def proxy_prompt(request, method, agent_path, admin):
 
 
 async def proxy_kb_upload(request, admin):
-    """对齐 Go `ProxyKbUpload`：multipart(file+title+category) 重组后转发，否则 JSON 透传。
+    """行为约定：multipart(file+title+category) 重组后转发，否则 JSON 透传。
 
-    Go 侧不是「原样透传 multipart 字节」，而是**重新构造一份** multipart，只带
+    这里不是「原样透传 multipart 字节」，而是**重新构造一份** multipart，只带
     file / title / category 三个 part，且 title、category 为空时也照写空串。
     这里用 httpx 的 files/data 复刻同样的形状（boundary 必然不同，Agent 按 part 解析）。
     """
@@ -102,7 +101,7 @@ def agent_call_bytes(method, path, query="", files=None, form_fields=None,
         return None, str(exc)
 
 
-# ---------- Prompt（biz 组，按权限码细分） ----------
+# ---------- Prompt（租户业务分组，按权限码细分） ----------
 
 @router.get("/api/admin/prompts")
 async def admin_prompts(request: Request,
@@ -157,7 +156,7 @@ async def admin_prompt_rollback(key: str, vid: str, request: Request,
         "/agent/prompts/" + key + "/versions/" + vid + "/rollback", admin)
 
 
-# ---------- 知识库（biz 组） ----------
+# ---------- 知识库（租户业务分组） ----------
 
 @router.post("/api/admin/kb/upload")
 async def admin_kb_upload(request: Request,
@@ -220,7 +219,7 @@ async def admin_kb_batch(request: Request,
     return await proxy_to_agent(request, "POST", "/agent/kb/batch", admin.tenant_id)
 
 
-# ---------- 平台设置（GET 挂 admin 组，PUT 挂 plat 组） ----------
+# ---------- 平台设置（GET 挂 管理分组，PUT 挂 平台管理分组） ----------
 
 @router.get("/api/admin/platform-settings")
 async def admin_platform_settings(request: Request,
@@ -239,7 +238,7 @@ async def admin_platform_settings_update(request: Request,
 # ---------- 模型可用性测试：本层唯一有本地逻辑的一条 ----------
 
 def _provider_by_id(provider_id):
-    """对齐 Go `loadProviderByID`：id=0 或已停用都算「取不到」。"""
+    """行为约定：id=0 或已停用都算「取不到」。"""
     if not provider_id:
         return None
     row = one("SELECT id, provider_key, default_model, default_api_base, "
@@ -251,7 +250,7 @@ def _provider_by_id(provider_id):
 
 
 def first_enabled_provider(kind):
-    """对齐 Go `firstEnabledProvider`：status=1 且 (provider_type=kind 或 both)。"""
+    """行为约定：status=1 且 (provider_type=kind 或 both)。"""
     return one(
         "SELECT id, provider_key, default_model, default_api_base, provider_type, "
         "status FROM model_providers WHERE status = 1 "
@@ -260,10 +259,10 @@ def first_enabled_provider(kind):
 
 
 def resolve_chat_config(tid, depth=0):
-    """对齐 Go `resolveChatConfig`：返回 (provider_key, model_name, api_base, api_key)。
+    """行为约定：返回 (provider_key, model_name, api_base, api_key)。
 
     四级解析：provider_id 关联 → 旧版手填 custom → 跟随平台(t_admin) → 首个启用提供商兜底。
-    取不到时抛 ValueError（文案与 Go 的 error 一致），调用方按「静默忽略」处理。
+    取不到时抛 ValueError（文案与既有错误文案一致），调用方按「静默忽略」处理。
     """
     if depth > 3:
         raise ValueError("模型配置解析递归过深（跟随平台循环）")
@@ -302,7 +301,7 @@ def resolve_chat_config(tid, depth=0):
 
 
 def resolve_emb_config(tid, depth=0):
-    """对齐 Go `resolveEmbConfig`：逻辑同 resolve_chat_config，字段换成 embedding_*。"""
+    """行为约定：逻辑同 resolve_chat_config，字段换成 embedding_*。"""
     if depth > 3:
         raise ValueError("模型配置解析递归过深（跟随平台循环）")
     row = tenant_config_row(tid)
@@ -340,11 +339,11 @@ def resolve_emb_config(tid, depth=0):
 
 
 def agent_model_config(tid):
-    """对齐 Go `GetAgentModelConfig` 里 AdminModelTest 用到的部分。
+    """返回 Agent 模型配置中模型连通性测试用到的部分。
 
-    注意 Go 的 quirk：`use_custom` 取的是**对话侧**是否自有配置（`chatOwn`），
+    注意一个历史 quirk：`use_custom` 取的是**对话侧**是否自有配置，
     但 embedding 分支的回填也用这同一个开关 —— 也就是「对话跟随平台、Embedding 自有」
-    的租户，测 embedding 时不会回填。这里照抄，不做「修正」。
+    的租户，测 embedding 时不会回填。这里保持该行为，不做「修正」。
     """
     row = tenant_config_row(tid)
     if not row:
@@ -376,7 +375,7 @@ def truncate_str(text, limit):
 async def admin_model_config_test(request: Request,
                                   tenant_id: str = "",
                                   admin: Admin = Depends(current_admin)):
-    """对齐 Go `AdminModelTest`：用表单值打一次真实调用，只测不落库。
+    """行为约定：用表单值打一次真实调用，只测不落库。
 
     表单留空（典型是「Key 已配置、前端只回显掩码」）时回退读该租户的已存配置。
     """
@@ -421,7 +420,7 @@ async def admin_model_config_test(request: Request,
                 "Content-Type": "application/json",
                 "Authorization": "Bearer " + api_key,
             })
-    except Exception as exc:                      # noqa: BLE001 - 文案与 Go 一致
+    except Exception as exc:                      # noqa: BLE001 - 文案与既有行为一致
         return {"code": 0, "data": {"ok": False, "reason": "连接失败: " + str(exc)}}
     raw = resp.text or ""
     latency = int((time.monotonic() - started) * 1000)
@@ -453,5 +452,5 @@ async def admin_model_config_test(request: Request,
                                 "dim": len(embedding)}}
 
 
-# ---------- Agent internal APIs (parallel with Go until WebSocket cutover) ----------
+# ---------- Agent internal APIs ----------
 

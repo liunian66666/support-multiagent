@@ -7,7 +7,6 @@
 import logging
 
 from app.agent.llm_config import clear_model_cache
-from app.infra.cache import clear_kb_cache
 
 logger = logging.getLogger("agent.routers_cache")
 
@@ -21,6 +20,13 @@ def clear_tenant_caches(app, tenant_id: str | None, scope: str = "all") -> dict:
       - "all"       ：全部清除
     """
     clear_model_cache(tenant_id, scope)
+    if scope in ("chat", "embedding", "all"):
+        try:
+            from app.services.four_agent import clear_cached
+
+            clear_cached(tenant_id)
+        except ImportError:
+            logger.warning("four-agent package unavailable during cache invalidation")
     # 检索结果缓存（kb_cache）与向量模型绑定：向量配置变更时一并清空，避免旧答案残留
     try:
         from app.infra.cache import clear_kb_cache
@@ -32,6 +38,7 @@ def clear_tenant_caches(app, tenant_id: str | None, scope: str = "all") -> dict:
     agents = getattr(app.state, "tenant_agents", {})
     faq_agents = getattr(app.state, "faq_agents", {})
     intake_agents = getattr(app.state, "intake_agents", {})
+    four_agent_graphs = getattr(app.state, "four_agent_graphs", {})
     retr = getattr(app.state, "tenant_retrievers", {})
     if tenant_id:
         n_agents = n_retr = 0
@@ -41,6 +48,7 @@ def clear_tenant_caches(app, tenant_id: str | None, scope: str = "all") -> dict:
         if scope in ("chat", "all"):
             faq_agents.pop(tenant_id, None)
             intake_agents.pop(tenant_id, None)
+            four_agent_graphs.pop(tenant_id, None)
         if scope in ("embedding", "all"):
             if tenant_id in retr:
                 retr.pop(tenant_id, None)
@@ -48,6 +56,7 @@ def clear_tenant_caches(app, tenant_id: str | None, scope: str = "all") -> dict:
             if tenant_id in agents:
                 agents.pop(tenant_id, None)
                 n_agents = 1  # Agent 持有旧 retriever 引用，向量模型变更必须重建
+            four_agent_graphs.pop(tenant_id, None)
         logger.info("✅ caches cleared: config, agents=%d, retrievers=%d (tenant=%s, scope=%s)",
                     n_agents, n_retr, tenant_id, scope)
     else:
@@ -56,6 +65,7 @@ def clear_tenant_caches(app, tenant_id: str | None, scope: str = "all") -> dict:
         agents.clear()
         faq_agents.clear()
         intake_agents.clear()
+        four_agent_graphs.clear()
         retr.clear()
         logger.info("✅ caches cleared: config, agents=%d, retrievers=%d (all tenants)",
                     n_agents, n_retr)

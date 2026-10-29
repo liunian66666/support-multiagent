@@ -1,7 +1,7 @@
-"""阶段 3-10：认证域（Go /api/auth/* 剩余 6 条迁到 FastAPI）回归测试。
+"""阶段 3-10：认证域（/api/auth/*）回归测试。
 
-对齐对象是 Go 的 handler/auth.go + pkg/auth + pkg/crypto。这批用例分三类：
-  1. 算法/工具层：RSA 加解密、登录限流、Go 时长文案、令牌校验错误链
+对齐对象是既有认证实现。这批用例分三类：
+  1. 算法/工具层：RSA 加解密、登录限流、时长文案、令牌校验错误链
   2. 路由层：6 条接口的成功/失败分支（状态码、文案、审计、副作用）
   3. 双端不变量：黑名单/限流同一 Redis 键空间、载荷字段顺序（逐字节签发）
 
@@ -29,7 +29,7 @@ PASSWORD_HASH = main.hash_user_password("t_demo", "alice", PASSWORD)
 
 
 def fake_encrypt(public_pem, plaintext):
-    """前端视角：用公钥 RSA-OAEP(SHA-256) 加密后 base64（对齐 Go DecryptRSAOAEP 的输入）。"""
+    """前端视角：用公钥 RSA-OAEP(SHA-256) 加密后 base64（对齐历史实现 DecryptRSAOAEP 的输入）。"""
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import padding
     key = serialization.load_pem_public_key(public_pem.encode())
@@ -222,7 +222,7 @@ class AuthDomainTest(unittest.TestCase):
             main.rsa_decrypt_oaep(base64.b64encode(b"not-a-ciphertext").decode())
 
     def test_admin_token_payload_field_order_and_omitempty(self):
-        """载荷字段顺序必须与 Go tokenPayload 一致；uid=0 不出现在载荷里。"""
+        """载荷字段顺序必须与历史实现 tokenPayload 一致；uid=0 不出现在载荷里。"""
         self.assertEqual(list(main.admin_token_payload("t_demo")),
                          ["tid", "exp", "nonce"])
         self.assertEqual(list(main.admin_token_payload("t_demo", 7)),
@@ -252,7 +252,7 @@ class AuthDomainTest(unittest.TestCase):
         allowed, wait = main.check_login_allowed(key)
         self.assertFalse(allowed)
         self.assertEqual(wait, main.LOGIN_WINDOW)
-        self.assertEqual(main.LOGIN_FAIL_PREFIX, "cs:login:fail:")   # 与 Go 同键空间
+        self.assertEqual(main.LOGIN_FAIL_PREFIX, "cs:login:fail:")   # 与历史实现同键空间
 
     def test_login_limiter_clear_resets(self):
         key = "1.2.3.4:tk_probe"
@@ -267,7 +267,7 @@ class AuthDomainTest(unittest.TestCase):
         self.assertFalse(allowed)
         self.assertEqual(wait, 60)
 
-    # ----------  ③ 令牌校验错误链（refresh 专用，文案逐字对齐 Go） ----------
+    # ----------  ③ 令牌校验错误链（refresh 专用，文案逐字对齐历史实现） ----------
 
     def test_strict_verify_accepts_admin_token(self):
         token = self.mint(uid=7)
@@ -358,7 +358,7 @@ class AuthDomainTest(unittest.TestCase):
         self.assertEqual(resp.json()["msg"], "无效的 app_key 或 app_secret")
         rows = self.audit_rows("login_fail")
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0][0], "system")            # Go: tenantID 空 → system
+        self.assertEqual(rows[0][0], "system")            # 历史实现： tenantID 空 → system
         self.assertEqual(rows[0][6], "无效的 app_key 或 app_secret")
         self.assertEqual(self.fake_cache.store.get("cs:login:fail:testclient:tk_demo"),
                          "1")
@@ -572,10 +572,10 @@ class AuthDomainTest(unittest.TestCase):
         self.assertEqual(updates[0][0],
                          hashlib.sha256(b"new-secret-123").hexdigest())
         rows = self.audit_rows("change_password")
-        self.assertEqual(rows[0][:2], ("t_demo", ""))       # operator 空串（Go 约定）
+        self.assertEqual(rows[0][:2], ("t_demo", ""))       # operator 空串（历史实现约定）
         self.assertEqual(rows[0][3:7], ("change_password", "auth", "app_secret",
                                         "修改登录密钥成功"))
-        self.assertEqual(self.reloaded, [True])             # Go 租户缓存必须同步失效
+        self.assertEqual(self.reloaded, [True])             # 历史实现租户缓存必须同步失效
 
     def test_password_change_wrong_old_secret(self):
         self.tenant_by_id = self.demo_tenant()
@@ -606,9 +606,9 @@ class AuthDomainTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 401)
 
     def test_password_change_auth_runs_before_body(self):
-        """对齐 Go：路由挂 AdminAuth 中间件，先鉴权后校验请求体。
+        """对齐历史实现：路由挂 AdminAuth 中间件，先鉴权后校验请求体。
 
-        无令牌 + 非法请求体 → 401（Go 同）；带有效令牌 + 非法请求体 → 400。
+        无令牌 + 非法请求体 → 401（历史实现同）；带有效令牌 + 非法请求体 → 400。
         """
         resp = self.client.put("/api/auth/password", json={"old_app_secret": "x"})
         self.assertEqual(resp.status_code, 401)

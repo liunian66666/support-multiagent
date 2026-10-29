@@ -66,7 +66,7 @@ _SIG_CHECK_TTL = 10             # 秒
 
 
 async def _fetch_config_version(app, tenant_id: str) -> str | None:
-    """从 Go 拉取当前配置签名（无缓存，保证新鲜）"""
+    """从业务层拉取当前配置签名（无缓存，保证新鲜）"""
     headers = {}
     if INTERNAL_API_TOKEN:
         headers["X-Internal-Token"] = INTERNAL_API_TOKEN
@@ -105,6 +105,7 @@ async def _check_config_version(app, tenant_id: str) -> str | None:
         app.state.tenant_agents.pop(tenant_id, None)
         getattr(app.state, "faq_agents", {}).pop(tenant_id, None)
         getattr(app.state, "intake_agents", {}).pop(tenant_id, None)
+        getattr(app.state, "four_agent_graphs", {}).pop(tenant_id, None)
         app.state.tenant_retrievers.pop(tenant_id, None)
     return remote
 

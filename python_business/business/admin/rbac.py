@@ -20,16 +20,16 @@ from business.infra.storage import db, many, one, write
 
 router = APIRouter()
 
-# ==================== 阶段 3-5：RBAC（菜单树 / 成员 / 角色） ====================
-# Go 侧数据模型：menus（菜单=权限载体）→ sys_role_menu（角色-菜单）→ roles → user_roles → users。
+# ==================== RBAC（菜单树 / 成员 / 角色） ====================
+# 数据模型：menus（菜单=权限载体）→ sys_role_menu（角色-菜单）→ roles → user_roles → users。
 # 权限码只从 menus.perm（status=1）推导，角色「是否管理员」也只看权限集合是否覆盖全目录
-# （repository.isFullPerms），与角色名/内置标记解耦 —— 这里必须照抄，否则 admin 角色改名后两边判定不同。
+# （isFullPerms），与角色名/内置标记解耦 —— admin 角色改名不影响权限判定。
 
 MENU_BIZ_GROUP = "业务中心"
 MENU_SYS_GROUP = "系统管理"
-ZERO_TIME_RFC3339 = "0001-01-01T00:00:00Z"   # Go 非指针 time.Time 的零值（DB NULL）
+ZERO_TIME_RFC3339 = "0001-01-01T00:00:00Z"   # 非指针时间的零值（DB NULL）
 
-# 逐字对齐 Go permission.Catalog（仅取 code 用于 isFullPerms，名称/分组只作可读注释）
+# 权限目录（仅取 code 用于 isFullPerms，名称/分组只作可读注释）
 PERMISSION_CODES = (
     "session:view", "session:profile:edit", "session:cleanup",
     "ticket:view", "ticket:handle",
@@ -45,7 +45,7 @@ PERMISSION_CODES = (
     "role:view", "role:add", "role:edit", "role:remove",
 )
 
-# 对齐 Go permission.StaffPerms：内置「客服」角色的初始授权集合
+# 行为约定：内置「客服」角色的初始授权集合
 STAFF_PERMS = (
     "session:view", "session:profile:edit",
     "ticket:view", "ticket:handle",
@@ -74,19 +74,19 @@ def transaction():
 
 
 def iso_zero(value):
-    """Go 非指针 time.Time：DB NULL 读成零值，序列化为 0001-01-01T00:00:00Z。"""
+    """非指针时间：DB NULL 读成零值，序列化为 0001-01-01T00:00:00Z。"""
     return iso(value) if value else ZERO_TIME_RFC3339
 
 
 def go_time_text(value):
-    """Go `time.Format("2006-01-02 15:04:05")`：角色列表的时间字段用这个格式。"""
+    """时间格式化：角色列表的时间字段用 `2006-01-02 15:04:05` 格式。"""
     if not value:
         return "0001-01-01 00:00:00"
     return value.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def go_uints(value):
-    """Go `[]uint64` 的 JSON 绑定语义：非数组 / 含负值 / 含非整数 → None（绑定失败）。"""
+    """无符号整数数组的 JSON 绑定语义：非数组 / 含负值 / 含非整数 → None（绑定失败）。"""
     if not isinstance(value, list):
         return None
     out = []
@@ -98,7 +98,7 @@ def go_uints(value):
 
 
 def go_int_field(body, key, default=0):
-    """Go `int` 字段的绑定语义：缺失取 0；存在但不是整数 → None（绑定失败）。"""
+    """整数字段的绑定语义：缺失取 0；存在但不是整数 → None（绑定失败）。"""
     if key not in body:
         return default
     value = body[key]
@@ -108,7 +108,7 @@ def go_int_field(body, key, default=0):
 
 
 def rune_len(text):
-    """Go `utf8.RuneCountInString`：按码点计数（Python len 对 str 等价）。"""
+    """按 Unicode 码点计数（等价于 Python 的 len(str)）。"""
     return len(text)
 
 
@@ -119,7 +119,7 @@ MENU_COLUMNS = ("id, parent_id, group_name, name, type, path, component, perm, i
 
 
 def all_menus():
-    """对齐 Go cachedMenus 的排序：group_name ASC, sort ASC, id ASC（权限目录顺序依赖它）。"""
+    """行为约定：group_name ASC, sort ASC, id ASC（权限目录顺序依赖它）。"""
     return many(f"SELECT {MENU_COLUMNS} FROM menus ORDER BY group_name ASC, sort ASC, id ASC")
 
 
@@ -136,7 +136,7 @@ def menu_json(row):
 
 
 def menu_tree(perms, scope):
-    """对齐 Go repository.MenuTreeForUser（含子账号可见集合与父链保留）。
+    """用户菜单树（含子账号可见集合与父链保留）。
 
     scope：platform（平台管理员→系统管理组）/ tenant-admin（租户 app_key→业务中心全量）/
     tenant-user（租户子账号→业务中心按权限过滤）/ all（无租户上下文的演示模式）。
@@ -149,7 +149,7 @@ def menu_tree(perms, scope):
     else:
         scoped = active
     if not scoped:
-        return None                      # Go return nil → JSON null
+        return None                      # 空值返回 JSON null
 
     visible = set()
     if scope == "tenant-user":
@@ -258,7 +258,7 @@ def role_json(row):
 
 
 def ensure_tenant_roles(tenant_id):
-    """对齐 Go repository.EnsureTenantRoles：一次性种入 admin/staff 预置角色。
+    """行为约定：一次性种入 admin/staff 预置角色。
 
     语义要点（新项目口径，不做存量兼容）：
     - 已有角色 → 直接跳过（预置角色可删可改，删光也不补种）
@@ -338,8 +338,8 @@ async def admin_role_create(request: Request, admin: Admin = Depends(require_per
     if body.get("description") is not None and not isinstance(body.get("description"), str):
         deny(400, "参数错误")
     description = body.get("description") or ""
-    # 已修复（Go 侧缺陷）：Go 的 handler 写死 Code: genRoleCode()，请求体里的 code
-    # 被直接丢弃，调用方无法指定稳定编码（对接外部系统时需要按 code 引用角色）。
+    # 已修复的历史缺陷：曾写死 Code 生成逻辑，请求体里的 code 被直接丢弃，
+    # 调用方无法指定稳定编码（对接外部系统时需要按 code 引用角色）。
     # 这里放开：传了就用（限长 32，与 roles.code 列宽一致），没传才自动生成。
     code = body.get("code")
     if code is not None and (not isinstance(code, str) or not code.strip()):
@@ -361,7 +361,7 @@ async def admin_role_create(request: Request, admin: Admin = Depends(require_per
                 "deleted_at) VALUES (%s, %s, %s, %s, %s, %s, 0)",
                 (admin.tenant_id, code or gen_role_code(), role_name, description, now, now))
             role_id = cur.lastrowid
-            # 注意：Go CreateRole 不去重，重复 menu_id 会撞主键 → 整体失败（照抄该行为）
+            # 注意：创建角色不去重，重复 menu_id 会撞主键 → 整体失败（保持该行为）
             for menu_id in menu_ids:
                 cur.execute("INSERT INTO sys_role_menu (role_id, menu_id) VALUES (%s, %s)",
                             (role_id, menu_id))
@@ -439,7 +439,7 @@ USER_COLUMNS = ("id, tenant_id, username, nickname, phone, email, remark, status
 
 
 def hash_user_password(tenant_id, username, password):
-    """对齐 Go crypto.HashUserPassword：sha256(tenant_id|username|password) hex。"""
+    """行为约定：sha256(tenant_id|username|password) hex。"""
     return hashlib.sha256(f"{tenant_id}|{username}|{password}".encode()).hexdigest()
 
 
@@ -685,7 +685,7 @@ async def admin_member_status(id: str, request: Request,
     status = go_int_field(body, "status", 0)
     if status not in (0, 1):
         deny(400, "参数错误")
-    # 注意：Go 这里不校验成员是否存在，id 不存在也会回 200「已更新」并记审计（照抄）
+    # 注意：这里不校验成员是否存在，id 不存在也会回 200「已更新」并记审计（照抄）
     try:
         write("UPDATE users SET status = %s, updated_at = %s WHERE id = %s AND tenant_id = %s "
               "AND deleted_at = 0", (status, datetime.now(), user_id, admin.tenant_id))

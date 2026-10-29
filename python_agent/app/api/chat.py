@@ -22,6 +22,7 @@ from app.schemas import AgentResp, ChatRequest, ResumeRequest
 from app.services.dialog import _record_to_checkpoint, _record_usage_after_chat
 # [ours] S3 经验召回（默认 off：影子模式只记事件，注入模式才改 prompt）
 from app.services.experience_recall import augment_message, recall_for_turn
+from app.services import four_agent
 from app.services.specialists import execute_shortcut
 from app.services.supervisor import _compound_plan as _compound_plan
 from app.services.supervisor import decide_turn
@@ -42,6 +43,7 @@ except ValueError:
 def _graph_config(thread_id: str) -> dict:
     config = {"configurable": {"thread_id": thread_id}}
     if _RECURSION_LIMIT:
+        #添加最大限制步数
         config["recursion_limit"] = _RECURSION_LIMIT
     return config
 
@@ -91,6 +93,23 @@ async def _agent_chat_impl(req: ChatRequest, request: Request):
         quota_err = await check_concurrent_sessions(conn, request.app, tenant_id)
     if quota_err:
         return AgentResp(success=False, is_interrupt=False, content=quota_err["msg"])
+    if four_agent.enabled(pending_ticket=req.has_pending_ticket):
+        try:
+            await touch_session_retry(request.app, thread_id)
+            state = await four_agent.run_turn(request.app, tenant_id, thread_id,
+                                              user_message, trace_id_var.get())
+            if active_run and state.get("turn_id"):
+                active_run.answer_id = state["turn_id"]
+            if not state.get("_replayed"):
+                async with _pool_conn(request.app) as conn:
+                    await _record_usage_after_chat(request, conn, tenant_id, thread_id,
+                                                   state.get("model_messages", []))
+            return AgentResp(success=True, is_interrupt=False,
+                             content=state["answer"] + SERVICE_FOOTER)
+        except Exception as exc:
+            logger.exception("/agent/chat four-agent graph error")
+            return AgentResp(success=False, is_interrupt=False,
+                             content=_friendly_llm_error(exc))
     decision = await decide_turn(request.app, tenant_id, thread_id, user_message,
                                  pending_ticket=req.has_pending_ticket)
     logger.info("support specialist=%s source=%s tenant=%s",
@@ -193,6 +212,31 @@ async def agent_chat_stream(req: ChatRequest, request: Request):
         tenant_var.set(tenant_id)
         thread_var.set(thread_id)
         pending_ticket_var.set(req.has_pending_ticket)
+        if four_agent.enabled(pending_ticket=req.has_pending_ticket):
+            async with _pool_conn(request.app) as conn:
+                quota_err = await check_concurrent_sessions(conn, request.app, tenant_id)
+            if quota_err:
+                yield f"data: {_json.dumps({'type':'error','msg':quota_err['msg']}, ensure_ascii=False)}\n\n"
+                return
+            try:
+                await touch_session_retry(request.app, thread_id)
+                state = await four_agent.run_turn(request.app, tenant_id, thread_id,
+                                                  user_message, run.trace_id)
+                if state.get("turn_id"):
+                    run.answer_id = state["turn_id"]
+                if not state.get("_replayed"):
+                    async with _pool_conn(request.app) as conn:
+                        await _record_usage_after_chat(request, conn, tenant_id, thread_id,
+                                                       state.get("model_messages", []))
+                content = state["answer"] + SERVICE_FOOTER
+                # Hold the response until review_guard and the graph checkpoint
+                # complete. Streaming unreviewed model tokens would leak claims.
+                yield f"data: {_json.dumps({'type':'chunk','content':content}, ensure_ascii=False)}\n\n"
+                yield f"data: {_json.dumps({'type':'end','content':content,'answer_id':run.answer_id}, ensure_ascii=False)}\n\n"
+            except Exception as exc:
+                logger.exception("/agent/chat/stream four-agent graph error")
+                yield f"data: {_json.dumps({'type':'error','msg':_friendly_llm_error(exc)}, ensure_ascii=False)}\n\n"
+            return
         decision = await decide_turn(request.app, tenant_id, thread_id, user_message,
                                      pending_ticket=req.has_pending_ticket)
         logger.info("support stream specialist=%s source=%s tenant=%s",

@@ -1,8 +1,8 @@
-# 四 Agent 客服主图（独立目录 `agent/`）
+# 四 Agent 客服主图
 
-新方案的唯一实现目录。`python_agent/`、`python_business/`、前端与部署入口**均未修改**，线上行为不变；本目录只 import 现有服务，不反向依赖，也没有任何模块 import 本目录。
+`agent/` 是当前唯一的普通聊天图实现。`python_agent/app/services/four_agent.py` 将 JSON 和 SSE 请求接入 `agent.cutover`，四 Agent 的共享状态、Reviewer、记忆和持久化均在此目录。历史消息在新图首次处理会话时只读导入；未完成审批继续使用原检查点兼容路径。
 
-`python_agent/app/multi_agent/graph.py` 是 app 侧自己实现并挂上去的那张图（`chat.py` 的 `FOUR_AGENT_GRAPH` 分支，**缺省 off、运行中的镜像里还没有它**），本目录不修改它、只把它测清楚（报告 §5e/§5f/§6e）。两套实现有三条结构性差异：摘要侧本目录改为水位线自持且不删消息、Reviewer 结果按 hard/soft 分层且按轮重置证据通道、每轮按 `turn_id` 幂等归因。
+本文件后面的评测段落记录开发过程中的旧版对照，相关旧开关已退役。
 
 ## 写法依据（不自拟 API）
 
@@ -67,12 +67,14 @@ START → open_turn → supervisor → review → ┬(should_continue)→ superv
 
 订单归属始终由 Business 判定：`lookup_my_order(order_id)` / `list_my_orders()` 只接受单号或无参，身份取自服务端会话 ContextVar，模型无法指定客户。退款、支付、建单等写操作在本图里不存在对应工具。`thread_key()` 拒绝非 `{tenant_id}:` 前缀的线程；检查点键带 `support_v2:` 前缀，旧线程的检查点不会按新 schema 被读出；存在未完成审批的会话继续走旧图。
 
-## 启动与回退
+## 当前启动与兼容
+
+普通聊天固定走四 Agent 主图。`FOUR_AGENT_GRAPH` 和 `X-Agent-Graph` 已不能切换旧图；未完成审批仍由原图处理，以保留已有中断状态。需要回看旧版行为时，使用 Git 历史和已保存的对照数据，不通过线上请求切换。
 
 ```bash
 # 本机（Python 3.13 + 与容器同版本的依赖）
 uv pip install --python .venv/Scripts/python.exe -r python_agent/requirements.txt
-.venv/Scripts/python.exe -m pytest agent/tests -q          # 90 passed
+.venv/Scripts/python.exe -m pytest agent/tests -q          # 113 passed
 PYTHONPATH=".;python_agent" .venv/Scripts/python.exe -m agent.demo --turns 8 \
     --dump agent/evaluation/runs/demo_offline.jsonl         # 复合咨询 + 长对话 + 重启续聊
 bash agent/evaluation/run_all.sh demo-mounted               # 同一套演示走「开关那条路」（app 侧图）的留痕
@@ -86,7 +88,8 @@ bash agent/evaluation/run_all.sh retrieval   # 只读检索稳定性探针
 bash agent/evaluation/run_all.sh gateway     # 模型网关可达性诊断（零推理消耗）
 bash agent/evaluation/run_all.sh live        # 阶段6 真实模型采集（需模型可用）
 bash agent/evaluation/run_all.sh mounted-guards  # 30 例对抗语料打在挂载入口的 Reviewer 上：旧接法 9/25→22/25 漏放；
-#                                              2026-10-28 起入口换成 agent/ 图，同一语料重测 0 漏放 / 0 误拦（报告 §5j）（§5f，开关继续留 off 的依据）
+#                                              2026-10-28 起入口换成 agent/ 图，同一语料重测 0 漏放 / 0 误拦（报告 §5j）
+bash agent/evaluation/run_all.sh image          # 镜像自检：agent/ 包在不在、三条回退路是否都回旧图
 
 # 接真实服务（只读）：在已完成客户会话鉴权的 Agent 进程内
 from agent.legacy_bindings import deps_for_app, legacy_history, session_context
@@ -94,23 +97,14 @@ deps = await deps_for_app(app, tenant_id, reuse_faq_agent=False)  # True=与旧�
 service = SupportService(lambda _t: deps, checkpointer=app.state.checkpointer)
 ```
 
-回退：本目录没有被任何入口 import，删除或留空即完全回到旧行为。
-
-切换默认入口（**这一节的结论已被 app 侧的自行实现取代，见下面第三条与报告 §5e**）：
-`chat.py` **其实早就在做新旧并行**——JSON 分支（`chat.py:96`）与 SSE 分支
-（`chat.py:211`）都先问 `four_agent.enabled(pending_ticket=...)`，再调
-`four_agent.run_turn(app, tenant, thread, message)`，且只读 `state["answer"]` 与
-`state.get("model_messages", [])` 两个字段；开关是 **`FOUR_AGENT_GRAPH`**（缺省 off），
-检查点命名空间同样是 `support_v2:`。曾以为"把这个模块名换成 `agent/cutover.py` 就算切流"
-（契约由 `tests/test_cutover.py` 钉住），但 10-27 18:15 起 `app/services/four_agent.py` 已经
-指向 app 侧自己的四 Agent 图 `app/multi_agent/graph.py`，**切换不再需要动 import**——需要的是
-重建镜像 + 置开关，而那条路的实际行为已由 `run_all.sh mounted` 量出 3 条发现。⚠ 仍然别只改
-import：生产镜像 `build: ./python_agent` 里没有 `agent/` 包（`docker exec cs_agent grep -c
-four_agent /app/app/api/chat.py` → **0**，图只存在于工作树），`chat.py` 的导入又在模块顶层，
-裸改会让服务**启动即失败**——这正是 `agent/deploy/` 两个**未应用**补丁用兜底导入的原因，
-`python agent/deploy/make_cutover_patches.py` 可重新生成并 `git apply --check` 校验。
-`service.enabled()`（缺省 off）与 JSON/SSE 共用同一 `TurnResult` 的
-`to_payload()` / `sse_events()` 照常可用。
+切换的落地方式（2026-10-28，本分支）：`app/services/four_agent.py` 现在只做委派 ——
+`enabled()` 转 `agent/rollout.py`，`run_turn()` 转 `agent.cutover`；
+`python_agent/Dockerfile` 用 `additional_contexts: agent_src` 把本目录
+`COPY --from=agent_src . /app/agent`，所以**生产镜像里确实有这张图**，
+不再需要"换 import + 重建镜像"那套补丁（`agent/deploy/` 两个补丁因此作废，仅留档）。
+`chat.py` 只读 `state["answer"]` 与 `state.get("model_messages", [])`，契约由
+`tests/test_cutover.py` 钉住；JSON 与 SSE 共用同一 `TurnResult` 的 `to_payload()` /
+`sse_events()`，两条传输的内容差只可能是分帧，不可能是正文。
 
 ## 真实环境复核（2026-10-27）
 

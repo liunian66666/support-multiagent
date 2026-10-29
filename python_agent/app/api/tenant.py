@@ -22,7 +22,7 @@ async def tenant_prewarm(req: TenantWarmReq, request: Request):
         return {"code": 0, "data": {"tenant_id": req.tenant_id, "status": "ready"}}
     except Exception as e:
         # 降级策略：对话模型或向量模型任一不可用时不阻塞预热（服务保持可用），
-        # 对话/索引时再由对应环节明确报错。Go 侧仅记录 warning。
+        # 对话/索引时再由对应环节明确报错。业务层仅记录 warning。
         logger.warning("tenant prewarm degraded [%s]: %s", req.tenant_id, str(e)[:200])
         return {"code": 0, "data": {"tenant_id": req.tenant_id, "status": "degraded", "reason": str(e)[:200]}}
 

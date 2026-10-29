@@ -69,6 +69,7 @@ class TurnResult:
     context: dict[str, int] = field(default_factory=dict)
     model_messages: list[Any] = field(default_factory=list)
     error: str = ""
+    replayed: bool = False
 
     def to_payload(self) -> dict[str, Any]:
         """Business-facing shape, not just our own.
@@ -135,7 +136,7 @@ class SupportService:
         lock = self._thread_locks.setdefault(key, asyncio.Lock())
         async with lock:
             if self._thread_guard is None:
-                state = await self._invoke(graph, key, incoming, token)
+                state, replayed = await self._invoke(graph, key, incoming, token)
             else:
                 # 取锁与跑图分开写，是为了**只把"取不到锁"变成安全答复**：
                 # 用 `async with` 一整块包住的话，图里抛出的异常也会被同一个 except 捞走，
@@ -148,16 +149,28 @@ class SupportService:
                                       outcome="lock_unavailable",
                                       error=f"{type(exc).__name__}: {exc}")
                 try:
-                    state = await self._invoke(graph, key, incoming, token)
+                    state, replayed = await self._invoke(graph, key, incoming, token)
                 finally:
                     await guard.__aexit__(None, None, None)
-        return self._result(token, state)
+        return self._result(token, state, replayed=replayed)
 
     async def _invoke(self, graph: Any, key: str, incoming: list[BaseMessage],
-                      token: str) -> dict[str, Any]:
-        return await graph.ainvoke(
+                      token: str) -> tuple[dict[str, Any], bool]:
+        config = {"configurable": {"thread_id": key}, "recursion_limit": TURN_STEP_BUDGET}
+        snapshot = await graph.aget_state(config)
+        previous = snapshot.values or {}
+        record = next((item for item in reversed(previous.get("ledger", []))
+                       if item["turn_id"] == token), None)
+        if record is not None:
+            question = next((memory.message_text(item) for item in incoming
+                             if isinstance(item, HumanMessage) and item.id == f"{token}:u"), "")
+            if record["question"] != question[:500]:
+                raise ValueError("turn_id was already used for a different question")
+            return previous, True
+        state = await graph.ainvoke(
             {"messages": incoming, "turn_id": token},
-            config={"configurable": {"thread_id": key}, "recursion_limit": TURN_STEP_BUDGET})
+            config=config)
+        return state, False
 
     async def history(self, tenant_id: str, thread_id: str) -> list[dict[str, Any]]:
         """Customer-visible transcript, read straight from the checkpoint."""
@@ -189,7 +202,7 @@ class SupportService:
         return replayed
 
     @staticmethod
-    def _result(token: str, state: dict[str, Any]) -> TurnResult:
+    def _result(token: str, state: dict[str, Any], *, replayed: bool = False) -> TurnResult:
         record = next((item for item in reversed(state.get("ledger", [])) if item["turn_id"] == token), None)
         if record is not None:
             roles, evidence_ids = record["roles"], record["evidence_ids"]
@@ -201,12 +214,14 @@ class SupportService:
             roles = list(dict.fromkeys(item["specialist"] for item in own))
             evidence_ids = [e["id"] for item in own for e in item["evidence"]]
             issues, attempts = [], state.get("attempts", 0)
-        return TurnResult(turn_id=token, answer=state.get("answer", ""), outcome=state.get("outcome", ""),
+        return TurnResult(turn_id=token,
+                          answer=record["answer"] if record is not None else state.get("answer", ""),
+                          outcome=record["outcome"] if record is not None else state.get("outcome", ""),
                           roles=roles, evidence_ids=evidence_ids, review_issues=issues,
                           attempts=attempts,
                           usage=(state.get("usage", {}) or {}).get(token, {}),
                           context=memory.context_state(state),
-                          error=state.get("last_error", ""),
+                          error=state.get("last_error", ""), replayed=replayed,
                           model_messages=[m for m in state.get("messages", [])
                                           if getattr(m, "id", "") and f":{token}" in str(m.id)])
 

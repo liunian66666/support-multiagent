@@ -107,7 +107,7 @@ class Stage2ContractTest(unittest.TestCase):
         sql, args = self.message_query()[0]
         self.assertIn("tenant_id = %s AND thread_id = %s", sql)
         self.assertEqual(args[:2], ("t_demo", "t_demo:buyer1:session"))
-        # 返回字段需与 Go 的 /api/user/messages 对齐，前端才能直接替换
+        # 返回字段需与历史实现的 /api/user/messages 对齐，前端才能直接替换
         self.assertEqual(set(response.json()["data"][0]), {
             "id", "thread_id", "role", "content", "msg_type", "tenant_id",
             "ticket_id", "is_read", "created_at",

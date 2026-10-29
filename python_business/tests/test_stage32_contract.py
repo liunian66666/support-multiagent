@@ -1,8 +1,8 @@
 """Stage 3-2 contract tests: agent status / sessions / customer profiles / customers.
 
-这些用例锁的是「与 Go 逐字段对齐」的那部分行为：
-- 失败分支的 HTTP 状态与 body code（Go 大量使用 200 + code）
-- 审计中间件的 object_type / object_id 推断（Go auditObjectType 的怪异去尾 s）
+这些用例锁的是「与历史实现逐字段对齐」的那部分行为：
+- 失败分支的 HTTP 状态与 body code（历史实现大量使用 200 + code）
+- 审计中间件的 object_type / object_id 推断（历史实现 auditObjectType 的怪异去尾 s）
 - 空列表的 null 与 [] 差异（会话列表 []、客户列表 null）
 - 时间序列化带时区偏移
 """
@@ -187,7 +187,7 @@ class Stage32Test(unittest.TestCase):
             with self.subTest(body=body):
                 response = self.client.put("/api/admin/agent-status",
                                            headers=self.auth(uid=7), json=body)
-                # Go 写 200 + code 400，但全局 StatusCode 中间件按 body.code 改写为 400
+                # 接口写 200 + code 400，但全局状态码中间件按 body.code 改写为 400
                 self.assertEqual(response.status_code, 400)
                 self.assertEqual(response.json()["code"], 400)
         self.assertFalse(any("UPDATE agent_status" in s for s, _ in self.writes))
@@ -233,7 +233,7 @@ class Stage32Test(unittest.TestCase):
         self.assertIn("HAVING COALESCE(MAX(CASE WHEN t.status IN (0,1) THEN 1 ELSE 0 END), 0) = 1",
                       main_sql)
         self.assertEqual(main_args[-2:], (20, 0))
-        # 阶段 3-8 修复：Go 的 total 不带 handoffFilter，导致筛选后 total 虚高
+        # 阶段 3-8 修复：历史实现的 total 不带 handoffFilter，导致筛选后 total 虚高
         self.assertIn("HAVING", sql)
 
     def test_session_list_item_shape_and_profile_merge(self):
@@ -273,7 +273,7 @@ class Stage32Test(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         messages = response.json()["data"]["messages"]
         self.assertEqual([m["id"] for m in messages], [11, 12])
-        self.assertNotIn("ticket_id", messages[0])        # Go omitempty：NULL 时省略
+        self.assertNotIn("ticket_id", messages[0])        # 空值省略：NULL 时省略
         self.assertEqual(messages[1]["ticket_id"], 9)
         self.assertEqual(messages[1]["archived"], True)
         self.assertEqual(messages[0]["archived"], False)
@@ -343,7 +343,7 @@ class Stage32Test(unittest.TestCase):
         self.assertEqual(args, ("13800138000", "", 3))
 
     def test_reextract_ignores_long_digit_runs(self):
-        # Go 侧手工校验数字边界：从 unixNano 时间戳里不能截出 11 位手机号
+        # 历史实现手工校验数字边界：从 unixNano 时间戳里不能截出 11 位手机号
         self.user_messages = [{"content": "https://x/1759999999999999999.png"}]
         self.profiles.pop(THREAD, None)
         self.client.post(f"/api/admin/sessions/{THREAD}/reextract", headers=self.auth())
@@ -374,7 +374,7 @@ class Stage32Test(unittest.TestCase):
 
     def test_customers_returns_null_list_when_empty(self):
         data = self.client.get("/api/admin/customers?q=张", headers=self.auth()).json()["data"]
-        self.assertIsNone(data["list"])          # Go: var items []T → null
+        self.assertIsNone(data["list"])          # 历史实现： var items []T → null
         self.assertEqual(data["q"], "张")
 
     def test_customers_rows_include_activity_and_q(self):
@@ -389,7 +389,7 @@ class Stage32Test(unittest.TestCase):
         self.assertEqual(data["page"], 2)
         self.assertEqual(data["size"], 5)
         row = data["list"][0]
-        # 阶段 3-8 修复：Go 侧 msg_count→MessageCount 映射不上恒为 0，这里按 thread
+        # 阶段 3-8 修复：历史实现 msg_count→MessageCount 映射不上恒为 0，这里按 thread
         # 统计 messages + messages_archive；本用例未提供计数 → 0
         self.assertEqual(row["message_count"], 0)
         self.assertIsNone(row["last_active_at"])
@@ -411,7 +411,7 @@ class Stage32Test(unittest.TestCase):
         self.assertEqual(self.audited(), [])
 
     def test_audit_middleware_records_soft_failures_like_go(self):
-        """Go 的 200 + body code 会被审计中间件计入（Writer.Status() < 400）。"""
+        """历史实现的 200 + body code 会被审计中间件计入（Writer.Status() < 400）。"""
         self.client.put(f"/api/admin/sessions/{THREAD}/tags", headers=self.auth(),
                         content=b"not-json")
         audit = self.audited()
@@ -424,7 +424,7 @@ class Stage32Test(unittest.TestCase):
         self.assertEqual(main.audit_object_type("/api/admin/tenants/t_demo"), "tenant")
         self.assertEqual(main.audit_object_type("/api/admin/model-config"), "model_config")
         self.assertEqual(main.audit_object_type("/api/admin/quick-replies"), "other")
-        # kb 路径首段是 kb，Go 只取首段 → other（knowledge 分支实际只在 /knowledge/... 命中）
+        # kb 路径首段是 kb，历史实现只取首段 → other（knowledge 分支实际只在 /knowledge/... 命中）
         self.assertEqual(main.audit_object_type("/api/admin/kb/documents"), "other")
         self.assertEqual(main.audit_object_type("/api/admin/knowledge/doc"), "knowledge")
 

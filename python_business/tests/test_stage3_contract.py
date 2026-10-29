@@ -112,7 +112,7 @@ class AdminContractTest(unittest.TestCase):
         self.assertFalse(any("FROM quick_replies" in s for s, _ in self.queries))
 
     def test_unknown_kind_is_rejected(self):
-        # Go VerifyTokenFull 对任何非空 kind 都回同一句文案，不区分类型
+        # 历史实现 VerifyTokenFull 对任何非空 kind 都回同一句文案，不区分类型
         token = self.token(kind="merchant")
         response = self.client.get("/api/admin/quick-replies",
                                    headers={"Authorization": "Bearer " + token})
@@ -192,7 +192,7 @@ class AdminContractTest(unittest.TestCase):
         self.assertEqual(args[5], 1)                      # 未传 is_active → 启用
         audit = [w for w in self.writes if "INSERT INTO audit_logs" in w[0]]
         self.assertEqual(len(audit), 1)
-        # object_type 由路径推断：Go auditObjectType 去一个尾缀 s 后 quick-replie 落 other
+        # object_type 由路径推断：历史实现 auditObjectType 去一个尾缀 s 后 quick-replie 落 other
         self.assertEqual(audit[0][1][:5], ("t_demo", "t_demo", 0, "create", "other"))
         self.assertEqual(audit[0][1][5], "quick-replies")  # 无 :id 参数 → 路径末段
 
@@ -254,7 +254,7 @@ class AdminContractTest(unittest.TestCase):
     def test_rating_stats_shape_matches_go(self):
         data = self.client.get("/api/admin/ratings/stats", headers=self.auth()).json()["data"]
         self.assertEqual(data["total"], 6)
-        # JSON 会把 map[int]int 的 key 序列化成字符串，Go 侧行为一致
+        # JSON 会把 map[int]int 的 key 序列化成字符串，历史实现行为一致
         self.assertEqual(data["dist"], {"1": 0, "2": 0, "3": 0, "4": 1, "5": 5})
         self.assertEqual(data["satisfied"], 6)
         self.assertAlmostEqual(data["avg_score"], 5 - 1 / 6)

@@ -556,6 +556,10 @@ function connectWS(){
     ws.onclose = function(){
       wsConnected = false;
       stopHeartbeat();
+      if (streamingEl || document.getElementById('typingIndicator')) {
+        cancelStreaming(); hideTyping();
+        addSystemMessage('连接已断开，正在重连。若未收到回答，请重新发送。');
+      }
       document.getElementById('chatStatus').textContent = '连接断开，重连中...';
       if (kickedFlag) return; // 已在其他窗口建立连接，停止重连
       // 恢复的会话被服务端拒绝（token 过期/被吊销）：清掉旧会话重新登录一次
@@ -628,7 +632,7 @@ function handleWSMessage(data){
       postToParent('cs_ready', {thread_id: data.thread_id || (session && session.thread_id), customer_id: session && session.customer_id, tenant_id: session && session.tenant_id});
       break;
     case 'chat_reply':
-      hideTyping();
+      hideTyping(); cancelStreaming();
       addAIMessage(data.msg);
       postToParent('cs_message', {role: 'ai', content: data.msg});
       break;
@@ -828,36 +832,61 @@ function hideTyping(){
 // P2-1：流式输出相关
 var streamingEl = null;  // 当前正在流式输出的消息元素
 var streamingText = '';  // 已接收的流式文本
+var pendingTimers = [];
+
+function clearPendingTimers(){
+  pendingTimers.forEach(clearTimeout);
+  pendingTimers = [];
+}
+
+function setPendingText(text){
+  if (!streamingEl || streamingText) return;
+  var bubble = streamingEl.querySelector('.bubble');
+  if (bubble) bubble.textContent = text;
+}
 
 function startStreaming(){
-  // 创建一个空的 AI 消息元素用于流式输出
+  // 首个回答片段可能要等较久；先给出可见的等待反馈。
+  clearPendingTimers();
   hideTyping();
   var body = document.getElementById('chatBody');
   var div = document.createElement('div');
   div.className = 'msg ai';
   div.id = 'streamingMsg';
-  div.innerHTML = '<div style="font-size:24px;flex-shrink:0;margin-top:4px">🤖</div><div><div class="bubble"></div><div class="time"></div></div>';
+  div.innerHTML = '<div style="font-size:24px;flex-shrink:0;margin-top:4px">🤖</div><div><div class="bubble" role="status" aria-live="polite"></div><div class="time"></div></div>';
   div.querySelector('.time').textContent = formatTime();
   body.appendChild(div);
   streamingEl = div;
   streamingText = '';
+  setPendingText('正在处理您的问题…');
+  pendingTimers.push(setTimeout(function(){ setPendingText('仍在处理，请稍候…'); }, 8000));
+  pendingTimers.push(setTimeout(function(){ setPendingText('问题较复杂，正在继续处理…'); }, 25000));
   scrollToBottom();
 }
 
 function appendStreamChunk(chunk){
+  if (!chunk) return;
   if (!streamingEl) {
     startStreaming();
   }
+  if (chunk) clearPendingTimers();
   streamingText += chunk;
   streamingEl.querySelector('.bubble').textContent = streamingText;
   scrollToBottom();
 }
 
 function endStreaming(fullText){
+  clearPendingTimers();
   if (streamingEl) {
     if (fullText) {
       streamingText = fullText;
       streamingEl.querySelector('.bubble').textContent = fullText;
+    }
+    if (!streamingText) {
+      streamingEl.remove();
+      streamingEl = null;
+      addSystemMessage('暂时没有收到回复，请重试。');
+      return;
     }
     streamingEl.id = '';
     streamingEl = null;
@@ -874,6 +903,7 @@ function endStreaming(fullText){
 
 function cancelStreaming(){
   // 取消流式输出（不 postToParent）
+  clearPendingTimers();
   if (streamingEl) {
     streamingEl.remove();
     streamingEl = null;
@@ -987,12 +1017,12 @@ function sendMessage(){
   addUserMessage(text);
   input.value = '';
   autoResize(input);
-  startStreaming();  // P2-1：流式输出，立即显示空气泡
+  startStreaming();  // 立即显示等待状态，首个正文片段到达后替换
 
   try {
     ws.send(JSON.stringify({type:'chat', msg:text}));
   } catch(e) {
-    endStreaming('发送失败，请重试');
+    cancelStreaming();
     addSystemMessage('发送失败：' + e.message);
   }
 }

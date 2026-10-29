@@ -17,10 +17,22 @@ logger = logging.getLogger("agent")
 async def _record_usage_after_chat(request, conn, tenant_id: str, thread_id: str, messages):
     """对话完成后统一记录 token 用量：模型名/来源/单价一次获取（共享 300s 配置缓存），
     费用按发生时单价快照（价格调整不影响历史账单）"""
-    in_cache, in_miss, out_price = await current_chat_prices(request.app, tenant_id)
+    override = next((getattr(message, "response_metadata", {}) or {}
+                     for message in reversed(messages or [])
+                     if (getattr(message, "response_metadata", {}) or {}).get("model_override")), None)
+    if override:
+        # This graph may use a different platform model than the tenant's configured
+        # model. Keep the token count, but never apply another model's tariff.
+        in_cache = in_miss = out_price = 0.0
+        model_name = str(override.get("model_name") or "")
+        source = str(override.get("model_source") or "platform")
+    else:
+        in_cache, in_miss, out_price = await current_chat_prices(request.app, tenant_id)
+        model_name = await current_model_name(request.app, tenant_id)
+        source = await current_model_source(request.app, tenant_id)
     await record_token_usage(conn, tenant_id, thread_id, messages,
-                             fallback_model=await current_model_name(request.app, tenant_id),
-                             source=await current_model_source(request.app, tenant_id),
+                             fallback_model=model_name,
+                             source=source,
                              chat_input_cache_price=in_cache, chat_input_price=in_miss,
                              chat_output_price=out_price)
     usage = extract_usage_metadata(messages)

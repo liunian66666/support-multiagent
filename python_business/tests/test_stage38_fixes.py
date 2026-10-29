@@ -1,16 +1,16 @@
-"""阶段 3-8：补齐「照抄 Go 的缺陷」回归测试。
+"""阶段 3-8：补齐历史缺陷回归测试。
 
-这批修复全部是**有意偏离 Go**：Go 侧仍然带着缺陷，FastAPI 侧修掉。
-因此每一条都同时断言「修后的正确行为」与「偏离点」，方便 Go 下线时核对清单。
+这批修复全部是**有意修正历史行为**：历史实现仍有缺陷，FastAPI 侧修掉。
+因此每一条都同时断言「修后的正确行为」与「偏离点」，方便后续核对兼容清单。
 
 覆盖：
 1. 掩码回填：长 Key 的掩码是 "..." + 后4位（不含星号），曾被当真 Key 写库
-2. 客户列表 message_count 恒 0（Go GORM 列名不匹配）
+2. 客户列表 message_count 恒 0（历史实现列名不匹配）
 3. 会话列表 handoff=1 时 total 不含 HAVING 过滤
 4. 提取规则先删后校验 → 改为先校验后落库
 5. 关闭工单的 old_status 写死 Handling → 取真实状态
 6. 角色 code 不可指定 → 放开请求体 code（限长 32）
-7. 看板 satisfaction_rate：Go 无评价时 Scan NULL 报错，Python 已免疫
+7. 看板 satisfaction_rate：历史实现无评价时 Scan NULL 报错，Python 已免疫
 """
 
 import hashlib
@@ -362,7 +362,7 @@ class FixesTest(unittest.TestCase):
     # ---------- ⑦ 看板 satisfaction_rate ----------
 
     def test_dashboard_satisfaction_rate_null_safe(self):
-        """Go 侧此场景 Scan NULL 到 float64 会直接报错；Python 必须返回 0.0。"""
+        """历史实现此场景 Scan NULL 到 float64 会直接报错；Python 必须返回 0.0。"""
         overview = {"satisfaction_rate": None}
         value = float(overview["satisfaction_rate"]) \
             if overview.get("satisfaction_rate") is not None else 0.0

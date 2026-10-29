@@ -321,14 +321,12 @@ async def test_summary_channel_cannot_license_an_unverified_order_id() -> None:
     assert "ORD-8888" not in cited.answer, cited.answer
     assert "引用了本轮未经业务接口核验归属的订单号" in cited.review_issues, cited.review_issues
 
-    # 分支一之二：**只复述单号、不断言任何状态**也一样被拦。这一条钉的是"当前实现怎么选的"，
-    # 不是"这选择一定对"——报告 §6f 把"复述客户自己给过的标识符该不该算越权"留在了产品决策上，
-    # 真实模型臂里 4 例自我消音就是这条规则的代价。将来若要放宽，这个断言必须一起改。
+    # 用户已确认可有限复述同一会话中自己提供的单号；不能由此断言归属或订单状态。
     model.supervisor_script[:] = [
-        AIMessage(content="您最开始提到的单号是 ORD-8888。", usage_metadata=USAGE)]
+        AIMessage(content="您最开始提到的单号是 ORD-8888；尚未核验订单归属。", usage_metadata=USAGE)]
     restated = await service.run_turn(TENANT, thread, "我最早说的那个单号是多少？", turn_id="M9b")
-    assert "ORD-8888" not in restated.answer, restated.answer
-    assert "引用了本轮未经业务接口核验归属的订单号" in restated.review_issues, restated.review_issues
+    assert restated.outcome == "answered", restated.review_issues
+    assert "ORD-8888" in restated.answer and "未核验" in restated.answer
 
     # 对照组：本轮真的通过业务接口核验了自己的单号 → 同一个线程、同样的措辞必须放行
     model.supervisor_script[:] = [

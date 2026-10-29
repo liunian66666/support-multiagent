@@ -87,13 +87,14 @@ class AgentInternalMigrationTest(unittest.TestCase):
             )
             self.assertEqual(response.status_code, 200)
             self.assertEqual(save.call_args.args[1],
-                             ("t_demo", "t_demo:buyer:session", "safe"))
+                             ("t_demo", "t_demo:buyer:session", "safe", 0))
 
     def test_summary_candidates_keep_tenant_in_message_lookup(self):
         with patch_business(main, "many", side_effect=[
-            [{"thread_id": "t_demo:buyer:session", "tenant_id": "t_demo"}],
-            [{"role": "ai", "content": "reply"},
-             {"role": "user", "content": "question"}],
+            [{"thread_id": "t_demo:buyer:session", "tenant_id": "t_demo",
+              "watermark": 0, "old_summary": ""}],
+            [{"id": 1, "role": "user", "content": "question"},
+             {"id": 2, "role": "ai", "content": "reply"}],
         ]) as query:
             response = self.client.get(
                 "/api/agent/session-summaries/pending", headers=self.headers,
@@ -103,7 +104,7 @@ class AgentInternalMigrationTest(unittest.TestCase):
             self.assertEqual(response.json()["data"][0]["messages"][0]["role"],
                              "user")
             self.assertEqual(query.call_args.args[1],
-                             ("t_demo:buyer:session", "t_demo"))
+                             ("t_demo:buyer:session", "t_demo", 0))
 
 
 if __name__ == "__main__":

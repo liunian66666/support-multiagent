@@ -27,17 +27,27 @@ def _app_with(saver: InMemorySaver) -> SimpleNamespace:
     return SimpleNamespace(state=SimpleNamespace(checkpointer=saver))
 
 
-def test_rollout_flag_matrix(monkeypatch) -> None:
-    """Pending approvals and an unset flag must both keep the old graph in charge."""
-    monkeypatch.setenv(cutover.ENV_FLAG, "off")
-    assert cutover.enabled() is False
-    monkeypatch.setenv(cutover.ENV_FLAG, "on")
+def test_only_unfinished_approval_uses_historical_graph(monkeypatch) -> None:
     assert cutover.enabled() is True
-    assert cutover.enabled(pending_ticket=True) is False, "unfinished HITL thread must not switch"
-    monkeypatch.setenv(cutover.ENV_FLAG, "1")
-    assert cutover.enabled() is True
-    monkeypatch.delenv(cutover.ENV_FLAG, raising=False)
-    assert cutover.enabled() is False, "default off: deploying the code must not change traffic"
+    assert cutover.enabled(pending_ticket=True) is False
+    monkeypatch.setenv("FOUR_AGENT_GRAPH", "off")
+    assert cutover.enabled() is True, "obsolete environment rollback must not work"
+
+
+def test_rollout_policy_has_exactly_one_definition() -> None:
+    """``four_agent.enabled`` must delegate to ``agent/rollout.py``, not re-implement it.
+
+    Two copies of a five-line predicate is how a deployment runs one graph while its own
+    health check reports the other. Checked by reading the app-side source, because
+    importing ``app`` is not available in this standalone suite; the container-side suite
+    (``python_agent/tests/test_four_agent_api.py``) asserts the same thing behaviourally.
+    """
+    from pathlib import Path
+
+    root = Path(cutover.__file__).resolve().parents[1]
+    text = (root / "python_agent/app/services/four_agent.py").read_text(encoding="utf-8")
+    assert "from agent.rollout import graph_enabled" in text
+    assert "os.getenv" not in text, "no second copy of the env lookup"
 
 
 @pytest.mark.asyncio
@@ -61,7 +71,32 @@ async def test_run_turn_returns_the_two_keys_chat_py_reads(monkeypatch) -> None:
     # chat.py does state.get("model_messages", []) for usage accounting: the key must be
     # present and list-like, otherwise the usage recorder silently bills nothing.
     assert isinstance(state.get("model_messages"), list)
+    assert state["model_messages"]
+    assert state["model_messages"][0].usage_metadata["total_tokens"] == state["usage"]["total_tokens"]
     assert state["outcome"] in {"answered", "answered_unchecked", "review_blocked", "no_result"}
+
+
+@pytest.mark.asyncio
+async def test_cutover_replay_does_not_bill_or_call_model_twice(monkeypatch) -> None:
+    deps, model, _events, _captured = offline_deps(model=ScriptedSupportModel())
+
+    async def deps_for_tenant(_tenant_id):
+        return deps
+
+    stub = SupportService(deps_for_tenant, checkpointer=InMemorySaver())
+
+    async def fake_service(_app, _tenant_id):
+        return stub
+
+    monkeypatch.setattr(cutover, "_service_for", fake_service)
+    first = await cutover.run_turn(_app_with(None), TENANT, THREAD, "你好", "stable-turn")
+    before = len(model.recorded)
+    replay = await cutover.run_turn(_app_with(None), TENANT, THREAD, "你好", "stable-turn")
+
+    assert first["answer"] == replay["answer"]
+    assert replay["_replayed"] is True
+    assert replay["model_messages"] == first["model_messages"]
+    assert len(model.recorded) == before
 
 
 @pytest.mark.asyncio

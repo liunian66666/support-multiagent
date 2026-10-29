@@ -32,7 +32,7 @@ async def session_cleanup_loop(app: FastAPI):
         except Exception:
             logger.exception("periodic session cleanup failed")
         finally:
-            # [ours] S6：只释放自己持有的锁（旧实现未抢锁也会 delete，误删他人锁）
+            # [ours] S6：只释放自己持有的锁（旧逻辑未抢锁也会 delete，误删他人锁）
             await _release_cleanup_lock(app, cleanup_token)
         # P2-2：同时清理过期的知识库检索缓存
         try:

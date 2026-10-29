@@ -35,3 +35,5 @@ def many(sql, args=()):
 def write(sql, args):
     with db() as conn, conn.cursor() as cur:
         cur.execute(sql, args)
+        # [ours] 返回受影响行数，供条件 UPDATE 做 CAS 判定；既有调用方均忽略返回值，零行为影响。
+        return cur.rowcount

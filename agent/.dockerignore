@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+tests/
+evaluation/
+deploy/
+demo.py
+fakes.py
+*.md

@@ -4,7 +4,7 @@
 旧模式缺陷：两端都用固定 value "1"，实例 A 的锁 TTL 到期被 B 抢占后，
 A 完成时 delete(lock_key) 会删掉 B 的锁 → 双实例并跑。
 本模块：acquire 写入随机 token；release 用 Lua 比对持有者后再删（原子）。
-语义与旧实现保持一致的降级面：redis 缺失/异常一律"拿不到锁"（worker 跳过本轮），
+语义与既有行为保持一致的降级面：redis 缺失/异常一律"拿不到锁"（worker 跳过本轮），
 release 失败静默（锁随 TTL 自然过期）。
 """
 import secrets

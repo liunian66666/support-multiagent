@@ -1,4 +1,4 @@
-"""Small Prometheus text exporter for the Go gateway metric names."""
+"""Small Prometheus text exporter for the business-layer metric names."""
 
 import threading
 from collections import defaultdict

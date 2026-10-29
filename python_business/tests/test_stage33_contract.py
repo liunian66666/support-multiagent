@@ -1,7 +1,7 @@
 """Stage 3-3 contract tests: ticket domain (list/detail/messages/logs/read + 状态流转).
 
 重点锁三件事：
-1. 错误分支的 code 与文案（Go 大量用 body code 表达业务失败）
+1. 错误分支的 code 与文案（历史实现大量用 body code 表达业务失败）
 2. WS 推送与 Agent resume 的调用点、调用参数（跨进程后最容易漏掉的部分）
 3. 事务外可观察的副作用序列：工单状态、处理量、操作日志、系统消息
 """
@@ -59,6 +59,8 @@ class Stage33Test(unittest.TestCase):
         self.posts = []
         self.ws_messages = []
         self.resume_reply = "已接管，您好"
+        # [ours] CAS 抢锁结果：接管 SQL 带 WHERE status=0，命中返回 1、抢锁失败返回 0
+        self.claim_fails = False
 
         def one(sql, args=()):
             self.queries.append((sql, args))
@@ -112,11 +114,17 @@ class Stage33Test(unittest.TestCase):
                 response.json = lambda: {"code": 0}
             return response
 
+        def fake_write(sql, args):
+            """[ours] 接管 CAS 靠 write() 的 rowcount 判定抢锁结果；其余写沿用「记录即可」。"""
+            self.writes.append((sql, args))
+            if "WHERE id = %s AND status = %s" in sql:
+                return 0 if self.claim_fails else 1
+            return 1
+
         self.patches = (
             patch_business(main, "one", side_effect=one),
             patch_business(main, "many", side_effect=many),
-            patch_business(main, "write",
-                         side_effect=lambda sql, args: self.writes.append((sql, args))),
+            patch_business(main, "write", side_effect=fake_write),
             patch_business(main, "cache", return_value=self.redis),
             patch.object(main.httpx, "post", side_effect=post),
             patch.object(main.ws_hub, "broadcast_from_thread",
@@ -145,7 +153,7 @@ class Stage33Test(unittest.TestCase):
         return [w for w in self.writes if needle in w[0]]
 
     def business_writes(self):
-        """排除审计日志：Go 的 AuditMiddleware 挂在 StatusCode 内层，
+        """排除审计日志：审计中间件挂在状态码中间件内层，
         读到的 status 恒为 200，所以软失败（body code 报错）的写请求照样落审计。
         断言「没有业务写」时必须把 audit_logs 摘出去。"""
         return [w for w in self.writes if "INSERT INTO audit_logs" not in w[0]]
@@ -200,7 +208,7 @@ class Stage33Test(unittest.TestCase):
         self.assertEqual(set(row), {"id", "thread_id", "ticket_no", "user_id", "reason",
                                     "status", "priority", "tenant_id", "handler_uid",
                                     "handler_name", "created_at", "unread_count"})
-        self.assertNotIn("closed_at", row)     # Go: *time.Time + omitempty
+        self.assertNotIn("closed_at", row)     # 时间字段为 NULL 时省略
         self.assertEqual(row["unread_count"], 2)
         self.assertEqual(row["created_at"], "2026-10-20T12:58:32.477+08:00")
 
@@ -246,7 +254,7 @@ class Stage33Test(unittest.TestCase):
                           "created_at": datetime(2026, 10, 20, 12, 0, 0)}]
         data = self.client.get("/api/admin/tickets/7/messages", headers=self.auth()).json()["data"]
         self.assertEqual([m["content"] for m in data], ["前", "后"])
-        self.assertEqual(data[0]["msg_type"], "")     # Go 合并时未带 MsgType
+        self.assertEqual(data[0]["msg_type"], "")     # 历史实现合并时未带 MsgType
         self.assertEqual(data[1]["msg_type"], "text")
         self.assertNotIn("ticket_id", data[0])
 
@@ -259,7 +267,7 @@ class Stage33Test(unittest.TestCase):
     # ---------- 接管 ----------
 
     def test_takeover_pending_runs_full_sequence(self):
-        # uid=0 是 app_key 管理员：Go 的 AdjustHandlingCount 对 uid==0 直接 return，
+        # uid=0 是 app_key 管理员：历史实现的 AdjustHandlingCount 对 uid==0 直接 return，
         # 所以这里必须用子账号令牌才能真正覆盖「处理量 +1 并联动状态」
         self.user = {"id": 5, "tenant_id": "t_demo", "status": 1}
         self.perms = {"ticket:handle"}
@@ -271,8 +279,10 @@ class Stage33Test(unittest.TestCase):
         self.assertEqual(resume[1], {"thread_id": THREAD, "confirmed": True,
                                      "wait_time": 30, "ticket_id": "TK-abc12345"})
         # handler_name 走 currentHandlerName：子账号昵称
+        # [ours] CAS：抢锁 UPDATE 追加 AND status = 0 谓词，args 末位是待匹配的原状态
         self.assertEqual(self.writes_matching("UPDATE tickets SET handler_uid")[0][1],
-                         (5, "小王", 7))
+                         (5, "小王", 7, 0))
+        self.assertEqual(len(self.resumes()), 1)   # 抢锁成功只唤醒 Agent 一次
         # 处理量 1 + 1 = 2，未达上限 3 → 保持在线(1)
         status_update = self.writes_matching("UPDATE agent_status")[0]
         self.assertIn("UPDATE agent_status", status_update[0])
@@ -295,7 +305,7 @@ class Stage33Test(unittest.TestCase):
                                     headers=self.auth(), json={})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.writes_matching("UPDATE tickets SET handler_uid")[0][1],
-                         (0, "t_demo", 7))
+                         (0, "t_demo", 7, 0))
         self.assertEqual(self.writes_matching("UPDATE agent_status"), [])
         self.assertEqual(self.writes_matching("INSERT INTO ticket_logs")[0][1][8], "t_demo")
 
@@ -333,7 +343,29 @@ class Stage33Test(unittest.TestCase):
                                     headers=self.auth(uid=5), json={})
         self.assertEqual(response.json()["msg"], "该工单已在人工接管中")
         self.assertEqual(self.resumes(), [])
-        self.assertEqual(self.business_writes(), [])   # Go 在这个分支直接返回，不落业务写
+        self.assertEqual(self.business_writes(), [])   # 历史实现在这个分支直接返回，不落业务写
+
+    def test_takeover_cas_loser_returns_409_without_side_effects(self):
+        # [ours] 并发接管：抢锁方 UPDATE ... AND status=0 命中 0 行时，本方不得
+        # resume、不得改状态/计数/日志/系统消息/广播，也不得落审计（deny 走 denied 标记）。
+        # 抢锁语句本身是一次写尝试，出现它是预期的；断言的是「除抢锁外零副作用」。
+        self.user = {"id": 5, "tenant_id": "t_demo", "status": 1}
+        self.perms = {"ticket:handle"}
+        self.claim_fails = True
+        response = self.client.post("/api/admin/tickets/7/takeover",
+                                    headers=self.auth(uid=5), json={"wait_time": 30})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json(), {"code": 409, "msg": "该工单已被其他客服接管"})
+        self.assertEqual(self.resumes(), [])
+        self.assertEqual(self.writes_matching("UPDATE tickets SET status"), [])
+        self.assertEqual(self.writes_matching("UPDATE agent_status"), [])
+        self.assertEqual(self.writes_matching("INSERT INTO ticket_logs"), [])
+        self.assertEqual(self.writes_matching("INSERT INTO messages"), [])
+        self.assertEqual(self.writes_matching("INSERT INTO audit_logs"), [])
+        self.assertEqual(self.business_writes(),
+                         [("UPDATE tickets SET handler_uid = %s, handler_name = %s "
+                           "WHERE id = %s AND status = %s", (5, "小王", 7, 0))])
+        self.assertEqual(self.broadcasts(), [])
 
     # ---------- 回复 ----------
 
@@ -383,7 +415,7 @@ class Stage33Test(unittest.TestCase):
         self.assertEqual(response.json()["msg"], "已关闭")
         self.assertEqual(self.writes_matching("UPDATE tickets SET status")[0][1], (3, 7))
         log = self.writes_matching("INSERT INTO ticket_logs")[0][1]
-        self.assertEqual(log[3:5], ("close", 1))     # Go 这里 old_status 硬编码 1
+        self.assertEqual(log[3:5], ("close", 1))     # 历史实现这里 old_status 硬编码 1
         self.assertEqual(self.broadcasts()[0][1]["payload"]["type"], "human_notice")
 
     def test_close_by_other_handler_is_forbidden(self):
@@ -404,7 +436,7 @@ class Stage33Test(unittest.TestCase):
                 self.assertEqual(response.status_code, 400)
                 self.assertEqual(response.json()["msg"], "参数错误：priority 必填")
         self.assertEqual(self.business_writes(), [])
-        # 但审计照写：AuditMiddleware 在 StatusCode 内层，读到的是 200
+        # 但审计照写：审计中间件在状态码中间件内层，读到的是 200
         self.assertEqual(len([w for w in self.writes if "INSERT INTO audit_logs" in w[0]]), 4)
 
     def test_priority_updates_and_logs(self):
@@ -458,7 +490,7 @@ class Stage33Test(unittest.TestCase):
         self.assertEqual(update, (9, "小李", 1, 7))
         log = self.writes_matching("INSERT INTO ticket_logs")[0][1]
         self.assertEqual(log[3:5], ("transfer", 0))
-        # Go 除中间件自动审计外还手写一条带 detail 的审计
+        # 历史实现除中间件自动审计外还手写一条带 detail 的审计
         audits = [w for w in self.writes if "INSERT INTO audit_logs" in w[0]]
         explicit = [a for a in audits if a[1][6]]
         self.assertEqual(len(explicit), 1)

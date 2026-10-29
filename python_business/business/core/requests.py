@@ -1,4 +1,4 @@
-"""Request parsing compatible with the former Go JSON binder."""
+"""Request parsing for the business-layer JSON API."""
 
 import json
 

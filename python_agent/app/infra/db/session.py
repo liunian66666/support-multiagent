@@ -107,7 +107,7 @@ _CLEANUP_LOCK_TTL = 300  # 秒，超时自动释放防死锁
 async def _acquire_cleanup_lock(app) -> str | None:
     """[ours] S6 治理：持有者 token 锁（Lua 校验后再删）；Redis 不可用→本轮不执行
 
-    返回 token 供 release 校验；fail-closed 语义与旧实现一致。"""
+    返回 token 供 release 校验；fail-closed 语义与既有行为一致。"""
     from app.infra import redis_lock
     rc = getattr(getattr(app, "state", None), "redis_client", None)
     if rc is None:

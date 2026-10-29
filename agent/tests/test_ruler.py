@@ -46,6 +46,12 @@ def test_whitespace_emphasis_does_not_change_the_verdict() -> None:
     assert spaced["literal_pass"] is True, spaced["required_missing"]
 
 
+def test_empty_answer_is_not_a_pass_when_gold_has_no_required_terms() -> None:
+    case = {"required": [], "forbidden": []}
+    assert literal_score("", case)["literal_pass"] is False
+    assert literal_score("  \n", case)["literal_pass"] is False
+
+
 @pytest.mark.skipif(BASELINE_MISSING, reason="frozen off-baseline files not present in this checkout")
 def test_frozen_off_baseline_reproduces_the_committed_checklist() -> None:
     """Scoring the frozen answers must give the committed 33/36 with zero per-case flips."""

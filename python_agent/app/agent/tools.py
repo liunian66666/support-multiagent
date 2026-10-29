@@ -13,7 +13,7 @@ from langgraph.types import interrupt
 from app.chat.order import (ORDER_FORBIDDEN, ORDER_NOT_FOUND, ORDER_OK,
                             ORDER_UNAUTHENTICATED, ORDER_UNAVAILABLE,
                             ORDER_UNVERIFIED)
-from app.infra.cache import _kb_cache_get, _kb_cache_set
+from app.infra.cache import _kb_cache_get_entry, _kb_cache_set
 from app.infra.config import INTERNAL_API_TOKEN, ORDER_BUSINESS_API
 from app.kb.evidence import approved_evidence
 from app.infra.db_pool import _pool_conn
@@ -93,11 +93,14 @@ async def search_kb(query: str) -> str:
     thread_id = (_thread_var.get() if _thread_var is not None else "") or ""
 
     # P2-2：先查缓存
-    cached = _kb_cache_get(tid, query)
+    cached = _kb_cache_get_entry(tid, query)
     if cached is not None:
+        result, evidence_ids = cached
         trace.record("tool", "search_kb", cache="hit")
+        trace.record("evidence", "search_kb", count=len(evidence_ids),
+                     evidence_ids=list(evidence_ids))
         _logger.debug(f"[KB Cache HIT] tenant={tid}, query={query[:30]}")
-        return cached
+        return result
 
     retriever = _app.state.tenant_retrievers.get(tid)
     if retriever is None:
@@ -134,18 +137,19 @@ async def search_kb(query: str) -> str:
     await _record_kb_hits(tid, thread_id, query, docs)
     # [ours] S3 提炼需要"用户会怎么问"的触发词面：检索词截断后随证据事件
     # 入 trace（检索词本就明文落 kb_hits 表，无新增泄露面；截断 60 字防长文入事件）
+    evidence_ids = [str((getattr(d, "metadata", {}) or {}).get("chunk_id", ""))
+                    for d in docs[:3]]
     trace.record("evidence", "search_kb", count=len(docs),
                  query=(query or "")[:60],
-                 evidence_ids=[str((getattr(d, "metadata", {}) or {}).get("chunk_id", ""))
-                               for d in docs[:3]])
+                 evidence_ids=evidence_ids)
 
     # P2-2：写入缓存
-    _kb_cache_set(tid, query, result)
+    _kb_cache_set(tid, query, result, evidence_ids)
     _logger.debug(f"[KB Cache MISS] tenant={tid}, query={query[:30]}, cached")
     return result
 
 
-# [ours] 新增：订单只读查询——经 Go 内部接口 /api/agent/order，身份取自服务端会话
+# [ours] 新增：订单只读查询——经 业务层内部接口 /api/agent/order，身份取自服务端会话
 # （上游原实现直连 /api/business/order，仅凭 order_id 查询，无归属校验）
 @dataclass(frozen=True)
 class OrderLookup:
@@ -155,9 +159,9 @@ class OrderLookup:
 
 
 async def lookup_order(order_id: str) -> OrderLookup:
-    """Ask the Go business adapter using the trusted tenant/session context.
+    """Ask the business adapter using the trusted tenant/session context.
 
-    Go 的 StatusCode 中间件会把 body.code 映射到 HTTP status（code=403→HTTP 403），
+    业务层的状态码中间件会把 body.code 映射到 HTTP status（code=403→HTTP 403），
     所以 HTTP 4xx 是正常的业务响应（订单不存在/不属于您），不是请求失败。
     仅 HTTP 5xx 或网络异常视为系统不可用。
     """
@@ -177,9 +181,11 @@ async def lookup_order(order_id: str) -> OrderLookup:
         code = data.get("code")
         if code == 0:
             d = data.get("data") or {}
+            amount = d.get("amount")
+            amount_text = f"{amount} 元" if amount is not None and str(amount).strip() else "未知"
             return OrderLookup(ORDER_OK, (
                 f"订单 {d.get('order_id','')} 状态：{d.get('status','未知')}；"
-                f"商品：{d.get('item','')}；金额：{d.get('amount','')}；"
+                f"商品：{d.get('item','')}；金额：{amount_text}；"
                 f"下单日期：{d.get('create_date','')}。"
             ))
         if code == 404:

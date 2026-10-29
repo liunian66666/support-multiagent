@@ -79,6 +79,7 @@ class OrderLookupCodeTest(unittest.IsolatedAsyncioTestCase):
             "amount": "799", "create_date": "2024-01-15"}}))
         self.assertEqual(r.code, ORDER_OK)
         self.assertIn("已发货", r.text)
+        self.assertIn("金额：799 元", r.text)
 
     async def test_not_found_does_not_become_handoff(self):
         r = await self._lookup(_Resp(404, {"code": 404}))

@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 def _tenant_scope(request: Request) -> str:
-    """Prompt 管理租户作用域：Go 透传 __platform__（平台管理员管理平台级全局 Prompt）→ 全局 tenant_id=''"""
+    """Prompt 管理租户作用域：业务层透传 __platform__（平台管理员管理平台级全局 Prompt）→ 全局 tenant_id=''"""
     tid = tenant_from_request(request)
     return "" if tid == "__platform__" else tid
 

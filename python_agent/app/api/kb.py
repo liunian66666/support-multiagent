@@ -3,7 +3,7 @@
 上传/重索引采用「落盘 + DB 登记 + Redis 队列异步索引」：
 - 上传：提取文本 → 原文件落盘到共享卷（nginx 静态服务）→ DB 记 status=0 → 入队
 - 后台 worker（app/workers/kb_index.py）消费队列：分片 → embedding → Qdrant → status=1
-- 下载/预览：前端直接用 nginx 静态 file_url，不再经 Go/Python 查库取 content
+- 下载/预览：前端直接用 nginx 静态 file_url，不再经业务层查库取 content
 """
 import asyncio
 import logging

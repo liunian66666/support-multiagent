@@ -29,7 +29,7 @@ QDRANT_COLLECTION_NAME = "customer_service_knowledge"
 BUSINESS_API = os.getenv("BUSINESS_API", "http://business:8001")
 ORDER_BUSINESS_API = os.getenv("ORDER_BUSINESS_API", BUSINESS_API)
 
-# 内部接口鉴权 Token：调用 Go 后端 /api/agent/* 接口时必须携带
+# 内部接口鉴权 Token：调用 业务层 /api/agent/* 接口时必须携带
 INTERNAL_API_TOKEN = os.getenv("INTERNAL_API_TOKEN", "")
 
 # ====================== 模型配置 ======================

@@ -14,7 +14,7 @@ from business.infra.storage import many, one, write
 router = APIRouter()
 
 def to_int(value, default=None):
-    """宽松解析：对齐 Go 的 strconv.Atoi 忽略错误语义（筛选参数非法即视为未传）。"""
+    """宽松解析：整数解析忽略错误（筛选参数非法即视为未传）。"""
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -22,10 +22,10 @@ def to_int(value, default=None):
 
 
 def go_parse_uint(value):
-    """对齐 Go `strconv.ParseUint(v, 10, 64)` 的忽略错误语义：只认纯十进制数字，其余取 0。
+    """只认纯十进制数字，其余取 0。
 
-    注意与 int() 的差别：Go 不接受前导/尾随空格、正负号、小数点，
-    `/api/admin/members/ 5` 这类路径在 Go 里一律落到 id=0 分支。
+    注意与 int() 的差别：不接受前导/尾随空格、正负号、小数点，
+    `/api/admin/members/ 5` 这类路径一律落到 id=0 分支。
     """
     text = value if isinstance(value, str) else ""
     return int(text) if re.fullmatch(r"[0-9]{1,20}", text or "") else 0

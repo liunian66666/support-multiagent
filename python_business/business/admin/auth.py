@@ -27,7 +27,7 @@ router = APIRouter()
 
 # ==================== 阶段 3：管理端（鉴权基座 + 评价/话术库） ====================
 # 管理令牌与客户令牌同一签名格式，差别只在 kind：客户令牌 kind="customer"，
-# 管理/子账号令牌 kind 缺省。这里沿用 Go VerifyTokenFull 的类型边界：
+# 管理/子账号令牌 kind 缺省。这里沿用令牌校验的类型边界：
 # kind 非空一律拒绝，绝不做「空 kind 兼容」猜测 —— 否则客户令牌会以 uid=0 冒充管理员。
 
 BLACKLIST_PREFIX = "cs:tok:bl:"
@@ -68,8 +68,8 @@ def decode_admin_token(token):
         deny(401, "令牌无效或已过期")
     kind = claims.get("kind") or ""
     if kind:
-        # 对齐 Go VerifyTokenFull：管理令牌 kind 必须缺省，任何非空 kind 一律视为无效令牌，
-        # 且 Go 只回统一文案「令牌无效或已过期」（不区分 customer / 未知类型），
+        # 行为约定：管理令牌 kind 必须缺省，任何非空 kind 一律视为无效令牌，
+        # 且统一回文案「令牌无效或已过期」（不区分 customer / 未知类型），
         # 这里同样不细分 —— 文案差异会让双端比对出现假阳性。
         deny(401, "令牌无效或已过期")
     tid, uid, exp = claims.get("tid"), claims.get("uid") or 0, claims.get("exp")
@@ -120,16 +120,16 @@ def user_perms(user_id):
 
 
 def require_perm(perm, *, biz_scope=True):
-    """对齐 Go RequirePerm + BusinessOnly。
+    """权限校验 + 业务侧限制。
 
     - uid=0：app_key 管理员，隐式全权限
     - uid>0：账号状态正常且角色含该权限码
-    - biz_scope=True：平台管理员拒绝访问（Go 的 biz 组语义）；平台级端点传 False
+    - biz_scope=True：平台管理员拒绝访问（租户业务分组语义）；平台级端点传 False
 
-    注意 Go `BusinessOnly()` 的白名单：平台管理员访问 `/api/admin/prompts` 前缀的路径
+    注意业务侧限制的白名单：平台管理员访问 `/api/admin/prompts` 前缀的路径
     会被**放行**（源码注释「平台管理员仅可访问平台级 Prompt 管理接口」）。这不是笔误 ——
     平台级 Prompt 存在 `tenant_id=''` 的全局行，只有平台管理员能管，若一并 403，
-    `ProxyPrompt` 里 `?scope=platform` 的整条分支就不可达了。
+    `Prompt 代理` 里 `?scope=platform` 的整条分支就不可达了。
     """
     def guard(request: Request,
               admin: Admin = Depends(current_admin)) -> Admin:
@@ -167,9 +167,9 @@ AUDIT_OBJECT_TYPES = {
 
 
 def audit_object_type(path):
-    """逐字对齐 Go `auditObjectType`：取首段、去掉一个尾缀 s，命中白名单否则 other。
+    """行为约定：取首段、去掉一个尾缀 s，命中白名单否则 other。
 
-    注意 Go 的去尾 s 是「去掉一个 s」而非英语单数化，
+    注意去尾 s 是「去掉一个 s」而非英语单数化，
     因此 quick-replies → quick-replie、ratings → rating、agent-status → agent-statu，
     前两个里只有 ratings 恰好命中（但 ratings 没有写接口），quick-replies 落 other。
     """
@@ -180,7 +180,7 @@ def audit_object_type(path):
 
 
 def audit_object_id(request: Request):
-    """对齐 Go：优先 `:id` 路由参数，否则取路径最后一段。"""
+    """行为约定：优先 `:id` 路由参数，否则取路径最后一段。"""
     value = request.path_params.get("id")
     if value is not None and str(value):
         return str(value)
@@ -194,7 +194,7 @@ def client_ip(request: Request):
 
 
 def write_audit(admin, request, action, object_id, path, detail=""):
-    """对齐 Go `repository.WriteAuditLog`：best-effort，失败不影响主流程。"""
+    """行为约定：best-effort，失败不影响主流程。"""
     operator = admin.tenant_id
     if admin.user_id > 0:
         row = one("SELECT username FROM users WHERE id = %s LIMIT 1", (admin.user_id,))
@@ -209,7 +209,7 @@ def write_audit(admin, request, action, object_id, path, detail=""):
 
 
 def operator_name(admin):
-    """对齐 Go `currentOperator`：子账号记用户名；app_key 管理员记空串（历史约定）。"""
+    """行为约定：子账号记用户名；app_key 管理员记空串（历史约定）。"""
     if admin.user_id > 0:
         row = one("SELECT username FROM users WHERE id = %s LIMIT 1", (admin.user_id,))
         return (row["username"] or "") if row else ""
@@ -219,8 +219,8 @@ def operator_name(admin):
 def write_handler_audit(admin, request, action, object_type, object_id, detail):
     """handler 内手写的审计（object_type 由调用方指定，不按路径推导）。
 
-    Go 侧 RBAC/菜单/话术等 handler 除 AuditMiddleware 之外还会额外写一条带 detail 的审计，
-    两条都会落库 —— 这里同样双写，且 operator 语义取 currentOperator（uid=0 为空串）。
+    RBAC/菜单/话术等处理器除审计中间件自动记录外，还会额外写一条带 detail 的审计，
+    两条都会落库 —— 这里同样双写，operator 取当前操作人（uid=0 为空串）。
     """
     write(
         "INSERT INTO audit_logs (tenant_id, operator, user_id, action, object_type, "
@@ -230,8 +230,7 @@ def write_handler_audit(admin, request, action, object_type, object_id, detail):
     )
 
 
-# ==================== 阶段 3-10：认证域（Go /api/auth/* 剩余 6 条） ====================
-# 迁自 Go handler/auth.go + pkg/auth + pkg/crypto（docs/GO_RETIREMENT.md 步骤 2）：
+# ==================== 认证域路由（/api/auth/*） ====================
 #   GET  /api/auth/public-key   RSA 公钥下发（PKIX/SPKI PEM，前端加密 app_secret）
 #   POST /api/auth/token        app_key + app_secret 登录（encrypted=true 时 RSA-OAEP 解密）
 #   POST /api/auth/user-token   子账号登录（租户 + 用户名 + 密码）
@@ -239,34 +238,33 @@ def write_handler_audit(admin, request, action, object_type, object_id, detail):
 #   PUT  /api/auth/password     修改自己的登录密钥（需登录态）
 #   GET  /api/auth/tenants      公开租户列表（status=1 且非平台管理员）
 #
-# 四条并行期不变量（双端共存期间必须成立，任一破坏都会出现「一边登录一边 401」）：
-#   1. 令牌签发/验签算法与 Go 逐字节一致 —— signed_token 已被既有单测锁定
-#   2. 黑名单同一 Redis 键空间 cs:tok:bl: —— 双端互认登出/刷新吊销
-#   3. 登录限流同一 Redis 键空间 cs:login:fail: —— 防「一边锁完换一边试」
-#   4. RSA 私钥同一文件 —— compose 把 ./data 挂进 go 与 business 两个容器，
-#      任一端先启动都会生成/读到同一把密钥；只有同一把，前端加密的 secret 双端才解得开
+# 既有数据兼容不变量（已有令牌、黑名单与限流键必须继续可用）：
+#   1. 令牌签发/验签算法与既有格式逐字节一致 —— signed_token 已被既有单测锁定
+#   2. 黑名单沿用 Redis 键空间 cs:tok:bl: —— 登出/刷新吊销继续生效
+#   3. 登录限流沿用 Redis 键空间 cs:login:fail: —— 防跨入口绕过
+#   4. RSA 私钥沿用同一文件 —— 容器将 ./data 挂入业务层，重启后仍能解开既有密文
 #
-# 与客户令牌（kind="customer"）的边界沿用 Go VerifyTokenFull：管理令牌 kind 必须缺省。
+# 与客户令牌（kind="customer"）的边界：管理令牌 kind 必须缺省。
 
-# 对齐 Go config.yaml auth.token_ttl: "24h"（Go 无环境变量覆盖，这里留口子便于测试）
+# 管理令牌 TTL 默认 24 小时，可用 AUTH_TOKEN_TTL 覆盖（便于测试）
 ADMIN_TOKEN_TTL = int(os.getenv("AUTH_TOKEN_TTL", "86400"))
-# 对齐 Go main.go：RSA_PRIVATE_KEY_PATH 缺省 data/rsa_private.pem（容器内 /app/data）
+# RSA 私钥路径；缺省为容器内 /app/data/rsa_private.pem
 RSA_KEY_PATH = os.getenv("RSA_PRIVATE_KEY_PATH", "/app/data/rsa_private.pem")
 
-# 登录防爆破：对齐 Go pkg/auth/login_limiter.go（5 次 / 10 分钟，Redis fail-closed）
+# 登录防爆破：5 次 / 10 分钟，Redis fail-closed
 LOGIN_FAIL_PREFIX = "cs:login:fail:"
 LOGIN_MAX_FAILS = 5
 LOGIN_WINDOW = 600
 
 
 def go_minutes(seconds):
-    """Go time.Duration.Round(time.Minute).String() 的等价物（只可能是整分或 0）。"""
-    minutes = int((seconds + 30) // 60)          # Go Round：半数舍入到远侧
+    """时间取整的等价物（只可能是整分或 0）。"""
+    minutes = int((seconds + 30) // 60)          # 取整规则：半数舍入到远侧
     return "0s" if minutes <= 0 else f"{minutes}m0s"
 
 
 def check_login_allowed(key):
-    """对齐 Go auth.CheckLoginAllowed：返回 (allowed, wait_seconds)。
+    """行为约定：返回 (allowed, wait_seconds)。
 
     Redis 查询失败 → 拒绝（fail-closed：防爆破失效比拒绝一次登录更严重），不计失败。
     """
@@ -292,7 +290,7 @@ def check_login_allowed(key):
 
 
 def record_login_fail(key):
-    """对齐 Go auth.RecordLoginFail：INCR + 首次 EXPIRE（窗口 10 分钟）。"""
+    """行为约定：INCR + 首次 EXPIRE（窗口 10 分钟）。"""
     try:
         fails = cache().incr(LOGIN_FAIL_PREFIX + key)
         if fails == 1:
@@ -302,7 +300,7 @@ def record_login_fail(key):
 
 
 def clear_login_fails(key):
-    """对齐 Go auth.ClearLoginFails。"""
+    """清理登录失败记录。"""
     try:
         cache().delete(LOGIN_FAIL_PREFIX + key)
     except redis.RedisError:
@@ -310,10 +308,10 @@ def clear_login_fails(key):
 
 
 def write_auth_audit(tenant_id, operator, action, object_id, detail, ip, user_id=0):
-    """对齐 Go repository.WriteAuditLog（认证域专用）：best-effort，tenant_id 空 → system。
+    """行为约定：best-effort，tenant_id 空 → system。
 
-    登录/改密的审计 object_type 恒为 "auth"、object_id 由 Go handler 写死
-    （app_key / user / app_secret），不走 AuditMiddleware 的路径推断。
+    登录/改密的审计 object_type 恒为 "auth"、object_id 由处理器写死
+    （app_key / user / app_secret），不走审计中间件的路径推断。
     """
     write(
         "INSERT INTO audit_logs (tenant_id, operator, user_id, action, object_type, "
@@ -323,7 +321,7 @@ def write_auth_audit(tenant_id, operator, action, object_id, detail, ip, user_id
     )
 
 
-# ---------- RSA（对齐 go_service/internal/pkg/crypto/rsa.go） ----------
+# ---------- RSA 密钥与加解密 ----------
 
 _RSA_LOCK = threading.Lock()
 _RSA_KEY = None
@@ -332,9 +330,8 @@ _RSA_KEY = None
 def rsa_private_key():
     """懒加载 RSA 私钥；文件不存在则生成 2048 位并以 PKCS1 PEM 持久化。
 
-    与 Go 共用同一路径（compose 将 ./data 挂入两个容器）：两边都遵循
-    「文件在则加载、不在则生成」，先启动的一端落盘，后启动的一端读取同一把。
-    任何解析/IO 失败都向上抛，由调用方转 500（Go 的 GetRSAKey 同样返回 err）。
+    容器将 ./data 挂入业务层，重启后读取同一把密钥；文件在则加载、不在则生成。
+    任何解析/IO 失败都向上抛，由调用方转 500。
     """
     global _RSA_KEY
     with _RSA_LOCK:
@@ -354,7 +351,7 @@ def rsa_private_key():
                 os.makedirs(directory, exist_ok=True)
             pem = _RSA_KEY.private_bytes(
                 serialization.Encoding.PEM,
-                serialization.PrivateFormat.TraditionalOpenSSL,   # PKCS1 "RSA PRIVATE KEY"，Go 同格式
+                serialization.PrivateFormat.TraditionalOpenSSL,   # PKCS1 "RSA PRIVATE KEY"，相同格式
                 serialization.NoEncryption(),
             )
             with open(RSA_KEY_PATH, "wb") as fh:
@@ -367,10 +364,9 @@ def rsa_private_key():
 
 
 def rsa_public_pem():
-    """对齐 Go crypto.PublicKeyPEM：PKIX/SPKI 格式公钥 PEM（前端 Web Crypto/JSEncrypt 通用）。
+    """PKIX/SPKI 格式公钥 PEM（前端 Web Crypto/JSEncrypt 通用）。
 
-    与 Go 的 x509.MarshalPKIXPublicKey + pem "PUBLIC KEY" 输出逐字节一致
-    （DER 确定性编码），compare39 直接比对两端 PEM 文本即可证明「同一把密钥」。
+    与既有公钥编码逐字节一致（DER 确定性编码），可直接比对 PEM 文本确认「同一把密钥」。
     """
     return rsa_private_key().public_key().public_bytes(
         serialization.Encoding.PEM,
@@ -379,7 +375,7 @@ def rsa_public_pem():
 
 
 def rsa_decrypt_oaep(cipher_b64):
-    """对齐 Go crypto.DecryptRSAOAEP：base64(Std) + RSA-OAEP(SHA-256) 解密。"""
+    """行为约定：base64(Std) + RSA-OAEP(SHA-256) 解密。"""
     data = base64.b64decode(cipher_b64)
     plain = rsa_private_key().decrypt(
         data,
@@ -391,7 +387,7 @@ def rsa_decrypt_oaep(cipher_b64):
 
 
 def extract_bearer(request):
-    """对齐 Go middleware.ExtractToken：支持 "Bearer <token>" 与裸 token 两种格式。"""
+    """行为约定：支持 "Bearer <token>" 与裸 token 两种格式。"""
     header = request.headers.get("authorization") or ""
     if not header:
         return ""
@@ -401,23 +397,23 @@ def extract_bearer(request):
 
 
 class AdminTokenError(Exception):
-    """携带 Go 侧原文的令牌校验失败（refresh 专用，见 verify_admin_token_strict）。"""
+    """携带历史错误原文的令牌校验失败（refresh 专用，见 verify_admin_token_strict）。"""
 
 
 def verify_admin_token_strict(token):
-    """对齐 Go auth.RefreshToken → VerifyTokenFull 的完整错误链（仅 refresh 使用）。
+    """刷新令牌的完整错误链（仅 refresh 使用）。
 
-    为什么不用 decode_admin_token：那条链的文案对齐的是 AdminAuth 中间件
-    （「令牌无效或已过期」），而 Go 的刷新失败原文是 "token 刷新失败: <具体原因>"，
-    且租户查找不过滤 status（TenantsList 含禁用租户，禁用租户令牌在 Go 仍可刷新）。
-    刷新是双端互验的关键场景，文案与语义都必须逐字一致，故单独实现。
-    返回 (tenant_id, uid)；失败抛 AdminTokenError（消息为 Go 的错误原文）。
+    为什么不用 decode_admin_token：那条链的文案对齐 AdminAuth 中间件
+    （「令牌无效或已过期」），而刷新失败原文是 "token 刷新失败: <具体原因>"，
+    且租户查找不过滤 status（禁用租户令牌仍可刷新）。
+    刷新链路的文案与语义必须保持一致，故单独实现。
+    返回 (tenant_id, uid)；失败抛 AdminTokenError（消息为既定错误原文）。
     """
     try:
         if cache().exists(BLACKLIST_PREFIX + token):
             raise AdminTokenError("token 已失效（已登出）")
     except redis.RedisError:
-        raise AdminTokenError("token 已失效（已登出）")     # fail-closed，对齐 Go
+        raise AdminTokenError("token 已失效（已登出）")     # fail-closed，保持该行为
     if not token or len(token) > 4096 or token.count(".") != 1:
         raise AdminTokenError("token 格式错误")
     encoded, signature = token.split(".", 1)
@@ -432,7 +428,7 @@ def verify_admin_token_strict(token):
         raise AdminTokenError("token 载荷无效")
     tid, exp, uid, kind = (claims.get("tid"), claims.get("exp"),
                            claims.get("uid"), claims.get("kind"))
-    # Go json.Unmarshal 的零值语义：null 字段留零值不报错，类型不符才报「载荷无效」
+    # JSON 解析的零值语义：null 字段留零值不报错，类型不符才报「载荷无效」
     if (isinstance(exp, bool) or isinstance(uid, bool)
             or (exp is not None and not isinstance(exp, int))
             or (uid is not None and not isinstance(uid, int))
@@ -463,7 +459,7 @@ def verify_admin_token_strict(token):
 
 
 def blacklist_admin_token(token):
-    """对齐 Go auth.BlacklistToken：TTL 取令牌剩余有效期（到期边缘兜底 60 秒）。"""
+    """行为约定：TTL 取令牌剩余有效期（到期边缘兜底 60 秒）。"""
     ttl = 60
     try:
         encoded = token.split(".", 1)[0]
@@ -480,9 +476,9 @@ def blacklist_admin_token(token):
 
 
 def admin_token_payload(tenant_id, uid=0):
-    """对齐 Go tokenPayload 的字段顺序（tid, exp, nonce[, uid]）——signed_token 逐字节一致。
+    """令牌载荷字段顺序为 tid, exp, nonce[, uid]，signed_token 逐字节一致。
 
-    Go 的 UID 带 omitempty：uid=0（app_key 管理员）不出现在载荷里。
+    uid=0（app_key 管理员）不出现在载荷里。
     """
     payload = {"tid": tenant_id, "exp": int(time.time()) + ADMIN_TOKEN_TTL,
                "nonce": secrets.token_hex(16)}
@@ -492,7 +488,7 @@ def admin_token_payload(tenant_id, uid=0):
 
 
 def login_denied(limiter, audit_args, status, message):
-    """登录失败统一出口：记防爆破 + 写审计 + 按 Go 的状态码拒绝。"""
+    """登录失败统一出口：记防爆破 + 写审计 + 按约定的状态码拒绝。"""
     record_login_fail(limiter)
     try:
         write_auth_audit(*audit_args)
@@ -512,7 +508,7 @@ def auth_public_key():
 
 @router.post("/api/auth/token")
 async def auth_token(request: Request):
-    """对齐 Go handler.IssueTokenHandler：app_key + app_secret 换管理令牌。"""
+    """行为约定：app_key + app_secret 换管理令牌。"""
     body = await body_json(request)
     if not isinstance(body, dict):
         deny(400, "参数错误")
@@ -567,7 +563,7 @@ async def auth_token(request: Request):
 
 @router.post("/api/auth/user-token")
 async def auth_user_token(request: Request):
-    """对齐 Go handler.UserTokenHandler：子账号（uid>0）登录。"""
+    """行为约定：子账号（uid>0）登录。"""
     from business.admin.rbac import (ensure_tenant_roles, hash_user_password,
                                      get_user_roles, is_full_perms)
     body = await body_json(request)
@@ -623,8 +619,8 @@ async def auth_user_token(request: Request):
         "WHERE tenant_id = %s AND deleted_at = 0 LIMIT 1",
         (tenant_id,),
     )
-    # Go IssueUserToken：租户缺失 → 401 租户不存在；租户停用 → 401 租户已停用
-    # （注意这两次拒绝发生在 last_login 已更新之后，与 Go 的顺序一致）
+    # 子账号令牌签发：租户缺失 → 401 租户不存在；租户停用 → 401 租户已停用
+    # （注意这两次拒绝发生在 last_login 已更新之后，与既定顺序一致）
     if not row:
         deny(401, "租户不存在")
     if row["status"] != 1:
@@ -656,9 +652,9 @@ async def auth_user_token(request: Request):
 @router.post("/api/auth/refresh")
 def auth_refresh(request: Request):
     """
-对齐 Go handler.RefreshTokenHandler：只刷新管理/子账号令牌（kind 缺省）。
+行为约定：只刷新管理/子账号令牌（kind 缺省）。
 
-    客户会话令牌在此被拒（Go 的 VerifyTokenFull 类型边界），到期后由前端重新走
+    客户会话令牌在此被拒（令牌类型边界），到期后由前端重新走
     客户登录，绝不转换令牌类型；子账号刷新后保留原 uid 与权限身份。
     """
     from business.admin.rbac import load_user, get_user_roles, is_full_perms
@@ -686,7 +682,7 @@ def auth_refresh(request: Request):
         "tenant_name": row["name"] or tid,
     }
     if uid > 0:
-        # 子账号：按真实账号与角色解析身份；账号不存在/已删除 → 拒绝刷新（对齐 Go）
+        # 子账号：按真实账号与角色解析身份；账号不存在/已删除 → 拒绝刷新（保持该行为）
         user = load_user(uid)
         if not user:
             deny(401, "账号不存在或已禁用，请重新登录")
@@ -701,9 +697,9 @@ def auth_refresh(request: Request):
 @router.put("/api/auth/password")
 async def auth_password(request: Request,
                         admin: Admin = Depends(current_admin)):
-    """对齐 Go handler.ChangePasswordHandler：修改自己的登录密钥（app_secret）。
+    """行为约定：修改自己的登录密钥（app_secret）。
 
-    路由在 Go 侧挂 `middleware.AdminAuth()`——**中间件先于 handler 执行**，
+    路由挂 AdminAuth 中间件——**中间件先于 handler 执行**，
     因此「无令牌 + 非法请求体」返回的是 401 而不是 400，这里用 Depends 复刻同一顺序。
     旧密钥支持 RSA 加密传输；更新后旧令牌因签名密钥变化双端同时失效。
     """
@@ -758,22 +754,22 @@ async def auth_password(request: Request,
                          "修改登录密钥成功", client_ip(request))
     except Exception:
         pass
-    # Go 的 ChangeTenantSecret 末尾 RefreshTenants()；本层无内存租户缓存，
-    # 但 Go 进程内有（TenantsList 供 WS/auth 验签）——不重载会出现
-    # 「新密钥签发的令牌过不了 WS 握手、旧密钥签发的反而还能用」的割裂。
+    # 修改租户密钥后需要刷新租户缓存；本层无内存租户缓存，但进程内有
+    # （供 WS/auth 验签）——不重载会出现「新密钥签发的令牌过不了 WS 握手、
+    # 旧密钥签发的反而还能用」的割裂。
     reload_go_tenants()
     return {"code": 0, "msg": "密码修改成功，请重新登录"}
 
 
 @router.get("/api/auth/tenants")
 def auth_tenants():
-    """对齐 Go handler.PublicTenants：status=1 的公开租户（平台管理员租户不开放）。"""
+    """行为约定：status=1 的公开租户（平台管理员租户不开放）。"""
     try:
         rows = many(
             "SELECT tenant_id, name, app_key, is_platform_admin FROM tenants "
             "WHERE status = 1 AND deleted_at = 0 ORDER BY id ASC")
     except pymysql.MySQLError as exc:
-        soft(500, str(exc))               # Go: c.JSON(200, {code:500})，StatusCode 改写为 500
+        soft(500, str(exc))               # 保持 200 + body code 500 的响应约定，状态码中间件会改写为 500
     return {"code": 0, "data": [
         {"tenant_id": r["tenant_id"], "name": r["name"], "app_key": r["app_key"]}
         for r in rows if not r["is_platform_admin"]

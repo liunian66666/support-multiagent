@@ -85,7 +85,7 @@ def agent_summary_pending(request: Request, limit: int = 20, idle_minutes: int =
     """水位增量候选：水位后有新消息且已空闲 idle_minutes 的会话。
 
     [ours] 长对话记忆：原实现按 s.thread_id IS NULL 只挑“从未摘要”的会话，
-    摘要每会话仅生成一次且旧实现取最近40条覆盖写；改为携带水位与增量消息，
+    摘要每会话仅生成一次且曾取最近 40 条覆盖写；改为携带水位与增量消息，
     由 agent 侧做滚动合并并回写新水位。idle_minutes 下限 0（评测场景可调小）。
     """
     internal_guard(request)
@@ -159,9 +159,15 @@ async def agent_summary_save(request: Request):
         "INSERT INTO session_summaries (tenant_id, thread_id, summary, "
         "last_summarized_message_id, summary_version, summarized_at) "
         "VALUES (%s, %s, %s, %s, 1, NOW()) "
-        "ON DUPLICATE KEY UPDATE summary = VALUES(summary), "
-        "last_summarized_message_id = GREATEST(last_summarized_message_id, VALUES(last_summarized_message_id)), "
-        "summary_version = summary_version + 1, summarized_at = NOW()",
+        "ON DUPLICATE KEY UPDATE "
+        "summary = IF(VALUES(last_summarized_message_id) > last_summarized_message_id, "
+        "VALUES(summary), summary), "
+        "summary_version = IF(VALUES(last_summarized_message_id) > last_summarized_message_id, "
+        "summary_version + 1, summary_version), "
+        "summarized_at = IF(VALUES(last_summarized_message_id) > last_summarized_message_id, "
+        "NOW(), summarized_at), "
+        "last_summarized_message_id = GREATEST(last_summarized_message_id, "
+        "VALUES(last_summarized_message_id))",
         (body["tenant_id"], body["thread_id"], body["summary"], last_message_id),
     )
     return {"code": 0, "msg": "会话摘要已保存"}

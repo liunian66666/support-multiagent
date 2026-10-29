@@ -75,8 +75,9 @@ class SupervisorTest(unittest.IsolatedAsyncioTestCase):
 
 class EntryParityTest(unittest.IsolatedAsyncioTestCase):
     async def test_json_and_sse_use_same_supervisor_and_shortcut(self):
-        req = ChatRequest(thread_id="t_demo:guest1", user_message="包邮规则")
-        request = SimpleNamespace(headers={"X-Trace-Id": "trace-test"}, app=SimpleNamespace())
+        req = ChatRequest(thread_id="t_demo:guest1", user_message="包邮规则", has_pending_ticket=True)
+        request = SimpleNamespace(headers={"X-Trace-Id": "trace-test"},
+                                  app=SimpleNamespace())
         decision = TurnDecision(Route("faq_fast", answer="满 99 元包邮"), None,
                                 req.user_message, "rule")
         shortcut = SpecialistResult("faq_rule", content="满 99 元包邮")

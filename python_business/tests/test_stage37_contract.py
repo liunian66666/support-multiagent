@@ -1,6 +1,6 @@
 """Stage 3-7 contract tests: 代理域（Prompt / 知识库 / 平台设置 / 模型测试）。
 
-这一批 18 条是「Go 只做鉴权+审计+转发」的路由，因此锁的是**转发语义**而不是业务：
+这一批 18 条是「历史实现只做鉴权+审计+转发」的路由，因此锁的是**转发语义**而不是业务：
 
 1. 请求侧必须原样透传 query 与 body，并补齐 X-Trace-Id / X-Tenant-Id / X-Internal-Token
 2. 响应侧不看 Agent 的 HTTP 状态码，拿到什么字节都回 200 + application/json
@@ -180,7 +180,7 @@ class Stage37Test(unittest.TestCase):
         self.assertEqual("trace-9", call["headers"]["X-Trace-Id"])
         self.assertEqual("t_demo", call["headers"]["X-Tenant-Id"])
         self.assertEqual("internal-test", call["headers"]["X-Internal-Token"])
-        self.assertEqual(120, FakeClient.instances[-1].timeout)   # Go adminHTTPClient
+        self.assertEqual(120, FakeClient.instances[-1].timeout)   # 历史实现 adminHTTPClient
 
     def test_proxy_ignores_agent_status_code(self):
         """Agent 自己的 HTTP 状态被丢弃，只看 body：Agent 回 500 但 body code=0 → 对外 200。"""
@@ -192,7 +192,7 @@ class Stage37Test(unittest.TestCase):
         self.assertEqual("application/json", resp.headers["content-type"])
 
     def test_proxy_rewrites_status_from_body_code(self):
-        """Go 的 StatusCode 中间件按 body.code 改写状态码：Agent 回 400 → 对外 400。"""
+        """状态码中间件按 body.code 改写状态码：Agent 回 400 → 对外 400。"""
         FakeClient.next_response = FakeResponse(
             status_code=200, content=b'{"code":400,"msg":"doc_ids \xe4\xb8\x8d\xe8\x83\xbd\xe4\xb8\xba\xe7\xa9\xba"}')
         resp = self.client.post("/api/admin/kb/batch", content=b"{}",
@@ -201,7 +201,7 @@ class Stage37Test(unittest.TestCase):
         self.assertEqual(400, resp.json()["code"])
 
     def test_proxy_non_json_body_keeps_200(self):
-        """非 JSON 响应体不改写（Go 拿到 "Internal Server Error" 也是 200）。"""
+        """非 JSON 响应体不改写（历史实现拿到 "Internal Server Error" 也是 200）。"""
         FakeClient.next_response = FakeResponse(
             status_code=500, content=b"Internal Server Error")
         resp = self.client.get("/api/admin/kb/documents", headers=self.auth())
@@ -217,7 +217,7 @@ class Stage37Test(unittest.TestCase):
         self.assertTrue(payload["msg"].startswith("调用agent失败:"))
 
     def test_agent_call_omits_tenant_header_when_empty(self):
-        """Go：tenantID 为空时**不设** X-Tenant-Id（不是设成空串）。"""
+        """历史实现：tenantID 为空时**不设** X-Tenant-Id（不是设成空串）。"""
         main.agent_call("GET", "/agent/kb/categories", tenant_id="")
         self.assertNotIn("X-Tenant-Id", self.last_request()["headers"])
         main.agent_call("GET", "/agent/kb/categories", tenant_id="t_demo")
@@ -339,7 +339,7 @@ class Stage37Test(unittest.TestCase):
         self.assertEqual({"title": "FAQ", "category": "售后"}, call["data"])
 
     def test_kb_upload_keeps_empty_fields(self):
-        """Go 侧 title/category 为空也照写空串，不是省略。"""
+        """历史实现 title/category 为空也照写空串，不是省略。"""
         self.client.post("/api/admin/kb/upload",
                          files={"file": ("a.txt", b"x", "text/plain")},
                          headers=self.auth())
@@ -362,7 +362,7 @@ class Stage37Test(unittest.TestCase):
                          resp.json())
 
     def test_model_test_checks_api_key_before_name_and_base(self):
-        """Go 的校验顺序是 api_key → (model_name/api_base)，全空时报的是 API Key。"""
+        """历史实现的校验顺序是 api_key → (model_name/api_base)，全空时报的是 API Key。"""
         resp = self.client.post("/api/admin/model-config/test", json={"type": "chat"},
                                 headers=self.auth())
         self.assertEqual(400, resp.json()["code"])
@@ -386,7 +386,7 @@ class Stage37Test(unittest.TestCase):
     def test_model_test_falls_back_to_stored_custom_config(self):
         """表单留空（前端只回显掩码）+ 已存自有配置 → 回退读库。
 
-        注意 Go 的坑：`tenant_id` 缺省时回退读的是 **t_admin**，不是调用者自己的租户。
+        注意 历史实现的坑：`tenant_id` 缺省时回退读的是 **t_admin**，不是调用者自己的租户。
         所以这里把配置放在 t_admin 上；app_key 管理员恰好属于 t_admin，才「碰巧」对。
         """
         self.config_rows["t_admin"] = tenant_config(
@@ -412,7 +412,7 @@ class Stage37Test(unittest.TestCase):
         self.assertIn("请填写 API Key 后再测试", resp.json()["msg"])
 
     def test_model_test_embedding_uses_chat_use_custom_gate(self):
-        """Go 的 quirk：embedding 回填也走「对话侧是否自有」这同一个开关。
+        """历史实现的 quirk：embedding 回填也走「对话侧是否自有」这同一个开关。
 
         这里让 embedding 有 Key 但对话侧未配置 → use_custom=False → 不回填。
         """

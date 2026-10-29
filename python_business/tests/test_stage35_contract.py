@@ -3,7 +3,7 @@
 锁的重点：
 1. 三种登录身份的菜单树差异（平台=系统管理 / 租户 app_key=业务中心全量 / 子账号=按权限过滤保留父链）
 2. 成员与角色的 JSON 形态（时间格式、nil→[] vs null、is_admin 只看权限集合）
-3. 写路径的 Go 怪癖：审计双写、状态接口不校验成员存在、软删除存 unix 秒、自操作保护
+3. 写路径的 历史实现怪癖：审计双写、状态接口不校验成员存在、软删除存 unix 秒、自操作保护
 """
 
 import hashlib
@@ -199,7 +199,7 @@ class Stage35Test(unittest.TestCase):
         child = groups[0]["children"][0]
         self.assertEqual(child["name"], "会话管理")
         self.assertEqual([n["id"] for n in child["children"]], [2])
-        # 排序依赖 GROUP BY 的顺序，必须与 Go cachedMenus 一致
+        # 排序依赖 GROUP BY 的顺序，必须与历史实现 cachedMenus 一致
         sql = [q for q in self.queries if "FROM menus" in q[0]][0][0]
         self.assertIn("ORDER BY group_name ASC, sort ASC, id ASC", sql)
 
@@ -234,7 +234,7 @@ class Stage35Test(unittest.TestCase):
     def test_menu_tree_empty_is_null(self):
         self.menus = []
         payload = self.client.get("/api/admin/menus/tree", headers=self.auth()).json()
-        self.assertIsNone(payload["data"])                       # Go return nil → null
+        self.assertIsNone(payload["data"])                       # 历史实现 return nil → null
 
     def test_menu_node_serialization(self):
         self.menus = [menu_row(id=1, created_at=None, perm=None,
@@ -350,7 +350,7 @@ class Stage35Test(unittest.TestCase):
         self.assertEqual(insert[1][3:7], ("小王", "13800000000", "k@a.com", "备注"))
         links = self.stmts_matching("INSERT INTO user_roles")
         self.assertEqual([l[1] for l in links], [(77, 1)])       # role_id=0 被跳过
-        # Go 侧 handler 手写审计 + AuditMiddleware 自动审计，两条都会落库 → 这里同样双写
+        # 处理器手写审计 + 审计中间件自动审计，两条都会落库 → 这里同样双写
         self.assertEqual(len(self.audit_rows_written), 2)
         self.assertEqual(self.audit_rows_written[0][3:7],
                          ("create", "member", "kefu01", "添加成员"))
@@ -486,7 +486,7 @@ class Stage35Test(unittest.TestCase):
         self.assertEqual(mine.json()["msg"], "不能操作自己的账号")
 
     def test_member_status_nonexistent_member_still_ok(self):
-        """Go 的 AdminMemberStatus 不校验成员是否存在：id 不存在也回 200 并写审计。"""
+        """历史实现的 AdminMemberStatus 不校验成员是否存在：id 不存在也回 200 并写审计。"""
         headers = self.as_subaccount()
         response = self.client.put("/api/admin/members/999/status", json={"status": 1},
                                    headers=headers)
@@ -621,7 +621,7 @@ class Stage35Test(unittest.TestCase):
         self.assertEqual(response.json()["msg"], "参数错误")
 
     def test_role_create_duplicate_menu_ids_fails(self):
-        """Go CreateRole 不去重：重复 menu_id 撞主键 → 500（照抄）。"""
+        """历史实现 CreateRole 不去重：重复 menu_id 撞主键 → 500（照抄）。"""
 
         def hook(sql, args):
             if sql.startswith("INSERT INTO sys_role_menu") and args[1] == 1:

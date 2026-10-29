@@ -245,7 +245,7 @@ class Stage36Test(unittest.TestCase):
             self.assertEqual(response.json()["msg"], "仅平台管理员可操作")
 
     def test_available_model_providers_is_admin_group_not_platform_only(self):
-        """Go 把它挂在 admin 组（只要求登录），租户管理员也能读公共配置。"""
+        """历史实现把它挂在 admin 组（只要求登录），租户管理员也能读公共配置。"""
         self.providers = [provider_row()]
         response = self.client.get("/api/admin/available-model-providers",
                                    headers=self.auth())
@@ -314,7 +314,7 @@ class Stage36Test(unittest.TestCase):
 
     def test_utc_day_start_matches_go_truncate_semantics(self):
         start = main.utc_day_start_local()
-        # Go 的 Truncate(24h) 按 Unix 纪元取整 = UTC 午夜；本地时区偏移 8h 时是本地 08:00
+        # 历史实现的 Truncate(24h) 按 Unix 纪元取整 = UTC 午夜；本地时区偏移 8h 时是本地 08:00
         self.assertEqual(start.hour, 8)
         self.assertEqual(start.minute, 0)
 
@@ -354,7 +354,7 @@ class Stage36Test(unittest.TestCase):
         _sql, args = self.writes_matching("INSERT INTO tenants")[0]
         self.assertEqual(args[3], hashlib.sha256(data["app_secret"].encode()).hexdigest())
         self.assertEqual(_sql.count("'platform'"), 2)      # chat 与 embedding 都跟随平台
-        # 所有 GORM 会写零值的列都要显式写（表里默认是 NULL，漏写会查不到）
+        # 所有需要显式写零值的列都要写全（表里默认是 NULL，漏写会查不到）
         for column in ("is_platform_admin", "rbac_seeded", "created_at", "deleted_at",
                        "model_api_key", "embedding_api_key"):
             self.assertIn(column, _sql)

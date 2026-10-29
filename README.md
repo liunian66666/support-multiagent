@@ -9,7 +9,7 @@
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ed?logo=docker)
 ![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python)
 ![Vue3](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs)
-![Tests](https://img.shields.io/badge/Tests-410%20passed-success)
+![Tests](https://img.shields.io/badge/Tests-pytest-success)
 
 🚀 **在线体验（无需部署，直接看效果）：https://cs.hwcom.top**
 
@@ -37,7 +37,7 @@
 | 业务层模块化 | 原 3.9k 行 `main.py` 拆为 12 个职责模块，`main.py` 只保留 3 行入口；131 条路由的方法/路径/名称/注册顺序由 `route_baseline.json` 锁定，防止拆分引入回归 | `python_business/business/`、`tests/test_route_manifest.py` |
 | 客户身份与只读订单 | FastAPI 签发客户会话，订单查询按「租户 + 客户」双条件限定归属；未知单号与「非本人订单」返回完全一致的提示，不暴露订单存在性 | `business/customer/routes.py`、`python_agent/app/agent/tools.py` |
 | 电商客服意图与 FAQ | 区分政策咨询、订单查询、主动转人工和退款/支付执行请求；政策回答保留知识来源，不把演示政策冒充真实商家承诺 | `python_agent/app/chat/`、`python_agent/app/api/chat.py` |
-| 多专家路由 | Supervisor 按问题类型分发到 order / kb / case 等专家，复合问题并行读取后由 composer 汇总，全过程落结构化 trace | `python_agent/app/services/` |
+| 四 Agent 协作 | Supervisor 动态委派 FAQ、Order、General Agent，Reviewer 规则节点校验证据和权限；复合咨询在 LangGraph 主图中汇总 | `agent/`、`python_agent/app/services/four_agent.py` |
 | 可追溯的决策轨迹 | 每轮对话的路由、工具、检索证据、模型用量写入 PostgreSQL `agent_trace_runs`；字段白名单过滤，用户原话与提示词不入库 | `python_agent/app/services/trace.py` |
 | 前后端联通 | Nginx 将 Vue 后台、客户聊天页、SDK 的 API 与 WebSocket 统一接入 Python；商家实时接收本租户转人工工单 | `deploy/nginx.conf`、`web/`、`admin-app/` |
 
@@ -92,6 +92,12 @@
 ```
 
 消息归档由独立的 Python `business-maintenance` 服务定时执行。
+
+## 当前 Agent 入口与兼容范围
+
+普通 JSON/SSE 聊天固定进入 `agent/` 中的四 Agent LangGraph 主图；`FOUR_AGENT_GRAPH` 环境变量与 `X-Agent-Graph` 请求头不再切换旧图。主图使用持久化检查点，旧会话的历史消息首次进入新图时只读导入。已有未完成审批继续沿原检查点恢复，审批完成后新聊天进入主图。退款、支付执行仍未开放。
+
+历史评测报告保留旧版对照数据；其中的旧入口开关说明仅反映当时实验配置。
 
 ## 🚀 快速开始
 

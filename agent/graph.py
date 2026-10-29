@@ -131,8 +131,12 @@ async def build_support_graph(deps: SupportDeps, *, checkpointer: Any = None,
 
     def review(state: SupportState) -> dict[str, Any]:
         """The Reviewer: deterministic rules, no model call, not a fifth agent."""
+        customer_order_ids = set().union(*(guards._ids(memory.message_text(message))
+                                           for message in state.get("messages", [])
+                                           if isinstance(message, HumanMessage)))
         hard, soft = guards.review(_question(state), state.get("draft", ""),
-                                   state.get("delegations", []))
+                                   state.get("delegations", []),
+                                   customer_order_ids=customer_order_ids)
         issues = [*hard, *soft]
         deps.trace("review", "result", passed=not issues, hard=hard[:4], reasons=soft[:4],
                    attempts=state.get("attempts", 0))

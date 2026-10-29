@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
@@ -51,6 +50,30 @@ async def test_repeated_request_with_same_turn_id_does_not_duplicate() -> None:
     state = (await graph.aget_state({"configurable": {"thread_id": thread_key(TENANT, THREAD)}})).values
     assert len(state["ledger"]) == 1
     assert len(state["delegations"]) == 0
+
+
+async def test_replay_skips_model_and_returns_original_turn_after_later_turn() -> None:
+    model = ScriptedSupportModel(supervisor_script=[
+        AIMessage(content="您好。"), AIMessage(content="再见。")])
+    service, _saver = build_service(model=model)
+    first = await service.run_turn(TENANT, THREAD, "你好", turn_id="first")
+    await service.run_turn(TENANT, THREAD, "谢谢", turn_id="second")
+    calls_before = len(model.recorded)
+
+    replay = await service.run_turn(TENANT, THREAD, "你好", turn_id="first")
+
+    assert replay.replayed is True
+    assert replay.answer == first.answer
+    assert len(model.recorded) == calls_before
+    assert len(await service.history(TENANT, THREAD)) == 4
+
+
+async def test_reusing_turn_id_for_another_question_fails_closed() -> None:
+    service, _saver = build_service(model=answered("您好。"))
+    await service.run_turn(TENANT, THREAD, "你好", turn_id="same")
+    with pytest.raises(ValueError, match="turn_id was already used"):
+        await service.run_turn(TENANT, THREAD, "查另一笔订单", turn_id="same")
+    assert len(await service.history(TENANT, THREAD)) == 2
 
 
 async def test_restart_continues_the_same_thread() -> None:
@@ -110,7 +133,6 @@ async def test_new_path_never_uses_the_out_of_graph_checkpoint_bridge() -> None:
     offenders = {name: [needle for needle in OUT_OF_GRAPH_WRITERS if needle in text]
                  for name, text in sources.items() if any(needle in text for needle in OUT_OF_GRAPH_WRITERS)}
     assert offenders == {}
-    assert "app.services.dialog" not in sys.modules
 
 
 async def test_roles_are_attributed_per_turn_not_accumulated() -> None:

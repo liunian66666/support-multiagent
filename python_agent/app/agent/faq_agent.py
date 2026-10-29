@@ -27,27 +27,28 @@ _FAQ_PROMPT = (
     "直接对顾客简明答复，不展示知识库片段或内部来源。"
 )
 
-
-async def faq_agent(app, tenant_id: str):
+#当前架构选择了一种“轻编排”的方式，不选择使用langgraph来管理排流程，而是直接在app.state中缓存每个租户的agent，并选用极简旁路来将agent的持久化进
+#同一个checkpoints
+async def faq_agent(app, tenant_id: str, *, model_override=None):
     """A separate model agent with only the tenant KB tool (no write tools)."""
     state = getattr(app, "state", None)
-    if state is not None:
+    if state is not None and model_override is None:
         await _check_config_version(app, tenant_id)
         cache = getattr(state, "faq_agents", None)
         if cache is not None and tenant_id in cache:
             return cache[tenant_id]
-    model = await get_tenant_model(app, tenant_id)
+    model = model_override if model_override is not None else await get_tenant_model(app, tenant_id)
     agent = create_agent(
         model=model,
         tools=[tools.search_kb],
         middleware=[content_guard],
         system_prompt=_FAQ_PROMPT,
     )
-    if state is not None and getattr(state, "faq_agents", None) is not None:
+    if model_override is None and state is not None and getattr(state, "faq_agents", None) is not None:
         state.faq_agents[tenant_id] = agent
     return agent
 
-
+#极简旁路实现，用于写入checkpoint
 async def recent_messages(app, thread_id: str, limit: int = 12) -> list:
     """Read canonical chat history; specialist agents keep no competing state."""
     bridge = getattr(app.state, "faq_bridge", None)

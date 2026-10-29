@@ -1,4 +1,4 @@
-"""Daily business-data maintenance formerly performed by the Go gateway."""
+"""Daily business-data maintenance for the Python business layer."""
 
 import logging
 import os

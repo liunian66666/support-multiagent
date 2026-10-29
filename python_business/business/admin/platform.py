@@ -25,12 +25,12 @@ from business.infra.storage import cache, many, one, write
 
 router = APIRouter()
 
-# ==================== 阶段 3-6：平台域（租户 / 模型提供商 / 菜单） ====================
-# 全部挂 Go 的 plat 组（PlatformAdminOnly）：非平台管理员一律 403「仅平台管理员可操作」。
-# 注意本域两套错误语义不能混：
-#   - 租户 / 模型提供商：Go 写的是 c.JSON(http.StatusOK, {code:N}) → 软失败，审计中间件仍记一条
-#   - 菜单：Go 写的是 c.JSON(http.StatusBadRequest/500) → 真失败，审计中间件跳过
-# 因此前者一律用 soft()，后者一律用 deny()，否则 audit_logs 会与 Go 不一致。
+# ==================== 平台域（租户 / 模型提供商 / 菜单） ====================
+# 全部要求平台管理员权限：非平台管理员一律 403「仅平台管理员可操作」。
+# 本域有两套错误语义，不能混：
+#   - 租户 / 模型提供商：软失败（HTTP 200 + body code），审计中间件仍记一条
+#   - 菜单：真失败（HTTP 400/500），审计中间件跳过
+# 因此前者用 soft()，后者用 deny()，保证 audit_logs 与响应语义一致。
 
 
 def go_internal(method, path, body=None, timeout=5):
@@ -62,11 +62,11 @@ TENANT_COLUMNS = (
 
 
 def utc_day_start_local():
-    """Go `time.Now().Truncate(24 * time.Hour)` 的等价物。
+    """按 UTC 日界取整的等价逻辑。
 
-    注意 Truncate 是按「Unix 纪元起的绝对时间」取整，不是本地 00:00 ——
-    容器 TZ=Asia/Shanghai 时实际得到**本地 08:00**。照抄，否则「今日消息数」
-    在每天 0~8 点之间会与 Go 相差一整天。
+    注意这里按「Unix 纪元起的绝对时间」取整，不是本地 00:00 ——
+    容器 TZ=Asia/Shanghai 时实际得到**本地 08:00**。保持该行为，否则「今日消息数」
+    在每天 0~8 点之间会相差一整天。
     """
     midnight = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0,
                                                   microsecond=0)
@@ -74,7 +74,7 @@ def utc_day_start_local():
 
 
 def tenant_usage_map():
-    """对齐 Go service.fetchTenantUsage：MySQL 今日消息 → Agent 用量 → ws Hub 连接数。"""
+    """行为约定：MySQL 今日消息 → Agent 用量 → ws Hub 连接数。"""
     out = {}
     try:
         rows = many(
@@ -101,7 +101,7 @@ def tenant_usage_map():
                 cur["kb_docs"] = int(u.get("kb_docs") or 0)
                 cur["kb_size_mb"] = float(u.get("kb_size_bytes") or 0) / 1024 / 1024
 
-    # 并发会话以 ws Hub 实时连接数为准（与 Go 侧配额校验同口径）
+    # 并发会话以 ws Hub 实时连接数为准（与配额校验同口径）
     conns = {"code": 0, "data": ws_hub.count_all_tenants()}
     if isinstance(conns, dict) and conns.get("code") == 0:
         for tid, n in (conns.get("data") or {}).items():
@@ -172,7 +172,7 @@ def tenant_row_or_none(tenant_id):
 
 
 def prewarm_tenant_async(tenant_id):
-    """Go `go agent.PrewarmTenant(...)`：异步预热新租户 Agent（失败仅记日志）。"""
+    """异步预热新租户 Agent（失败仅记日志）。"""
     def run():
         try:
             agent_call("POST", "/agent/tenants/prewarm",
@@ -184,7 +184,7 @@ def prewarm_tenant_async(tenant_id):
 
 
 def cleanup_tenant_async(tenant_id):
-    """Go `go agent.AgentRequest(... /agent/tenant/cleanup ...)`：异步清理 Agent 侧数据。"""
+    """异步清理 Agent 侧数据。"""
     def run():
         try:
             agent_call("POST", "/agent/tenant/cleanup", body=None,
@@ -204,7 +204,7 @@ def admin_tenant_list(name: str = "", app_key: str = "", status: str = "",
     if app_key:
         where.append("app_key LIKE %s")
         args.append("%" + app_key + "%")
-    # Go 只在 status 恰为 "0"/"1" 时过滤，"01"/"" 等一律视为未传
+    # 只在 status 恰为 "0"/"1" 时过滤，"01"/"" 等一律视为未传
     if status in ("0", "1"):
         where.append("status = %s")
         args.append(int(status))
@@ -238,18 +238,18 @@ async def admin_tenant_create(request: Request,
         soft(400, "name 不能为空")
     if not app_key:
         app_key = "tk_" + secrets.token_hex(8)
-    # Go 用 Unscoped 预查（唯一索引含软删行），命中直接给可读错误而不是 1062
+    # 唯一索引包含软删行，所以这里先做一次包含软删行的预查，
+    # 命中时直接返回可读错误，而不是把数据库 1062 错误暴露给调用方。
     if one("SELECT id FROM tenants WHERE app_key = %s LIMIT 1", (app_key,)):
         soft(500, "app_key 已被使用（含已删除租户）")
     app_secret = secrets.token_hex(16)
     tenant_id = "t_" + app_key
     try:
-        # 必须写全 GORM 会写入的零值列：tenants 表大量列默认值是 NULL（不是 0/空串），
-        # 而 Go 的 Create 会把无 default tag 的字段全部按零值写进去。漏写任意一列都会出事：
+        # 必须写全业务需要的零值列：tenants 表大量列默认值是 NULL（不是 0/空串）。
+        # 漏写任意一列都会出事：
         #   - deleted_at=NULL   → 新建租户立刻查不到（详情/配额/删除全 404）
         #   - created_at=NULL   → 详情 null、列表时间错乱
         #   - is_platform_admin=NULL → 列表的 `is_platform_admin = 0` 过滤把它剔掉
-        # 这里逐列对齐 model.TenantRow 的字段与零值。
         write(
             "INSERT INTO tenants (tenant_id, name, app_key, app_secret_hash, "
             "is_platform_admin, status, rbac_seeded, "
@@ -374,7 +374,7 @@ def admin_tenant_delete(tid: str, admin: Admin = Depends(require_platform())):
         with transaction() as cur:
             cur.execute("UPDATE tickets SET deleted_at = %s "
                         "WHERE tenant_id = %s AND deleted_at = 0", (now, tid))
-            # messages 表没有 deleted_at（Go 的 model.Message 无 DeletedAt）→ 硬删除
+            # messages 表没有 deleted_at → 硬删除
             cur.execute("DELETE FROM messages WHERE tenant_id = %s", (tid,))
             cur.execute("UPDATE tenants SET deleted_at = %s WHERE tenant_id = %s",
                         (now, tid))
@@ -382,7 +382,7 @@ def admin_tenant_delete(tid: str, admin: Admin = Depends(require_platform())):
         soft(404, "租户不存在")
     reload_go_tenants()
     cleanup_tenant_async(tid)
-    time.sleep(0.1)                                # 照抄 Go 的 100ms 等待
+    time.sleep(0.1)                                # 保留 100ms 等待，确保清理顺序稳定
     return {"code": 0,
             "msg": "已删除租户 " + tid + "（含工单/消息/Prompt/知识库数据）"}
 
@@ -401,8 +401,8 @@ async def admin_tenant_model_config_update(tid: str, request: Request,
     body = await body_json(request)
     if not isinstance(body, dict):
         soft(400, "EOF")
-    # Go 走的是 service.UpdateModelConfig 的 GORM 错误：租户不存在时是 500 record not found，
-    # 不是 404 —— 与同文件其它端点的 404 语义不同，这里必须照抄
+    # 模型配置更新在租户不存在时返回 500 record not found，不是 404 ——
+    # 与同文件其它端点的 404 语义不同，这里保持该行为。
     if not tenant_row_or_none(tid):
         soft(500, "record not found")
     try:
@@ -474,9 +474,9 @@ def admin_model_provider_list(admin: Admin = Depends(require_platform())):
 @router.get("/api/admin/available-model-providers")
 def admin_available_model_providers(admin: Admin = Depends(current_admin),
                                     provider_type: str = Query(default="", alias="type")):
-    """对齐 Go ListModelProvidersForTenant：只看启用项，type 过滤含 both。
+    """行为约定：只看启用项，type 过滤含 both。
 
-    注意它在 Go 的 **admin 组**（不是 plat 组）：只要求登录，平台管理员与租户管理员
+    注意它在 **管理分组**（不是平台管理分组）：只要求登录，平台管理员与租户管理员
     都能读 —— 模型提供商是公共配置数据，不属于任一租户的业务数据。
     """
     where, args = ["status = 1"], []
@@ -584,7 +584,7 @@ def admin_model_provider_delete(id: str, admin: Admin = Depends(require_platform
 # ---------- 菜单管理（平台级全量；menus/tree 的身份视图已在 3-5 实现） ----------
 # 与租户域相反：菜单 handler 用真实 400/500 状态码 → 审计中间件跳过，因此这里用 deny()。
 
-# 逐字对齐 Go repository.builtinMenus：
+# 行为约定：
 # (id, parent_id, sort, visible, status, is_builtin, group_name, name, path, component, perm, type)
 BUILTIN_MENUS = (
     (1, 0, 1, 1, 1, 1, "业务中心", "会话管理", "", "", "", 1),
@@ -664,7 +664,7 @@ def menu_json(row):
 
 
 def normalize_perm(value):
-    """Go normalizePerm：空串/纯空白统一为 nil（唯一索引允许多个 NULL）。"""
+    """权限归一化：空串/纯空白统一为 NULL（唯一索引允许多个 NULL）。"""
     if value is None:
         return None
     if not isinstance(value, str):
@@ -678,7 +678,7 @@ def is_duplicate_error(exc):
 
 
 def menu_descendant_ids(root_id):
-    """对齐 Go collectChildren：后序收集（子节点在前、根节点在后）。"""
+    """行为约定：后序收集（子节点在前、根节点在后）。"""
     collected, stack = [], [root_id]
     while stack:
         current = stack.pop()

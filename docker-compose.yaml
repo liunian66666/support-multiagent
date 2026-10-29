@@ -172,7 +172,10 @@ services:
   # 业务服务：Agent + Python FastAPI + Nginx
   # ==========================================================================
   agent:
-    build: ./python_agent
+    build:
+      context: ./python_agent
+      additional_contexts:
+        agent_src: ./agent
     container_name: cs_agent
     restart: unless-stopped
     env_file:
@@ -199,6 +202,13 @@ services:
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-cs_internal_token_2026_secure}
       # 容器内使用服务名连接（覆盖 .env 中宿主机视角的 127.0.0.1 配置）
       POSTGRES_DSN: postgresql://${POSTGRES_USER:-cs_user}:${POSTGRES_PASSWORD:-cs_pass123}@postgres:5432/${POSTGRES_DB:-cs_agent_db}
+      # 新图按会话串行写检查点；多 worker/副本也不会相互覆盖。
+      SUPPORT_V2_THREAD_LOCK: "on"
+      # 常规聊天固定走四 Agent 主图；仅未完成审批使用旧检查点兼容路径。
+      # ⚠ 演示分支专用：t_demo 自有模型端点当前拒连，四 Agent 路径临时走平台密钥 + 已验通模型。
+      # 接真实租户前必须删除本行，否则所有租户都会静默改用平台 key 的 glm-5.3（报告 §8g 的
+      # comparable=false 就是这个原因）。
+      FOUR_AGENT_MODEL_NAME: "glm-5.3"
       QDRANT_URL: http://qdrant:6333
       # Qdrant 配置
       QDRANT_HOST: qdrant
