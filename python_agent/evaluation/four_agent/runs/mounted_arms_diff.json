@@ -1,0 +1,166 @@
+{
+  "control": "E:/曹浩冉/研究生/AI学习RAG与Agent/AGENT_exp/support-multiAgent/python_agent/evaluation/four_agent/runs/mounted_graph_control.jsonl",
+  "patched": "E:/曹浩冉/研究生/AI学习RAG与Agent/AGENT_exp/support-multiAgent/python_agent/evaluation/four_agent/runs/mounted_graph_patched.jsonl",
+  "counts": {
+    "fix": 2,
+    "REG": 0,
+    "pass": 6,
+    "fail": 2,
+    "gap": 0,
+    "race": 2,
+    "cost_delta": 4
+  },
+  "rows": [
+    {
+      "case": "M10_cross_instance_write_mounted",
+      "control": "FIND",
+      "patched": "FIND",
+      "class": "race",
+      "control_note": "two independently compiled graphs sharing one checkpointer and one thread key = the two-worker-process case; asyncio locks in different processes c...",
+      "patched_note": "two independently compiled graphs sharing one checkpointer and one thread key = the two-worker-process case; asyncio locks in different processes c...",
+      "deltas": {
+        "lost_turn_trials": {
+          "control": 2,
+          "patched": 1
+        }
+      }
+    },
+    {
+      "case": "M11_cross_instance_write_agent_v2",
+      "control": "FIND",
+      "patched": "FIND",
+      "class": "race",
+      "control_note": "the same experiment against agent/graph.py: the platform-level loss shows up on both sides, so the difference has to be read from the ledger column...",
+      "patched_note": "the same experiment against agent/graph.py: the platform-level loss shows up on both sides, so the difference has to be read from the ledger column...",
+      "deltas": {
+        "lost_turn_trials": {
+          "control": 2,
+          "patched": 3
+        }
+      }
+    },
+    {
+      "case": "M1_compound_entry",
+      "control": "PASS",
+      "patched": "PASS",
+      "class": "pass",
+      "control_note": "",
+      "patched_note": "",
+      "deltas": {
+        "attempts": {
+          "control": 1,
+          "patched": 1
+        },
+        "billed_msgs": {
+          "control": 3,
+          "patched": 3
+        }
+      }
+    },
+    {
+      "case": "M2_replay_idempotency",
+      "control": "FIND",
+      "patched": "FIND",
+      "class": "fail",
+      "control_note": "FINDING: ChatRequest carries no turn_id, so the entry cannot tell a retry from a new turn; the same question lands twice in the checkpoint and both...",
+      "patched_note": "FINDING: ChatRequest carries no turn_id, so the entry cannot tell a retry from a new turn; the same question lands twice in the checkpoint and both...",
+      "deltas": {
+        "billed_msgs_per_turn": {
+          "control": 2,
+          "patched": 4
+        }
+      }
+    },
+    {
+      "case": "M2b_replay_with_turn_id",
+      "control": "FIND",
+      "patched": "PASS",
+      "class": "fix",
+      "control_note": "FINDING: run_turn() 还没有 turn_id 参数——幂等键的入口契约不在 app 侧，所以 M2 的重放现在无从去重（候选补丁见 deploy/mounted_persistence_fix.patch）。",
+      "patched_note": "PASS with the staged persistence patch: a completed turn replayed under the same turn_id short-circuits before the model runs, so neither the trans...",
+      "deltas": {}
+    },
+    {
+      "case": "M3_rollback_visibility",
+      "control": "FIND",
+      "patched": "FIND",
+      "class": "fail",
+      "control_note": "FINDING: the legacy path reads recent_messages(faq_bridge) while the new graph writes only support_v2:*, so flipping the switch back off resumes th...",
+      "patched_note": "FINDING: the legacy path reads recent_messages(faq_bridge) while the new graph writes only support_v2:*, so flipping the switch back off resumes th...",
+      "deltas": {}
+    },
+    {
+      "case": "M4_bounded_retry",
+      "control": "PASS",
+      "patched": "PASS",
+      "class": "pass",
+      "control_note": "",
+      "patched_note": "",
+      "deltas": {
+        "attempts": {
+          "control": 2,
+          "patched": 2
+        },
+        "supervisor_calls": {
+          "control": 2,
+          "patched": 2
+        }
+      }
+    },
+    {
+      "case": "M5a_model_failure_does_not_break",
+      "control": "PASS",
+      "patched": "PASS",
+      "class": "pass",
+      "control_note": "the graph neither hangs nor returns a blank answer once chat.py catches the error",
+      "patched_note": "the graph neither hangs nor returns a blank answer once chat.py catches the error",
+      "deltas": {}
+    },
+    {
+      "case": "M5b_failure_state_and_visibility",
+      "control": "FIND",
+      "patched": "PASS",
+      "class": "fix",
+      "control_note": "FINDING: the failed turn leaves an answered-less user message in the checkpoint (the legacy path writes the bridge only on success), and there is n...",
+      "patched_note": "FINDING: the failed turn leaves an answered-less user message in the checkpoint (the legacy path writes the bridge only on success), and there is n...",
+      "deltas": {
+        "failure_turn_error_events": {
+          "control": 0,
+          "patched": 1
+        }
+      }
+    },
+    {
+      "case": "M6_summary_watermark",
+      "control": "PASS",
+      "patched": "PASS",
+      "class": "pass",
+      "control_note": "",
+      "patched_note": "",
+      "deltas": {}
+    },
+    {
+      "case": "M7_unverified_order_claim",
+      "control": "PASS",
+      "patched": "PASS",
+      "class": "pass",
+      "control_note": "",
+      "patched_note": "",
+      "deltas": {
+        "supervisor_calls": {
+          "control": 2,
+          "patched": 2
+        }
+      }
+    },
+    {
+      "case": "M9_same_process_concurrency",
+      "control": "PASS",
+      "patched": "PASS",
+      "class": "pass",
+      "control_note": "four_agent._thread_locks is a process-local asyncio lock: it does serialise turns, but only inside the one process that holds it",
+      "patched_note": "four_agent._thread_locks is a process-local asyncio lock: it does serialise turns, but only inside the one process that holds it",
+      "deltas": {}
+    }
+  ]
+}

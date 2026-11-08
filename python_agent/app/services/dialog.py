@@ -7,8 +7,7 @@ import logging
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from app.agent.llm_config import (current_chat_prices, current_model_name,
-                                  current_model_source)
+from app.agent.llm_config import current_chat_prices, current_model_name, current_model_source
 from app.infra.db.usage import extract_usage_metadata, record_token_usage
 from app.services import trace
 
@@ -37,7 +36,9 @@ async def _record_usage_after_chat(request, conn, tenant_id: str, thread_id: str
                              chat_output_price=out_price)
     usage = extract_usage_metadata(messages)
     if usage:
-        trace.record("usage", "model", model=usage["model"],
+        # 主图回填的那条 AIMessage 不带 response_metadata.model（避免套错单价），
+        # 这里用已解析的 fallback 模型名归因，否则 trace 里只剩一个空字符串。
+        trace.record("usage", "model", model=usage["model"] or model_name,
                      input_tokens=usage["input_tokens"],
                      output_tokens=usage["output_tokens"],
                      total_tokens=usage["total_tokens"])

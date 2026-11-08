@@ -8,8 +8,8 @@ from app.agent.builder import invalidate_platform_prompt_agents, rebuild_tenant_
 from app.infra.db.prompt import activate_prompt, delete_prompt, load_active_prompt, upsert_prompt
 from app.infra.db.tenant import tenant_from_request
 from app.infra.db_pool import _pool_conn
-from app.schemas import PromptReq
 from app.infra.pubsub import INVALIDATE_CHANNEL
+from app.schemas import PromptReq
 
 logger = logging.getLogger("agent.routers_prompt")
 router = APIRouter()

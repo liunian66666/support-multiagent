@@ -7,8 +7,7 @@ from langchain_core.messages import HumanMessage
 from app.agent.faq_agent import recent_messages
 from app.chat.faq import has_order_reference
 from app.chat.intent import Route, route_message
-from app.chat.order import (_awaiting_order_id, _last_order_id_from_history,
-                            looks_like_bare_order_id)
+from app.chat.order import _awaiting_order_id, _last_order_id_from_history, looks_like_bare_order_id
 from app.chat.plan import TaskPlan, plan_compound
 from app.services import trace
 

@@ -43,6 +43,9 @@ PROD_MODE = os.getenv("PROD_MODE", "false").lower() == "true"
 # 过期天数 / 定时清理间隔(秒, 0=关闭)
 SESSION_RETENTION_DAYS = int(os.getenv("SESSION_RETENTION_DAYS", "7"))
 SESSION_CLEANUP_INTERVAL = int(os.getenv("SESSION_CLEANUP_INTERVAL", str(6 * 3600)))
+# business=由业务层驱动（默认，业务层掌握进行中轮次与未完成工单，过期判定只有一处）；
+# self=agent 自跑全局定时清理（旧行为，会绕开业务层的判定）
+SESSION_CLEANUP_MODE = os.getenv("SESSION_CLEANUP_MODE", "business").strip().lower()
 
 TEXT_SPLITTER_CHUNK_SIZE = 200
 TEXT_SPLITTER_CHUNK_OVERLAP = 30

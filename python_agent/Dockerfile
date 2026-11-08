@@ -28,9 +28,8 @@ WORKDIR /app
 
 # 复制python依赖包
 COPY --from=builder /install /usr/local
-# 复制项目源码
+# 复制项目源码（four-agent 图已并入 app/agent/support/，不再需要第二个构建上下文）
 COPY --from=builder /build /app
-COPY --from=agent_src . /app/agent
 
 EXPOSE 8000
 CMD ["python","main.py"]

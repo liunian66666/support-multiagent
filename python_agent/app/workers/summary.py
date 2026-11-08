@@ -9,9 +9,9 @@ import asyncio
 import logging
 import os
 
-from app.infra.config import BUSINESS_API, INTERNAL_API_TOKEN
 from app.agent.llm_config import get_tenant_model
 from app.infra import redis_lock
+from app.infra.config import BUSINESS_API, INTERNAL_API_TOKEN
 
 logger = logging.getLogger("agent.session_summary")
 

@@ -1,7 +1,7 @@
 # [ours] 本文件为 fork 新增：support_faq 规则契约测试
 import unittest
 
-from app.chat.faq import lookup, is_handoff, order_id, handoff_reason
+from app.chat.faq import handoff_reason, is_handoff, lookup, order_id
 
 
 class SupportFaqContractTest(unittest.TestCase):

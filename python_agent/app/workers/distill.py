@@ -14,8 +14,7 @@ import asyncio
 import logging
 import os
 
-from app.agent.llm_config import (current_chat_prices, current_model_name,
-                                  current_model_source)
+from app.agent.llm_config import current_chat_prices, current_model_name, current_model_source
 from app.infra import redis_lock
 from app.infra.db.experience import find_distill_candidates, insert_experience_item
 from app.infra.db.usage import record_token_usage

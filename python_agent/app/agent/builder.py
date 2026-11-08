@@ -3,8 +3,7 @@ import logging
 
 from langchain.agents import create_agent
 
-from app.agent.llm_config import (_tenant_model_cache, clear_model_cache,
-                                  get_tenant_model)
+from app.agent.llm_config import _tenant_model_cache, clear_model_cache, get_tenant_model
 from app.agent.middleware import content_guard
 from app.agent.retrieval import ensure_tenant_vector, get_tenant_retriever
 from app.infra.config import BUSINESS_API, INTERNAL_API_TOKEN

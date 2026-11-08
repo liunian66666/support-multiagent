@@ -1,6 +1,7 @@
 """LLM 异常友好化与回复后处理（从 main.py 拆出）。"""
-import openai
 import re
+
+import openai
 from langchain_core.messages import HumanMessage, ToolMessage
 
 # [ours] 长对话记忆：模型复述【更早对话摘要】段（用户本人说过的内容）不算政策结论，
@@ -17,8 +18,9 @@ def _cites_session_memory(messages: list, content: str) -> bool:
         return False
     return any(tok in mem for tok in set(_TOKEN_RE.findall(content or "")))
 
-from app.kb.evidence import has_explicit_support
 from app.infra.config import PROD_MODE
+from app.kb.evidence import has_explicit_support
+
 
 def _friendly_llm_error(e: Exception) -> str:
     """LLM 调用异常 → 用户可读错误提示（生产不暴露内部细节/密钥）"""

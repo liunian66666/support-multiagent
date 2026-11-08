@@ -16,17 +16,24 @@ from qdrant_client import QdrantClient
 from app.agent import tools
 from app.agent.faq_bridge import build_faq_bridge
 from app.agent.llm_config import get_platform_embeddings, get_platform_model
+from app.infra import pubsub as redis_pubsub
 from app.infra.checkpoint import SafeAsyncPostgresSaver
-from app.infra.config import (POSTGRES_DSN, QDRANT_URL, SESSION_CLEANUP_INTERVAL,
-                              SESSION_RETENTION_DAYS, TEXT_SPLITTER_CHUNK_OVERLAP,
-                              TEXT_SPLITTER_CHUNK_SIZE)
+from app.infra.config import (
+    POSTGRES_DSN,
+    QDRANT_URL,
+    SESSION_CLEANUP_INTERVAL,
+    SESSION_RETENTION_DAYS,
+    TEXT_SPLITTER_CHUNK_OVERLAP,
+    TEXT_SPLITTER_CHUNK_SIZE,
+)
+from app.infra.db.experience import (  # [ours] S2 经验层四表 + S3 召回索引
+    ensure_experience_indexes,
+    ensure_experience_schema,
+)
 from app.infra.db.kb_policy import ensure_kb_policy_schema
 from app.infra.db.prompt import load_active_prompt, seed_default_prompt
 from app.infra.db.session import verify_agent_tables
 from app.infra.db.trace import ensure_trace_table
-from app.infra.db.experience import (  # [ours] S2 经验层四表 + S3 召回索引
-    ensure_experience_indexes, ensure_experience_schema)
-from app.infra import pubsub as redis_pubsub
 from app.services.invalidation import clear_tenant_caches
 from app.workers.cleanup import session_cleanup_loop
 
@@ -53,6 +60,11 @@ async def lifespan(app: FastAPI):
     app.state.tools = None
     app.state.cleanup_task: Optional[asyncio.Task] = None
     app.state.http_client: Optional[httpx.AsyncClient] = None
+    # 配了持久检查点后端的部署，必须能回答"有没有旧审批"：拿不到 saver 时审批判定
+    # 返回 unknown（503，可重试），而不是被当成"没有审批"直接放行新提问。
+    app.state.require_checkpointer = bool(os.getenv("AGENT_REQUIRE_CHECKPOINTER",
+                                                   "1" if (POSTGRES_DSN or "").strip()
+                                                   else "0") == "1")
 
     logger.info("==== Agent Service starting ====")
     try:
@@ -71,6 +83,8 @@ async def lifespan(app: FastAPI):
         #    抛 "the connection is closed" 直到 agent 重启（SafeAsyncPostgresSaver 内部按需重连）。
         app.state.checkpointer = SafeAsyncPostgresSaver(app.state.checkpointer_conn, dsn=POSTGRES_DSN)
         await app.state.checkpointer.setup()
+        if app.state.require_checkpointer and app.state.checkpointer is None:
+            raise RuntimeError("检查点后端装配失败：旧审批状态将不可判定")
         logger.info("✅ AsyncPostgresSaver checkpointer setup done (concurrency-safe wrapper)")
         # [ours] 新增：FAQ 快答检查点旁路图（与主 Agent 共享同一 checkpointer）
         # FAQ 快答旁路图：与主 Agent 共享同一 checkpointer，命中流程 FAQ 时把问答写进检查点，

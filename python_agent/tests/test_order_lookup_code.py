@@ -11,10 +11,16 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.agent import tools
-from app.chat.order import (ORDER_FORBIDDEN, ORDER_NOT_FOUND, ORDER_OK,
-                            ORDER_UNAUTHENTICATED, ORDER_UNAVAILABLE,
-                            ORDER_UNVERIFIED, order_handoff_reason,
-                            should_auto_handoff)
+from app.chat.order import (
+    ORDER_FORBIDDEN,
+    ORDER_NOT_FOUND,
+    ORDER_OK,
+    ORDER_UNAUTHENTICATED,
+    ORDER_UNAVAILABLE,
+    ORDER_UNVERIFIED,
+    order_handoff_reason,
+    should_auto_handoff,
+)
 from app.infra import context
 
 

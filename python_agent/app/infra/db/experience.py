@@ -188,6 +188,49 @@ async def list_recallable_experiences(app, tenant_id: str, limit: int = 20):
             for r in rows]
 
 
+async def list_experience_items(app, tenant_id: str, *, page: int = 1, size: int = 20,
+                                query: str = "", status: str = "") -> dict:
+    """Tenant-scoped management view; never return another tenant's rows."""
+    where = "tenant_id = %s"
+    args: list = [tenant_id]
+    if status:
+        where += " AND review_status = %s"
+        args.append(status)
+    if query:
+        where += " AND (content ILIKE %s OR applicability::text ILIKE %s)"
+        args.extend([f"%{query}%", f"%{query}%"])
+    async with app.state.db_pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT count(*) FROM experience_items WHERE " + where, args)
+            total = (await cur.fetchone())[0]
+            await cur.execute("""
+                SELECT id, route, content, applicability, review_status, confidence,
+                       source_answer_id, valid_until, created_at, updated_at
+                FROM experience_items WHERE """ + where + " ORDER BY id DESC LIMIT %s OFFSET %s",
+                [*args, size, (page - 1) * size])
+            rows = await cur.fetchall()
+    keys = ("id", "route", "content", "applicability", "review_status", "confidence",
+            "source_answer_id", "valid_until", "created_at", "updated_at")
+    return {"items": [dict(zip(keys, row)) for row in rows], "total": total}
+
+
+async def update_experience_item(app, tenant_id: str, experience_id: int, *,
+                                 content: str, keywords: list[str], route: str) -> bool:
+    """An edited published item leaves the recall pool until reviewed again."""
+    async with app.state.db_pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("""
+                UPDATE experience_items
+                SET content = %s, route = %s, applicability = %s,
+                    review_status = CASE WHEN review_status = 'published'
+                                         THEN 'suspended' ELSE review_status END,
+                    updated_at = now()
+                WHERE id = %s AND tenant_id = %s AND review_status <> 'expired'
+                RETURNING id
+            """, (content, route, Jsonb({"keywords": keywords}), experience_id, tenant_id))
+            return await cur.fetchone() is not None
+
+
 async def set_experience_status(app, tenant_id: str, experience_id: int,
                                 action: str) -> bool:
     """[ours] S3/S4 状态迁移：publish / suspend（candidate→published→suspended）。"""
@@ -301,6 +344,9 @@ async def _transition(app, tenant_id: str, target_id: int,
     async with app.state.db_pool.connection() as conn:
         async with conn.transaction():
             async with conn.cursor() as cur:
+                # One publisher per tenant at a time; two admins cannot leave two active modes.
+                await cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))",
+                                  ("experience_mode:" + tenant_id,))
                 await cur.execute("""
                     SELECT id, eval_status FROM strategy_versions
                     WHERE id = %s AND tenant_id = %s FOR UPDATE

@@ -9,17 +9,110 @@ import os
 
 from fastapi import APIRouter, HTTPException, Request
 
-from app.infra.db.experience import (create_strategy_version,
-                                     get_active_strategy,
-                                     list_strategy_versions,
-                                     publish_strategy_version,
-                                     rollback_strategy_version,
-                                     save_feedback_event,
-                                     set_experience_status)
+from app.infra.db.experience import (
+    create_strategy_version,
+    get_active_strategy,
+    insert_experience_item,
+    list_experience_items,
+    list_strategy_versions,
+    publish_strategy_version,
+    rollback_strategy_version,
+    save_feedback_event,
+    set_experience_status,
+    update_experience_item,
+)
+from app.services.experience_recall import _mode as effective_recall_mode
 
 router = APIRouter()
 
 _MAX_BATCH = 200
+
+
+def _item_fields(body):
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="载荷必须为对象")
+    content = body.get("content")
+    route = body.get("route", "")
+    keywords = body.get("keywords")
+    if (not isinstance(content, str) or not 1 <= len(content.strip()) <= 1000
+            or not isinstance(route, str) or len(route) > 32
+            or not isinstance(keywords, list) or not 1 <= len(keywords) <= 12
+            or any(not isinstance(k, str) or not 1 <= len(k.strip()) <= 40
+                   for k in keywords)):
+        raise HTTPException(status_code=400, detail="经验内容、适用场景或关键词无效")
+    return content.strip(), route.strip(), list(dict.fromkeys(k.strip() for k in keywords))
+
+
+@router.get("/agent/experience/items")
+async def experience_items(request: Request):
+    tenant_id = request.headers.get("X-Tenant-Id", "")
+    _guard(request, tenant_id)
+    params = request.query_params
+    try:
+        page = max(1, int(params.get("page", "1")))
+        size = min(50, max(1, int(params.get("size", "20"))))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="分页参数无效")
+    status = params.get("status", "")
+    if status not in ("", "candidate", "published", "suspended", "expired"):
+        raise HTTPException(status_code=400, detail="经验状态无效")
+    result = await list_experience_items(request.app, tenant_id, page=page, size=size,
+                                         query=params.get("q", "")[:100].strip(), status=status)
+    for row in result["items"]:
+        for key in ("valid_until", "created_at", "updated_at"):
+            if row.get(key) is not None:
+                row[key] = row[key].isoformat()
+    return {"code": 0, "data": result}
+
+
+@router.post("/agent/experience/items")
+async def create_experience(request: Request):
+    tenant_id = request.headers.get("X-Tenant-Id", "")
+    _guard(request, tenant_id)
+    content, route, keywords = _item_fields(await request.json())
+    item_id = await insert_experience_item(request.app, {
+        "tenant_id": tenant_id, "content": content, "route": route,
+        "applicability": {"keywords": keywords}, "confidence": 1.0})
+    return {"code": 0, "data": {"id": item_id, "review_status": "candidate"}}
+
+
+@router.put("/agent/experience/items/{experience_id}")
+async def edit_experience(experience_id: int, request: Request):
+    tenant_id = request.headers.get("X-Tenant-Id", "")
+    _guard(request, tenant_id)
+    content, route, keywords = _item_fields(await request.json())
+    if not await update_experience_item(request.app, tenant_id, experience_id,
+                                        content=content, keywords=keywords, route=route):
+        raise HTTPException(status_code=404, detail="经验不存在或不属于该租户")
+    return {"code": 0, "data": {"id": experience_id}}
+
+
+@router.post("/agent/experience/mode")
+async def set_experience_mode(request: Request):
+    tenant_id = request.headers.get("X-Tenant-Id", "")
+    _guard(request, tenant_id)
+    body = await request.json()
+    mode = body.get("mode") if isinstance(body, dict) else None
+    if mode not in ("off", "inject"):
+        raise HTTPException(status_code=400, detail="mode 必须是 off 或 inject")
+    current = await get_active_strategy(request.app, tenant_id)
+    if current and current.get("recall_mode") == mode:
+        return {"code": 0, "data": {"mode": mode}}
+    version_id = await create_strategy_version(
+        request.app, tenant_id, {"recall_mode": mode},
+        parent_version=current["id"] if current else None)
+    done = await publish_strategy_version(request.app, tenant_id, version_id,
+                                          actor="tenant_admin")
+    if not done:
+        raise HTTPException(status_code=409, detail="经验开关更新失败")
+    return {"code": 0, "data": {"mode": mode}}
+
+
+@router.get("/agent/experience/mode")
+async def experience_mode(request: Request):
+    tenant_id = request.headers.get("X-Tenant-Id", "")
+    _guard(request, tenant_id)
+    return {"code": 0, "data": {"mode": await effective_recall_mode(request.app, tenant_id)}}
 
 
 def _guard(request: Request, tenant_id: str):

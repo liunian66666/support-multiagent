@@ -1,14 +1,15 @@
 """JSON/SSE parity and specialist boundaries after moving routing out of API."""
 
-import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from fastapi import HTTPException
+
 from app.api.chat import agent_chat, agent_chat_stream
 from app.chat.intent import Route, route_message
 from app.schemas import ChatRequest
-from app.services.specialists import SpecialistResult, execute_shortcut
+from app.services.specialists import execute_shortcut
 from app.services.supervisor import TurnDecision, decide_turn
 
 
@@ -74,34 +75,59 @@ class SupervisorTest(unittest.IsolatedAsyncioTestCase):
 
 
 class EntryParityTest(unittest.IsolatedAsyncioTestCase):
-    async def test_json_and_sse_use_same_supervisor_and_shortcut(self):
-        req = ChatRequest(thread_id="t_demo:guest1", user_message="包邮规则", has_pending_ticket=True)
+    async def test_both_entries_refuse_with_the_same_structured_conflict(self):
+        """停在旧审批上的会话：两个入口都 409，都不答新问题。
+
+        收敛前的行为是"两个入口各自把新问题送进旧图"（JSON 与 SSE 各一条实现）。
+        现在它们共用 :mod:`app.api.approval_gate`：同一状态码、同一 ``error_code``、
+        同一份 ``checkpoint_keys``，而且**一次 Agent 都不跑**。
+        """
+        from langchain_core.messages import AIMessage, HumanMessage
+        from langgraph.checkpoint.memory import InMemorySaver
+        from langgraph.graph import END, START, MessagesState, StateGraph
+        from langgraph.types import interrupt
+
+        saver = InMemorySaver()
+
+        async def ask_human(_state):
+            interrupt({"action": "transfer_to_human"})
+            return {"messages": [AIMessage(content="已建单")]}
+
+        paused = StateGraph(MessagesState)
+        paused.add_node("ask", ask_human)
+        paused.add_edge(START, "ask")
+        paused.add_edge("ask", END)
+        await paused.compile(checkpointer=saver).ainvoke(
+            {"messages": [HumanMessage(content="我要转人工")]},
+            {"configurable": {"thread_id": "t_demo:guest1"}})
+
+        req = ChatRequest(thread_id="t_demo:guest1", user_message="包邮规则",
+                          has_pending_ticket=True, turn_id="turn-approval")
         request = SimpleNamespace(headers={"X-Trace-Id": "trace-test"},
-                                  app=SimpleNamespace())
-        decision = TurnDecision(Route("faq_fast", answer="满 99 元包邮"), None,
-                                req.user_message, "rule")
-        shortcut = SpecialistResult("faq_rule", content="满 99 元包邮")
+                                  app=SimpleNamespace(state=SimpleNamespace(checkpointer=saver)))
         from contextlib import asynccontextmanager
 
         @asynccontextmanager
         async def fake_pool(app):  # 配额/触点在本用例被 patch 掉，只需空连接占位
             yield SimpleNamespace()
+
+        run_turn = AsyncMock()
         with patch("app.api.chat._require_trusted_chat", return_value="t_demo"), \
                 patch("app.api.chat._pool_conn", fake_pool), \
                 patch("app.api.chat.check_concurrent_sessions", new_callable=AsyncMock,
                       return_value=None), \
-                patch("app.api.chat.decide_turn", new_callable=AsyncMock,
-                      return_value=decision) as decide, \
-                patch("app.api.chat.execute_shortcut", new_callable=AsyncMock,
-                      return_value=shortcut) as execute:
-            direct = await agent_chat(req, request)
-            streamed = await agent_chat_stream(req, request)
-            frames = [json.loads(line[6:]) async for chunk in streamed.body_iterator
-                      for line in chunk.splitlines() if line.startswith("data: ")]
-        self.assertEqual(decide.await_count, 2)
-        self.assertEqual(execute.await_count, 2)
-        self.assertEqual(direct.content, frames[-1]["content"])
-        self.assertEqual(frames[-1]["type"], "end")
+                patch("app.api.chat.four_agent.run_turn", run_turn):
+            with self.assertRaises(HTTPException) as direct:
+                await agent_chat(req, request)
+            with self.assertRaises(HTTPException) as streamed:
+                await agent_chat_stream(req, request)
+
+        for caught in (direct.exception, streamed.exception):
+            self.assertEqual(caught.status_code, 409)
+            self.assertEqual(caught.detail["error_code"], "approval_pending")
+            self.assertEqual(caught.detail["checkpoint_keys"],
+                             ["support_v2:t_demo:guest1", "t_demo:guest1"])
+        run_turn.assert_not_awaited()
 
 
 if __name__ == "__main__":

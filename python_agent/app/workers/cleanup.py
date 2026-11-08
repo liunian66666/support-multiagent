@@ -5,14 +5,23 @@ import logging
 from fastapi import FastAPI
 
 from app.infra.cache import _kb_cache, _kb_cache_cleanup
-from app.infra.config import SESSION_CLEANUP_INTERVAL, SESSION_RETENTION_DAYS
-from app.infra.db.session import (_acquire_cleanup_lock, _release_cleanup_lock,
-                                  cleanup_sessions)
+from app.infra.config import SESSION_CLEANUP_INTERVAL, SESSION_CLEANUP_MODE, SESSION_RETENTION_DAYS
+from app.infra.db.session import _acquire_cleanup_lock, _release_cleanup_lock, cleanup_sessions
 
 logger = logging.getLogger("agent.db_ops")
 
 async def session_cleanup_loop(app: FastAPI):
-    """后台定时回收过期会话"""
+    """后台定时回收过期会话。
+
+    默认不跑（``SESSION_CLEANUP_MODE=business``）：过期判定必须由业务层做，因为只有它
+    能同时看到 MySQL 侧的会话索引、进行中的轮次和未完成工单。agent 自己按
+    ``session_meta.last_active_at`` 全局扫描会绕开这三项，删掉正在处理的会话检查点。
+    需要恢复旧行为时设 ``SESSION_CLEANUP_MODE=self``。
+    """
+    if SESSION_CLEANUP_MODE != "self":
+        logger.info("⏸ periodic session cleanup delegated to business layer (mode=%s)",
+                    SESSION_CLEANUP_MODE)
+        return
     if SESSION_CLEANUP_INTERVAL <= 0:
         logger.info("⏸ periodic session cleanup disabled")
         return

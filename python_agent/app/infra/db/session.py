@@ -11,6 +11,14 @@ logger = logging.getLogger("agent.db_ops")
 _AGENT_TABLES = ("platform_settings", "session_meta", "prompts", "prompt_versions",
                  "kb_documents", "token_usage")
 
+_SUPPORT_NAMESPACE = "support_v2"
+"""新版四 Agent 图的检查点键前缀。
+
+必须与 ``app.agent.support.service.NAMESPACE`` 一致。这里不 import 那个模块：
+它会拖进整条 langchain 依赖链，而清理任务只用一个字符串常量。
+``tests/four_agent/test_cleanup_namespace.py`` 钉住两边相等。
+"""
+
 
 async def verify_agent_tables(conn: psycopg.AsyncConnection):
     """校验 agent 依赖的表已存在（由 init SQL 导入）；缺表抛错提示执行 SQL"""
@@ -64,7 +72,6 @@ def is_transient_db_error(exc: BaseException) -> bool:
 async def touch_session_retry(app, thread_id: str):
     """touch_session + 瞬时段连错误自动重试一次（upsert 幂等，重试安全）。
     用法：await touch_session_retry(request.app, thread_id)"""
-    from app.infra.db_pool import _pool_conn
     try:
         async with _pool_conn(app) as conn:
             await touch_session(conn, thread_id)
@@ -76,28 +83,51 @@ async def touch_session_retry(app, thread_id: str):
             await touch_session(conn, thread_id)
 
 
-async def cleanup_sessions(conn: psycopg.AsyncConnection, checkpointer, days: int) -> dict:
-    """回收超过 days 天未活跃的 LangGraph 会话：
-    通过 session_meta 找到过期线程 → 调用 checkpointer.adelete_thread 清理 checkpoint → 删除 session_meta
+async def cleanup_sessions(conn: psycopg.AsyncConnection, checkpointer, days: int,
+                           *, thread_ids: list[str] | None = None,
+                           skip: set[str] | None = None) -> dict:
+    """回收超过 days 天未活跃的会话，删检查点后再删索引。
+
+    两个键都要删：新版图的检查点键是 ``support_v2:{thread_id}``，而未完成审批可能
+    还留在旧图的原始 ``thread_id`` 上。只删前者会漏掉旧审批，只删后者等于没删。
+
+    只有两个键都删成功才把 ``session_meta`` 那行删掉：失败的那条留着，下一轮重试，
+    否则会出现"索引没了、检查点还在"——索引是唯一能找到这条检查点的线索。
+
+    ``thread_ids`` 给定时只处理这一批（业务层驱动的协调清理，业务层已经排除了有
+    进行中轮次和未完成工单的会话）；为 None 时全局扫描（手动运维入口）。
+    ``skip`` 里的线程直接判为失败并保留，供业务层下轮重试。
     """
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    async with conn.cursor() as cur:
-        await cur.execute("SELECT thread_id FROM session_meta WHERE last_active_at < %s", (cutoff,))
-        rows = await cur.fetchall()
-    thread_ids = [r[0] for r in rows]
-
-    deleted = 0
-    for tid in thread_ids:
-        try:
-            await checkpointer.adelete_thread(tid)
-            deleted += 1
-        except Exception as e:
-            logger.warning("delete thread %s failed: %s", tid, e)
-
-    if thread_ids:
+    if thread_ids is None:
         async with conn.cursor() as cur:
-            await cur.execute("DELETE FROM session_meta WHERE thread_id = ANY(%s)", (thread_ids,))
-    return {"scanned": len(thread_ids), "deleted": deleted, "threads": thread_ids}
+            await cur.execute("SELECT thread_id FROM session_meta WHERE last_active_at < %s",
+                              (cutoff,))
+            candidates = [row[0] for row in await cur.fetchall()]
+    else:
+        candidates = [tid for tid in thread_ids if tid]
+
+    guarded = skip or set()
+    deleted: list[str] = []
+    failed: list[dict] = []
+    for tid in candidates:
+        if tid in guarded:
+            failed.append({"thread_id": tid,
+                           "error": "has in-flight turn or unfinished ticket"})
+            continue
+        try:
+            for key in (f"{_SUPPORT_NAMESPACE}:{tid}", tid):
+                await checkpointer.adelete_thread(key)
+            deleted.append(tid)
+        except Exception as e:
+            logger.warning("delete thread %s failed, index kept for retry: %s", tid, e)
+            failed.append({"thread_id": tid, "error": str(e)[:200]})
+
+    if deleted:
+        async with conn.cursor() as cur:
+            await cur.execute("DELETE FROM session_meta WHERE thread_id = ANY(%s)", (deleted,))
+    return {"scanned": len(candidates), "deleted": len(deleted),
+            "deleted_threads": deleted, "failed": failed}
 
 
 _CLEANUP_LOCK_KEY = "cs:lock:session_cleanup"

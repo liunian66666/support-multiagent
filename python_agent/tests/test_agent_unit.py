@@ -5,9 +5,9 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+
 from app.infra.db.tenant import collection_name, tenant_from_thread
 from app.infra.db.usage import extract_usage_metadata
-from langchain_core.messages import HumanMessage, AIMessage
 
 
 class TestTenantParse(unittest.TestCase):

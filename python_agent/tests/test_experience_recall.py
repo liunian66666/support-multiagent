@@ -2,8 +2,7 @@
 import unittest
 from unittest.mock import patch
 
-from app.services.experience_recall import (augment_message, match_experiences,
-                                            recall_for_turn)
+from app.services.experience_recall import augment_message, match_experiences, recall_for_turn
 from app.workers.distill import _DISTILL_PROMPT, _digest_events, _parse_digest
 
 

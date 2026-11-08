@@ -5,7 +5,6 @@ from langchain_core.documents import Document
 
 from app.kb.evidence import select_evidence, stable_chunk_id
 
-
 NOW = datetime(2026, 10, 23, tzinfo=timezone.utc)
 
 

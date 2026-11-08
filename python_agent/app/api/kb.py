@@ -14,16 +14,14 @@ from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
 from qdrant_client.http import models as qmodels
 
-from app.infra.config import INTERNAL_API_TOKEN
 from app.infra.cache import clear_kb_cache
+from app.infra.config import INTERNAL_API_TOKEN
 from app.infra.db.quota import check_kb_quota
 from app.infra.db.settings import set_platform_setting
 from app.infra.db.tenant import collection_name, tenant_from_request
 from app.infra.db_pool import _pool_conn
 from app.kb.parser import extract_text
-from app.kb.storage import (_kb_max_file_mb, delete_kb_file, enqueue_index,
-                            kb_file_url, save_kb_file)
-
+from app.kb.storage import _kb_max_file_mb, delete_kb_file, enqueue_index, kb_file_url, save_kb_file
 
 logger = logging.getLogger("agent.routers_kb")
 router = APIRouter()

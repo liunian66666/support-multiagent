@@ -4,9 +4,9 @@ from dataclasses import dataclass
 
 from app.agent import tools
 from app.chat.order import order_handoff_reason, should_auto_handoff
+from app.services import trace
 from app.services.compound import execute_compound
 from app.services.dialog import _record_to_checkpoint
-from app.services import trace
 
 
 @dataclass(frozen=True)

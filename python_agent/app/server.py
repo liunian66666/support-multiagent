@@ -16,6 +16,7 @@ from fastapi import FastAPI  # noqa: E402
 from app.agent import tools  # noqa: E402
 from app.api.cache_admin import router as cache_router  # noqa: E402
 from app.api.chat import router as chat_router  # noqa: E402
+from app.api.chat_v2 import build_router as build_support_v2_router  # noqa: E402
 from app.api.experience import router as experience_router  # noqa: E402
 from app.api.kb import router as kb_router  # noqa: E402
 from app.api.platform import router as platform_router  # noqa: E402
@@ -38,6 +39,10 @@ app.include_router(prompt_router)
 app.include_router(kb_router)
 app.include_router(cache_router)
 app.include_router(chat_router)
+# 对等/调试入口 /agent/chat/v2：与 /agent/chat 共用同一请求模型、同一服务注册表、
+# 同一套鉴权（identity=None ⇒ 走 _require_trusted_chat）与同一份轮次结果。
+# 挂载它是为了消除"代码里有一条没人挂载的第二入口"这种状态。
+app.include_router(build_support_v2_router())
 app.include_router(trace_router)
 app.include_router(session_router)
 app.include_router(tenant_router)

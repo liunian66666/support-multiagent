@@ -1,5 +1,6 @@
 """FAQ 快答检查点旁路图（从 agent_factory.py 拆出）。"""
-from langgraph.graph import END, MessagesState, START, StateGraph
+from langgraph.graph import END, START, MessagesState, StateGraph
+
 
 def build_faq_bridge(checkpointer):
     graph = StateGraph(MessagesState)

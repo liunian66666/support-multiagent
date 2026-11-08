@@ -10,13 +10,18 @@ from dataclasses import dataclass
 from langchain_core.tools import tool
 from langgraph.types import interrupt
 
-from app.chat.order import (ORDER_FORBIDDEN, ORDER_NOT_FOUND, ORDER_OK,
-                            ORDER_UNAUTHENTICATED, ORDER_UNAVAILABLE,
-                            ORDER_UNVERIFIED)
+from app.chat.order import (
+    ORDER_FORBIDDEN,
+    ORDER_NOT_FOUND,
+    ORDER_OK,
+    ORDER_UNAUTHENTICATED,
+    ORDER_UNAVAILABLE,
+    ORDER_UNVERIFIED,
+)
 from app.infra.cache import _kb_cache_get_entry, _kb_cache_set
 from app.infra.config import INTERNAL_API_TOKEN, ORDER_BUSINESS_API
-from app.kb.evidence import approved_evidence
 from app.infra.db_pool import _pool_conn
+from app.kb.evidence import approved_evidence
 from app.services import trace
 
 # 模块级 app 引用，由 main.py 注入

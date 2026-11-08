@@ -67,7 +67,7 @@ def match_experiences(items: list, route: str, message: str) -> list:
     text = (message or "").lower()
     scored = []
     for item in items:
-        route_ok = (not item.get("route")) or item.get("route") == route
+        route_ok = (not route) or (not item.get("route")) or item.get("route") == route
         kws = _keywords_of(item)
         hit = [k for k in kws if k and k in text]
         if route_ok and hit:

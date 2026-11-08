@@ -10,9 +10,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from app.agent import tools
 from app.agent.llm_config import get_tenant_model
 from app.agent.retrieval import ensure_tenant_vector, get_tenant_retriever
-from app.kb.evidence import approved_evidence
 from app.chat.order import ORDER_OK, order_handoff_reason, should_auto_handoff
 from app.chat.plan import ReadTask, TaskPlan
+from app.kb.evidence import approved_evidence
 from app.services import trace
 
 logger = logging.getLogger("agent.compound")
@@ -119,6 +119,8 @@ async def execute_compound(app, tenant_id: str, thread_id: str, question: str,
             "不得仅凭订单状态判定退货资格；缺签收时间、商品情况等条件时明确待核验。"
             "订单未核验成功时不得推断订单状态。"
             "若订单是课程等数字商品，不要套用吊牌、二次销售等实物商品条款。"
+            "课程要区分取消订单、退款与实物退货；待发货本身不能证明可退，需核实是否已开通或使用。"
+            "未核实商城页面功能时，不要指引顾客点击具体按钮或入口。"
             "直接对顾客说话，用两三句自然的中文，不列清单。"
             "不要提知识库、证据、检索片段、来源编号、文档标题或系统实现细节。"
             "说明目前能确认什么、还需核对什么，以及顾客可以怎么做。"

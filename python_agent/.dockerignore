@@ -6,3 +6,6 @@ agent.log
 main_chroma.py.bak
 *.bak
 tests/
+docs/
+evaluation/
+scripts/four_agent_deploy/

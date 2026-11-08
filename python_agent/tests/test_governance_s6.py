@@ -1,23 +1,28 @@
 # -*- coding: utf-8 -*-
-"""[ours] S6 治理小件单测：图预算 config + checkpoint 探活降频（无 PG）。"""
+"""[ours] S6 治理小件单测：图预算 config + checkpoint 探活降频（无 PG）。
+
+收敛后只剩旧图（``/agent/resume``）会跑 LangGraph 的图，所以 ``AGENT_RECURSION_LIMIT``
+的注入点跟着搬到 :mod:`app.agent.legacy_approval.approval`；聊天入口不再构造图配置。
+"""
 import unittest
 from unittest.mock import patch
 
-from app.api.chat import _graph_config
-import app.api.chat as chat_mod
+from app.agent.legacy_approval import approval as approval_mod
+from app.agent.legacy_approval.approval import legacy_config
 from app.infra.checkpoint import SafeAsyncPostgresSaver
 
 
 class GraphConfigTest(unittest.TestCase):
     def test_default_keeps_langgraph_behavior(self):
-        with patch.object(chat_mod, "_RECURSION_LIMIT", 0):
-            cfg = _graph_config("t_demo:u1")
-        self.assertEqual(cfg, {"configurable": {"thread_id": "t_demo:u1"}})
+        with patch.object(approval_mod, "_RECURSION_LIMIT", 0):
+            cfg = legacy_config("t_demo:u1")
+        self.assertEqual(cfg, {"configurable": {"thread_id": "t_demo:u1",
+                                                "checkpoint_ns": ""}})
         self.assertNotIn("recursion_limit", cfg)  # 0=不注入，沿用框架默认
 
     def test_explicit_limit_injected(self):
-        with patch.object(chat_mod, "_RECURSION_LIMIT", 12):
-            cfg = _graph_config("t_demo:u1")
+        with patch.object(approval_mod, "_RECURSION_LIMIT", 12):
+            cfg = legacy_config("t_demo:u1")
         self.assertEqual(cfg["recursion_limit"], 12)
         self.assertEqual(cfg["configurable"]["thread_id"], "t_demo:u1")
 

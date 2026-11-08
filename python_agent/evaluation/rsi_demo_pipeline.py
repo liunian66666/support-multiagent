@@ -123,7 +123,7 @@ def main():
 
     # step4 提炼：需人工在 agent 容器执行 rsi_distill_once.py（此处轮询候选出现）
     log("4_distill", instruction=(
-        "docker exec cs_agent python /app/evaluation/rsi_distill_once.py"),
+        "docker exec SM_agent python /app/evaluation/rsi_distill_once.py"),
         note="产出 candidates 后按 source_answer_id 找到 experience_id 填入 --review-id 再跑 step5+")
 
     with open(args.output, "w", encoding="utf-8") as f:

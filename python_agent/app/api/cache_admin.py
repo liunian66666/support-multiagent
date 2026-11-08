@@ -9,7 +9,6 @@ from fastapi import APIRouter, Request
 
 from app.services.invalidation import clear_tenant_caches
 
-
 logger = logging.getLogger("agent.routers_cache")
 router = APIRouter()
 

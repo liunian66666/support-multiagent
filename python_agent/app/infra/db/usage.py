@@ -4,7 +4,6 @@ from typing import Optional
 
 import psycopg
 
-
 logger = logging.getLogger("agent.db_ops")
 
 def extract_usage_metadata(messages) -> Optional[dict]:

@@ -6,8 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
 
-from app.api.experience import (active_strategy, create_strategy,
-                                publish_strategy, rollback_strategy)
+from app.api.experience import active_strategy, create_strategy, publish_strategy, rollback_strategy
 from app.infra.db.experience import create_strategy_version
 
 TOKEN = "tok"

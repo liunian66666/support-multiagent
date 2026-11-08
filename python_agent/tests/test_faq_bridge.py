@@ -6,7 +6,7 @@
 import asyncio
 import unittest
 
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 
 from app.agent.faq_bridge import build_faq_bridge

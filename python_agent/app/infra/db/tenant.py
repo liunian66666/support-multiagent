@@ -1,6 +1,7 @@
 """租户解析与向量集合命名（从 db_ops.py 拆出）。"""
 from fastapi import Request
 
+
 def tenant_from_thread(thread_id: str) -> str:
     """从 thread_id / user_id 提取租户 ID（格式 {tenant_id}:{uid}）"""
     if ":" in thread_id:

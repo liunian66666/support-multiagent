@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock, patch
 
 from langchain_core.messages import AIMessage, HumanMessage
 
+from app.agent import tools
 from app.agent.faq_agent import faq_agent, recent_messages
 from app.agent.intake_agent import intake_agent
 from app.chat.intent import route_message
-from app.agent import tools
 
 
 class RoutingTest(unittest.TestCase):

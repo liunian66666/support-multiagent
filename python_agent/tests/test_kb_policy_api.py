@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from fastapi.responses import JSONResponse
+
 from app.api.kb import kb_set_policy
 
 

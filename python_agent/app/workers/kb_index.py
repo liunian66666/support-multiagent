@@ -9,14 +9,14 @@ import asyncio
 import json
 import logging
 import uuid
-from app.infra.cache import clear_kb_cache
-from app.kb.evidence import stable_chunk_id
 
 from qdrant_client.http import models as qmodels
 
 from app.agent.retrieval import ensure_tenant_vector
+from app.infra.cache import clear_kb_cache
 from app.infra.db.tenant import collection_name
 from app.infra.db_pool import _pool_conn
+from app.kb.evidence import stable_chunk_id
 from app.kb.storage import KB_INDEX_QUEUE, read_kb_file_text
 
 logger = logging.getLogger("agent.kb_worker")
