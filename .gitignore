@@ -51,3 +51,6 @@ orders_backup.sql
 
 # 本地会话记忆目录（不随仓库发布）
 .workbuddy/
+
+# 前端页面预览产物（临时截图与探针脚本）
+tmp_preview/

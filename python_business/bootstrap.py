@@ -53,10 +53,33 @@ def seed_empty_database(conn):
     return True
 
 
+def ensure_experience_menu(conn):
+    """Add the tenant self-service page to existing databases without resetting roles."""
+    entries = (
+        (46, 0, "租户管理", 1, "", "", None, 7),
+        (47, 46, "可复用经验", 2, "/experience", "views/Experience.vue", "experience:view", 1),
+        (48, 47, "维护经验", 3, "", "", "experience:edit", 1),
+    )
+    with conn.cursor() as cursor:
+        for menu_id, parent, name, kind, path, component, perm, sort in entries:
+            cursor.execute(
+                "INSERT IGNORE INTO menus (id,parent_id,group_name,name,type,path,component,"
+                "perm,icon,sort,visible,status,is_builtin,created_at,updated_at) "
+                "VALUES (%s,%s,'业务中心',%s,%s,%s,%s,%s,'',%s,1,1,1,NOW(),NOW())",
+                (menu_id, parent, name, kind, path, component, perm, sort))
+        cursor.execute("""
+            INSERT IGNORE INTO sys_role_menu (role_id,menu_id)
+            SELECT r.id,m.id FROM roles r JOIN menus m ON m.id IN (46,47,48)
+            WHERE r.code = 'admin' AND r.deleted_at = 0
+              AND m.group_name = '业务中心'
+        """)
+
+
 def main():
     with database() as conn:
         try:
             seeded = seed_empty_database(conn)
+            ensure_experience_menu(conn)
             conn.commit()
         except Exception:
             conn.rollback()

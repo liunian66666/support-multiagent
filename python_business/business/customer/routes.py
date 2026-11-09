@@ -6,21 +6,25 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import logging
 import os
 import secrets
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
+import httpx
 import redis
 from fastapi import APIRouter, Depends, Header, Request
 from pydantic import BaseModel
 
-from business.core.constants import ORDER_ID, TENANT_ID, TOKEN_TTL
+from business.core.constants import (AGENT_URL, CONVERSATION_RETENTION_DAYS,
+                                     ORDER_ID, TENANT_ID, TOKEN_TTL)
 from business.core.errors import deny
-from business.infra.storage import cache, many, one, write
+from business.infra.storage import cache, db, many, one, write
 
 router = APIRouter()
+logger = logging.getLogger("business.customer")
 
 
 def tenant(tenant_id):
@@ -155,7 +159,18 @@ def allow_login(request, *, purpose, limit):
 
 
 def issue_session(tenant_id, customer_id, *, is_guest=False, is_preview=False):
-    """Issue a customer token compatible with the existing format. and persist its server-side session."""
+    """Issue a customer token compatible with the existing format. and persist its server-side session.
+
+    Two rows are written in one transaction:
+
+    * ``customer_sessions`` — the 2-hour login token, the only proof of "who is calling now";
+    * ``chat_conversations`` — the conversation index, which outlives the token so the
+      customer can come back tomorrow and resume this thread.
+
+    The conversation starts as ``draft``: it stays out of the history list until the first
+    message is actually accepted. That keeps "log in, then pick 继续上次对话" from leaving an
+    empty conversation behind when the freshly allocated thread_id is discarded.
+    """
     tenant_row = tenant(tenant_id)
     session_id = secrets.token_hex(16)
     thread_id = (f"{customer_id}:"
@@ -164,12 +179,29 @@ def issue_session(tenant_id, customer_id, *, is_guest=False, is_preview=False):
                "nonce": secrets.token_hex(16), "kind": "customer",
                "cid": customer_id, "sess": session_id}
     token = signed_token(payload, tenant_row["app_secret_hash"])
-    write(
-        "INSERT INTO customer_sessions "
-        "(tenant_id, customer_id, thread_id, token, is_preview, is_guest, expires_at, created_at) "
-        "VALUES (%s, %s, %s, %s, %s, %s, DATE_ADD(NOW(), INTERVAL 2 HOUR), NOW())",
-        (tenant_id, customer_id, thread_id, session_id, int(is_preview), int(is_guest)),
-    )
+    with db() as conn:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO customer_sessions "
+                    "(tenant_id, customer_id, thread_id, token, is_preview, is_guest, "
+                    "expires_at, created_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, DATE_ADD(NOW(), INTERVAL 2 HOUR), NOW())",
+                    (tenant_id, customer_id, thread_id, session_id,
+                     int(is_preview), int(is_guest)),
+                )
+                cur.execute(
+                    "INSERT INTO chat_conversations "
+                    "(thread_id, tenant_id, customer_id, is_guest, is_preview, status, "
+                    "created_at, last_active_at) "
+                    "VALUES (%s, %s, %s, %s, %s, 'draft', NOW(3), NOW(3))",
+                    (thread_id, tenant_id, customer_id, int(is_guest), int(is_preview)),
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
     return {"code": 0, "data": {"token": token, "tenant_id": tenant_id,
             "customer_id": customer_id, "thread_id": thread_id,
             "expires_in": TOKEN_TTL, "guest": is_guest}}
@@ -252,6 +284,232 @@ def customer_session(customer: Customer = Depends(current_customer)):
             "is_guest": customer.is_guest, "is_preview": customer.is_preview}}
 
 
+def _retention_days(days: int | None) -> int:
+    """调用方只能收窄窗口，不能放宽到 7 天以上。"""
+    if days is None or days < 1:
+        return CONVERSATION_RETENTION_DAYS
+    return min(days, CONVERSATION_RETENTION_DAYS)
+
+
+@router.get("/api/customer/conversations")
+def list_conversations(customer: Customer = Depends(current_customer),
+                       days: int | None = None):
+    """该客户近 N 天可恢复的会话。
+
+    归属只信登录令牌解出的 tenant_id + customer_id。草稿（登录分配但还没受理消息）
+    不进列表：否则"登录 → 选继续"会在历史里多出一个空会话。访客与商家预览同样不提供
+    历史 —— 访客的 customer_id 每次登录都随机，跨登录匹配没有意义。
+    """
+    span = _retention_days(days)
+    if customer.is_guest or customer.is_preview:
+        return {"code": 0, "data": {"conversations": [], "retention_days": span}}
+    rows = many(
+        "SELECT c.thread_id, c.created_at, c.last_active_at, c.title, "
+        "(SELECT COUNT(*) FROM messages m WHERE m.tenant_id = c.tenant_id "
+        " AND m.thread_id = c.thread_id) AS message_count, "
+        "(SELECT LEFT(m2.content, 40) FROM messages m2 WHERE m2.tenant_id = c.tenant_id "
+        " AND m2.thread_id = c.thread_id AND m2.role = 'user' "
+        " ORDER BY m2.id ASC LIMIT 1) AS preview, "
+        "EXISTS(SELECT 1 FROM chat_turns t WHERE t.tenant_id = c.tenant_id "
+        " AND t.thread_id = c.thread_id AND t.status IN ('queued', 'running')) "
+        " AS has_pending_turn "
+        "FROM chat_conversations c "
+        "WHERE c.tenant_id = %s AND c.customer_id = %s AND c.status = 'active' "
+        "AND c.deleted_at IS NULL "
+        "AND c.last_active_at >= DATE_SUB(NOW(), INTERVAL %s DAY) "
+        "ORDER BY c.last_active_at DESC LIMIT 50",
+        (customer.tenant_id, customer.customer_id, span),
+    )
+    conversations = [{
+        "thread_id": row["thread_id"],
+        "title": row["title"] or "",
+        "created_at": iso(row["created_at"]),
+        "last_active_at": iso(row["last_active_at"]),
+        "message_count": int(row["message_count"] or 0),
+        "preview": row["preview"] or "",
+        "has_pending_turn": bool(row["has_pending_turn"]),
+        "current": row["thread_id"] == customer.thread_id,
+    } for row in rows]
+    return {"code": 0, "data": {"conversations": conversations, "retention_days": span}}
+
+
+def _owned_conversation(customer: Customer, thread_id: str) -> dict:
+    """三个会话接口共用的归属校验，返回会话行或抛 403/410。
+
+    判定顺序固定，不要各写一份：先判归属（"不存在"与"不属于你"返回同一个 403，
+    避免用状态码探测别人的会话），再判会话类型，最后判过期。已软删除的会话按
+    "不存在"处理，用户删掉之后不该还能通过旧链接操作。
+    """
+    row = one(
+        "SELECT thread_id, tenant_id, customer_id, title, is_guest, is_preview, "
+        "status, last_active_at FROM chat_conversations "
+        "WHERE thread_id = %s AND deleted_at IS NULL LIMIT 1",
+        (thread_id,),
+    )
+    if (not row or row["tenant_id"] != customer.tenant_id
+            or row["customer_id"] != customer.customer_id):
+        deny(403, "会话不属于当前客户")
+    if row["is_guest"] or row["is_preview"]:
+        deny(403, "该会话不支持此操作")
+    if row["status"] != "active":
+        deny(410, "会话已过期")
+    if row["last_active_at"] < datetime.now() - timedelta(days=CONVERSATION_RETENTION_DAYS):
+        deny(410, "会话已过期")
+    return row
+
+
+def _purge_checkpoint(thread_id: str) -> None:
+    """删掉该会话的检查点。失败只记日志，不回滚软删除。
+
+    用户的预期是"删了就消失"，deleted_at 已经满足这一点；检查点留给
+    maintenance 下一轮兜底（它按 deleted_at 非空筛选）。
+    """
+    try:
+        httpx.post(
+            AGENT_URL + "/agent/session/cleanup/batch",
+            json={"threads": [{"thread_id": thread_id}],
+                  "days": CONVERSATION_RETENTION_DAYS},
+            headers={"X-Internal-Token": os.getenv("INTERNAL_API_TOKEN", "")},
+            timeout=3,
+        )
+    except Exception:
+        logger.warning("checkpoint purge deferred for %s", thread_id)
+
+
+@router.post("/api/customer/conversations/{thread_id}/activate")
+def activate_conversation(thread_id: str, customer: Customer = Depends(current_customer)):
+    """把当前登录令牌绑定到一条历史会话上。
+
+    归属与过期由 ``_owned_conversation`` 统一判定，这里只负责改绑当前令牌。
+    """
+    if customer.is_guest or customer.is_preview:
+        deny(403, "访客与预览会话不支持切换历史")
+    _owned_conversation(customer, thread_id)
+
+    with db() as conn:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE customer_sessions SET thread_id = %s "
+                    "WHERE token = %s AND tenant_id = %s AND customer_id = %s",
+                    (thread_id, customer.session_id,
+                     customer.tenant_id, customer.customer_id),
+                )
+                updated = cur.rowcount
+            if updated == 1:
+                conn.commit()
+            else:
+                conn.rollback()
+        except Exception:
+            conn.rollback()
+            raise
+    if updated != 1:
+        deny(401, "登录会话已失效，请重新登录")
+    return {"code": 0, "data": {"thread_id": thread_id,
+            "tenant_id": customer.tenant_id, "customer_id": customer.customer_id,
+            "is_guest": False, "is_preview": False}}
+
+
+@router.post("/api/customer/conversations")
+def create_conversation(customer: Customer = Depends(current_customer)):
+    """开一段新对话：换新 thread_id 并绑到当前令牌。
+
+    当前 thread_id 如果还是一段没受理过消息的草稿，顺手清掉，避免反复点"开始新对话"
+    在表里堆空行。
+    """
+    thread_id = (f"{customer.customer_id}:"
+                 f"{datetime.now(timezone.utc):%Y%m%d%H%M%S}_{secrets.token_hex(4)}")
+    with db() as conn:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE c FROM chat_conversations c "
+                    "WHERE c.thread_id = %s AND c.status = 'draft' "
+                    "AND NOT EXISTS (SELECT 1 FROM messages m "
+                    " WHERE m.thread_id = c.thread_id)",
+                    (customer.thread_id,),
+                )
+                cur.execute(
+                    "INSERT INTO chat_conversations "
+                    "(thread_id, tenant_id, customer_id, is_guest, is_preview, "
+                    "status, created_at, last_active_at) "
+                    "VALUES (%s, %s, %s, %s, %s, 'draft', NOW(3), NOW(3))",
+                    (thread_id, customer.tenant_id, customer.customer_id,
+                     int(customer.is_guest), int(customer.is_preview)),
+                )
+                cur.execute(
+                    "UPDATE customer_sessions SET thread_id = %s "
+                    "WHERE token = %s AND tenant_id = %s AND customer_id = %s",
+                    (thread_id, customer.session_id,
+                     customer.tenant_id, customer.customer_id),
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    return {"code": 0, "data": {"thread_id": thread_id,
+            "tenant_id": customer.tenant_id, "customer_id": customer.customer_id}}
+
+
+class ConversationRenameReq(BaseModel):
+    title: str = ""
+
+
+@router.patch("/api/customer/conversations/{thread_id}")
+def rename_conversation(thread_id: str, body: ConversationRenameReq,
+                        customer: Customer = Depends(current_customer)):
+    """改会话显示名。传空串表示恢复默认（显示首条用户消息）。
+
+    前端渲染这个字段必须用 textContent —— 自定义名称是 XSS 入口。
+    """
+    _owned_conversation(customer, thread_id)
+    title = (body.title or "").strip()
+    if len(title) > 60:
+        deny(400, "名称最多 60 个字符")
+    write("UPDATE chat_conversations SET title = %s WHERE thread_id = %s",
+          (title, thread_id))
+    return {"code": 0, "data": {"thread_id": thread_id, "title": title}}
+
+
+@router.delete("/api/customer/conversations/{thread_id}")
+def delete_conversation(thread_id: str, customer: Customer = Depends(current_customer)):
+    """软删除一条历史会话，并尽力清掉检查点。
+
+    三条 409 边界都不能省：当前正在使用的会话（前端会拿着失效 thread_id 继续发消息）、
+    有 queued/running 轮次（任务还在跑，Agent 写不回来）、有未完成工单（客服后台会找不到）。
+
+    "当前会话"这条必须在归属校验之前判：刚登录时当前会话还是 draft，
+    先走 ``_owned_conversation`` 会被判成 410「已过期」，提示是误导性的。
+    游客/预览会话必须最先拦：否则游客删自己当前会话会先撞 409，语义变成"换一个再删"，
+    而实际能力根本不开放。
+    """
+    if customer.is_guest or customer.is_preview:
+        deny(403, "访客与预览会话不支持删除")
+    if thread_id == customer.thread_id:
+        deny(409, "不能删除正在使用的会话，请先切换到其他会话")
+    _owned_conversation(customer, thread_id)
+    busy = one(
+        "SELECT 1 AS x FROM chat_turns WHERE tenant_id = %s AND thread_id = %s "
+        "AND status IN ('queued', 'running') LIMIT 1",
+        (customer.tenant_id, thread_id),
+    )
+    if busy:
+        deny(409, "该会话还有正在处理的消息，请稍后再试")
+    pending = one(
+        "SELECT 1 AS x FROM tickets WHERE tenant_id = %s AND thread_id = %s "
+        "AND status IN (0, 1) AND deleted_at = 0 LIMIT 1",
+        (customer.tenant_id, thread_id),
+    )
+    if pending:
+        deny(409, "该会话还有未完成的人工工单，暂不能删除")
+    write("UPDATE chat_conversations SET deleted_at = NOW(3) WHERE thread_id = %s",
+          (thread_id,))
+    _purge_checkpoint(thread_id)
+    return {"code": 0, "data": {"thread_id": thread_id}}
+
+
 def list_orders(customer):
     rows = many(
         "SELECT order_id, item, status, create_date FROM orders "
@@ -322,7 +580,7 @@ def customer_messages(customer, limit, before_id):
     if limit > MESSAGE_PAGE_MAX:
         limit = MESSAGE_PAGE_MAX
     sql = ("SELECT id, thread_id, role, content, msg_type, tenant_id, ticket_id, "
-           "is_read, created_at FROM messages WHERE tenant_id = %s AND thread_id = %s")
+           "is_read, answer_id, created_at FROM messages WHERE tenant_id = %s AND thread_id = %s")
     args = [customer.tenant_id, customer.thread_id]
     if before_id:
         sql += " AND id < %s"
@@ -423,6 +681,14 @@ def get_customer_ticket(customer: Customer = Depends(current_customer)):
 
 
 def internal_customer(request, tenant_id, thread_id):
+    """Authenticate an Agent-side order lookup for one conversation.
+
+    授权依据是**会话生命周期**，不是 2 小时的登录令牌：Worker 可能在客户令牌过期之后
+    才处理一条已经受理的轮次，此时按 ``customer_sessions.expires_at`` 判定会把订单核验
+    直接判死（客户看到"未能核验"）。这是有意把内部可信调用的窗口延长到会话保留期，
+    三重约束仍在：内部令牌、thread_id→customer_id 的服务端映射、订单按 customer_id 过滤。
+    公开请求走的 ``customer_for_token`` 仍然只认 2 小时令牌。
+    """
     expected = os.getenv("INTERNAL_API_TOKEN", "")
     supplied = request.headers.get("X-Internal-Token", "")
     if not expected or not hmac.compare_digest(supplied, expected):
@@ -430,14 +696,16 @@ def internal_customer(request, tenant_id, thread_id):
     if not TENANT_ID.fullmatch(tenant_id) or not thread_id.startswith(tenant_id + ":"):
         deny(403, "订单查询身份校验失败")
     row = one(
-        "SELECT tenant_id, customer_id, thread_id, token, is_guest, is_preview "
-        "FROM customer_sessions WHERE tenant_id = %s AND thread_id = %s "
-        "AND expires_at > NOW() LIMIT 1",
-        (tenant_id, thread_id),
+        "SELECT tenant_id, customer_id, thread_id, is_guest, is_preview "
+        "FROM chat_conversations WHERE tenant_id = %s AND thread_id = %s "
+        "AND status IN ('draft', 'active') "
+        "AND last_active_at >= DATE_SUB(NOW(), INTERVAL %s DAY) LIMIT 1",
+        (tenant_id, thread_id, CONVERSATION_RETENTION_DAYS),
     )
     if not row:
         deny(404, "未找到订单或订单不属于您")
-    return owned(customer_from_row(row, tenant_id=tenant_id, thread_id=thread_id))
+    return owned(Customer(row["tenant_id"], row["customer_id"], row["thread_id"],
+                          "", bool(row["is_guest"]), bool(row["is_preview"])))
 
 
 @router.get("/api/agent/orders")

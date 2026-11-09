@@ -163,6 +163,7 @@ AUDIT_OBJECT_TYPES = {
     "model-provider": "model_provider",
     "platform-config": "platform_config",
     "session": "session",
+    "experience": "experience",
 }
 
 

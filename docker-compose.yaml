@@ -12,7 +12,7 @@
 #     如需启动：docker compose --profile observability up -d
 # ============================================================================
 
-name: cs-customer-service
+name: super-multiagent
 
 services:
   # ==========================================================================
@@ -24,7 +24,7 @@ services:
   #       生产建议使用云 Redis（高可用）或主从+Sentinel 替代本单实例，避免单点故障
   redis:
     image: redis:7-alpine
-    container_name: cs_redis
+    container_name: SM_redis
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
     volumes:
@@ -38,7 +38,7 @@ services:
       - cs-network
   mysql:
     image: mysql:8.4
-    container_name: cs_mysql
+    container_name: SM_mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
@@ -60,7 +60,7 @@ services:
 
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: cs_postgres
+    container_name: SM_postgres
     restart: unless-stopped
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cs_pass123}
@@ -82,7 +82,7 @@ services:
 
   qdrant:
     image: qdrant/qdrant:latest
-    container_name: cs_qdrant
+    container_name: SM_qdrant
     restart: unless-stopped
     volumes:
       - cs_qdrant_data:/qdrant/storage
@@ -100,7 +100,7 @@ services:
   # FastAPI 业务层：客户身份、会话、只读订单、工单和实时聊天。
   business:
     build: ./python_business
-    container_name: cs_business
+    container_name: SM_business
     restart: unless-stopped
     environment:
       # 统计类接口按「今天」划分日期边界，
@@ -126,6 +126,9 @@ services:
       DEMO_CUSTOMER_TENANT_ID: t_demo
       DEMO_CUSTOMER_ALLOWED: buyer1,buyer2
       DEMO_CUSTOMER_DEMO_BUYER_KEY_SECRET: ${DEMO_CUSTOMER_DEMO_BUYER_KEY_SECRET:-demo_buyer_secret}
+      # 连接池：HTTP 并发上来后每次新建连接会成为瓶颈；池满时临时新建而不是报错
+      MYSQL_POOL_SIZE: ${MYSQL_POOL_SIZE:-8}
+      MYSQL_POOL_TIMEOUT: ${MYSQL_POOL_TIMEOUT:-5}
     volumes:
       # 会话图片/视频由 business 写入，nginx 静态服务 /msg_files/。
       - cs_msg_files:/app/msg_files
@@ -147,7 +150,7 @@ services:
 
   business-maintenance:
     build: ./python_business
-    container_name: cs_business_maintenance
+    container_name: SM_business_maintenance
     restart: unless-stopped
     command: ["python", "maintenance.py"]
     environment:
@@ -162,6 +165,16 @@ services:
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-cs_internal_token_2026_secure}
       CS_AGENT_URL: http://agent:8000
       OUTBOX_SYNC_INTERVAL: ${OUTBOX_SYNC_INTERVAL:-60}
+      CS_BUSINESS_URL: http://business:8001
+      CHAT_TURN_POLL_SECONDS: ${CHAT_TURN_POLL_SECONDS:-1}
+      # 聊天 Worker 并发：同一会话仍串行（claim_next 的 NOT EXISTS），不同会话并行。
+      # 上限 16 是刻意的——真正卡吞吐的是 Agent 侧模型配额，不是线程数。
+      CHAT_TURN_WORKERS: ${CHAT_TURN_WORKERS:-4}
+      CHAT_TURN_LEASE_SECONDS: ${CHAT_TURN_LEASE_SECONDS:-120}
+      CHAT_TURN_HEARTBEAT_SECONDS: ${CHAT_TURN_HEARTBEAT_SECONDS:-30}
+      CHAT_TURN_RECLAIM_SECONDS: ${CHAT_TURN_RECLAIM_SECONDS:-10}
+      MYSQL_POOL_SIZE: ${MYSQL_POOL_SIZE:-8}
+      MYSQL_POOL_TIMEOUT: ${MYSQL_POOL_TIMEOUT:-5}
     depends_on:
       business:
         condition: service_healthy
@@ -174,9 +187,7 @@ services:
   agent:
     build:
       context: ./python_agent
-      additional_contexts:
-        agent_src: ./agent
-    container_name: cs_agent
+    container_name: SM_agent
     restart: unless-stopped
     env_file:
       - ./.env
@@ -205,9 +216,11 @@ services:
       # 新图按会话串行写检查点；多 worker/副本也不会相互覆盖。
       SUPPORT_V2_THREAD_LOCK: "on"
       # 常规聊天固定走四 Agent 主图；仅未完成审批使用旧检查点兼容路径。
-      # ⚠ 演示分支专用：t_demo 自有模型端点当前拒连，四 Agent 路径临时走平台密钥 + 已验通模型。
-      # 接真实租户前必须删除本行，否则所有租户都会静默改用平台 key 的 glm-5.3（报告 §8g 的
-      # comparable=false 就是这个原因）。
+      # ⚠ 评测档（显式声明才换模型）：t_demo 自有模型端点当前拒连，演示环境用平台密钥
+      #    + 已验通模型 glm-5.3 顶替。FOUR_AGENT_EVAL 不设时 FOUR_AGENT_MODEL_NAME 一律
+      #    被忽略（常规部署按租户自己的已验证配置走）。接真实租户前必须删掉这两行，
+      #    否则所有租户都会静默改用平台 key 的 glm-5.3（报告 §8g 的 comparable=false 即此）。
+      FOUR_AGENT_EVAL: "on"
       FOUR_AGENT_MODEL_NAME: "glm-5.3"
       QDRANT_URL: http://qdrant:6333
       # Qdrant 配置
@@ -242,12 +255,12 @@ services:
     build:
       context: .
       dockerfile: nginx.Dockerfile
-    container_name: cs_nginx
+    container_name: SM_nginx
     restart: unless-stopped
     ports:
       - "${HTTP_PORT:-8080}:80"
     volumes:
-      # nginx.conf 保留挂载：改配置后 docker exec cs_nginx nginx -s reload 即时生效
+      # nginx.conf 保留挂载：改配置后 docker exec SM_nginx nginx -s reload 即时生效
       - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       # 知识库原文件共享卷（与 agent 同一卷，静态服务 /kb_files/）
       - cs_kb_files:/usr/share/nginx/html/kb_files
@@ -265,7 +278,7 @@ services:
   # ==========================================================================
   # backup:
   #   image: alpine:3.20
-  #   container_name: cs_backup
+  #   container_name: SM_backup
   #   restart: unless-stopped
   #   environment:
   #     BACKUP_CONTAINER_MODE: "1"
@@ -302,7 +315,7 @@ services:
   # ============ P3-1 统一日志收集：Loki + Promtail ============
   loki:
     image: grafana/loki:3.0.0
-    container_name: cs_loki
+    container_name: SM_loki
     restart: unless-stopped
     profiles: ["observability"]
     command: -config.file=/etc/loki/local-config.yaml
@@ -321,7 +334,7 @@ services:
 
   promtail:
     image: grafana/promtail:3.0.0
-    container_name: cs_promtail
+    container_name: SM_promtail
     restart: unless-stopped
     profiles: ["observability"]
     command: -config.file=/etc/promtail/config.yaml
@@ -336,7 +349,7 @@ services:
   # ============ P3-2 监控告警：Prometheus + Grafana ============
   prometheus:
     image: prom/prometheus:v2.52.0
-    container_name: cs_prometheus
+    container_name: SM_prometheus
     restart: unless-stopped
     profiles: ["observability"]
     command:
@@ -363,7 +376,7 @@ services:
 
   grafana:
     image: grafana/grafana:10.4.2
-    container_name: cs_grafana
+    container_name: SM_grafana
     restart: unless-stopped
     profiles: ["observability"]
     environment:
@@ -391,7 +404,7 @@ services:
   # ============ P3-3 链路追踪：Jaeger ============
   jaeger:
     image: jaegertracing/all-in-one:1.56
-    container_name: cs_jaeger
+    container_name: SM_jaeger
     restart: unless-stopped
     profiles: ["observability"]
     environment:
@@ -416,16 +429,22 @@ services:
 # ==========================================================================
 volumes:
   cs_mysql_data:
+    name: cs-customer-service_cs_mysql_data
   cs_redis_data:
+    name: cs-customer-service_cs_redis_data
   cs_postgres_data:
+    name: cs-customer-service_cs_postgres_data
   cs_qdrant_data:
+    name: cs-customer-service_cs_qdrant_data
   cs_loki_data:
   cs_prometheus_data:
   cs_grafana_data:
   # 知识库原文件共享卷（agent 写入 /app/data/kb_files，nginx 静态服务 /kb_files/）
   cs_kb_files:
+    name: cs-customer-service_cs_kb_files
   # 会话图片共享卷（business 写入 /app/msg_files，nginx 静态服务 /msg_files/）
   cs_msg_files:
+    name: cs-customer-service_cs_msg_files
 
 # ==========================================================================
 # 网络

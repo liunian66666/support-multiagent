@@ -51,7 +51,7 @@ class Metrics:
             lines.append(f"{name}_sum{labels(**attrs)} {total:.9f}")
             lines.append(f"{name}_count{labels(**attrs)} {count}")
 
-    def render(self, *, ws_connections, active_sessions):
+    def render(self, *, ws_connections, active_sessions, queue=None, pool=None):
         with self.lock:
             http_counts = dict(self.http_counts)
             http_durations = {key: (item[0], item[1], tuple(item[2]))
@@ -89,4 +89,48 @@ class Metrics:
         ]
         self.histogram(lines, "cs_agent_call_duration_seconds", agent_durations,
                        ("endpoint",))
+        lines += self.queue_lines(queue or {})
+        lines += self.pool_lines(pool or {})
         return "\n".join(lines) + "\n"
+
+    @staticmethod
+    def queue_lines(queue):
+        """排队指标。``oldest_queued_seconds`` 是唯一值得告警的一行。
+
+        采集失败时（DB 抖动）不写这几行，而不是写 0：把"没采到"报成 0 会让告警哑掉。
+        """
+        if not queue:
+            return []
+        return [
+            "# HELP cs_chat_turns_queued Chat turns waiting for a worker",
+            "# TYPE cs_chat_turns_queued gauge",
+            f"cs_chat_turns_queued {queue.get('queued', 0)}",
+            "# HELP cs_chat_turns_running Chat turns currently held by a worker",
+            "# TYPE cs_chat_turns_running gauge",
+            f"cs_chat_turns_running {queue.get('running', 0)}",
+            "# HELP cs_chat_turns_stale_running Running turns whose lease already expired",
+            "# TYPE cs_chat_turns_stale_running gauge",
+            f"cs_chat_turns_stale_running {queue.get('stale_running', 0)}",
+            "# HELP cs_chat_turns_retried Turns being worked on that have been claimed more than once",
+            "# TYPE cs_chat_turns_retried gauge",
+            f"cs_chat_turns_retried {queue.get('retried', 0)}",
+            "# HELP cs_chat_turn_oldest_queued_seconds Age of the oldest queued turn",
+            "# TYPE cs_chat_turn_oldest_queued_seconds gauge",
+            f"cs_chat_turn_oldest_queued_seconds {queue.get('oldest_queued_seconds', 0.0)}",
+        ]
+
+    @staticmethod
+    def pool_lines(pool):
+        if not pool:
+            return []
+        return [
+            "# HELP cs_mysql_pool_open MySQL connections opened by this process",
+            "# TYPE cs_mysql_pool_open gauge",
+            f"cs_mysql_pool_open {pool.get('open', 0)}",
+            "# HELP cs_mysql_pool_free MySQL idle connections kept in the pool",
+            "# TYPE cs_mysql_pool_free gauge",
+            f"cs_mysql_pool_free {pool.get('free', 0)}",
+            "# HELP cs_mysql_pool_overflow_total Connections opened beyond the pool size",
+            "# TYPE cs_mysql_pool_overflow_total counter",
+            f"cs_mysql_pool_overflow_total {pool.get('overflow', 0)}",
+        ]

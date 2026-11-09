@@ -54,17 +54,71 @@ html,body{height:100%;width:100%;overflow:hidden;background:#f5f6f8;-webkit-text
 .chat-body::-webkit-scrollbar{display:none}
 
 /* 消息气泡 */
-.msg{display:flex;gap:8px;max-width:82%;animation:msgIn .25s ease}
+.msg{display:flex;gap:8px;max-width:min(560px,86%);animation:msgIn .25s ease}
 @keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 .msg.ai{align-self:flex-start}
+.msg.ai>div:not(.msg-avatar){min-width:0}
 .msg.user{align-self:flex-end;flex-direction:row-reverse}
 .msg .bubble{
-  padding:10px 14px;border-radius:14px;font-size:15px;line-height:1.6;
-  word-break:break-word;white-space:pre-wrap;position:relative;
+  padding:11px 14px;border-radius:14px;font-size:15px;line-height:1.7;
+  word-break:break-word;white-space:normal;position:relative;
 }
 .msg.ai .bubble{background:#fff;border:1px solid #e8e8e8;border-top-left-radius:4px;color:#333}
-.msg.user .bubble{background:var(--theme,#1890ff);color:#fff;border-top-right-radius:4px}
-.msg .time{font-size:10px;color:#999;margin-top:3px}
+.msg.user .bubble{background:var(--theme,#1890ff);color:#fff;border-top-right-radius:4px;
+  white-space:pre-wrap}
+/* Markdown 渲染后的排版 */
+.bubble p{margin:0 0 8px}
+.bubble p:last-child,.bubble ul:last-child,.bubble ol:last-child,
+.bubble pre:last-child,.bubble .md-kv:last-child,.bubble .md-table-wrap:last-child{margin-bottom:0}
+.bubble ul,.bubble ol{margin:0 0 8px;padding-left:19px}
+.bubble li{margin:2px 0}
+.bubble strong{font-weight:500}
+.bubble em{font-style:normal;color:#5f6672}
+.bubble a{color:#1890ff;text-decoration:none}
+.bubble code{background:#f2f4f7;border-radius:4px;padding:1px 5px;
+  font-family:ui-monospace,Consolas,monospace;font-size:13px}
+.bubble pre{margin:0 0 8px;padding:9px 11px;background:#f7f8fa;
+  border:1px solid #e8eaee;border-radius:8px;overflow:auto}
+.bubble pre code{background:none;padding:0;display:block;white-space:pre;font-size:12.5px;line-height:1.6}
+.bubble blockquote{margin:0 0 8px;padding:2px 0 2px 9px;border-left:2px solid #e2e6ec;color:#5f6672}
+.md-h1,.md-h2,.md-h3{font-weight:500;margin:0 0 8px;color:#1f2329}
+.md-h1{font-size:17px}
+.md-h2{font-size:16px}
+.md-h3{font-size:15px}
+.md-hr{height:1px;background:#eceef2;margin:10px 0}
+.md-kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:2px 0 10px}
+.md-kv-k{color:#8a8f99;white-space:nowrap}
+.md-kv-v{min-width:0}
+.md-table-wrap{max-width:100%;overflow-x:auto;margin:2px 0 10px}
+.md-table-wrap table{border-collapse:collapse;width:max-content;min-width:100%;font-size:13px}
+.md-table-wrap th,.md-table-wrap td{padding:7px 10px;border:1px solid #e8eaee;text-align:left;white-space:nowrap}
+.md-table-wrap th{background:#f7f8fa;font-weight:500}
+/* 订单记录行：手机宽度放不下四列，改成「单号 + 状态」/「商品 + 日期」两行 */
+.bubble ul.md-rows{list-style:none;padding-left:0;margin:2px 0 10px}
+.md-row{padding:7px 0}
+.md-row+.md-row{border-top:1px solid #f2f4f7}
+.md-row-record{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 10px;align-items:baseline}
+.md-row-record .md-key{grid-area:1/1;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:12.5px;color:#1f2329;letter-spacing:.2px;word-break:break-all}
+.md-row-record .md-state{grid-area:1/2;justify-self:end}
+.md-row-record .md-main{grid-area:2/1;font-size:13.5px;color:#333;overflow-wrap:anywhere}
+.md-row-record .md-meta{grid-area:2/2;justify-self:end;font-size:12px;color:#98a0ab;white-space:nowrap}
+.md-chip{display:inline-block;padding:1px 7px;border-radius:9px;font-size:11.5px;
+  line-height:1.6;white-space:nowrap}
+.md-chip-ship{background:#eaf2fd;color:#1a62c9}
+.md-chip-wait{background:#fdf3e4;color:#a4610c}
+.md-chip-done{background:#eaf6ee;color:#2a7a45}
+.md-chip-after{background:#f3eefb;color:#5b45a8}
+.md-chip-void{background:#f2f4f7;color:#7a828d}
+
+.msg .time{font-size:10px;color:#6b7280;margin-top:4px}
+
+.msg-avatar{width:26px;height:26px;border-radius:50%;flex-shrink:0;margin-top:4px;
+  display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;
+  border:1px solid transparent}
+.msg-avatar.ai{background:#fff;border-color:#e8eaee}
+.msg-avatar.human{background:#fff7e6;border-color:#ffe0b2;color:#d46b08}
+.msg-avatar .emoji{font-size:15px;line-height:1}
 .msg.ai .time{text-align:left}
 .msg.user .time{text-align:right}
 
@@ -84,7 +138,7 @@ html,body{height:100%;width:100%;overflow:hidden;background:#f5f6f8;-webkit-text
 @keyframes typing{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-5px);opacity:1}}
 
 /* 欢迎语 */
-.welcome{align-self:center;text-align:center;padding:30px 0;color:#999}
+.welcome{align-self:center;margin:auto;text-align:center;padding:30px 0;color:#999}
 .welcome .icon{font-size:48px;margin-bottom:10px}
 .welcome .text{font-size:14px;line-height:1.8}
 .welcome .quick{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:16px}
@@ -93,6 +147,9 @@ html,body{height:100%;width:100%;overflow:hidden;background:#f5f6f8;-webkit-text
   padding:8px 14px;border-radius:20px;font-size:13px;cursor:pointer;
 }
 .welcome .quick button:active{background:#f0f0f0}
+.welcome-resume{margin-top:18px;max-width:82vw;padding:10px 16px;border:1px solid #e2e6ec;border-radius:10px;background:#fff;font-size:13px;color:#4a5160;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.welcome-resume:active{background:#f5f7fa}
+.welcome-resume[hidden]{display:none}
 
 /* 输入区 */
 .chat-input{
@@ -165,13 +222,92 @@ html,body{height:100%;width:100%;overflow:hidden;background:#f5f6f8;-webkit-text
   background:rgba(0,0,0,.75);color:#fff;padding:12px 24px;border-radius:8px;
   font-size:14px;z-index:999;display:none;
 }
+
+/* ============ 会话抽屉 ============ */
+.conv-drawer-mask{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:999;
+  opacity:0;pointer-events:none;transition:opacity .22s ease}
+.conv-drawer-mask.open{opacity:1;pointer-events:auto}
+.conv-sidebar{position:fixed;top:0;left:0;bottom:0;width:82%;max-width:300px;z-index:1000;
+  display:flex;flex-direction:column;background:#fff;border-right:1px solid #eceef2;
+  transform:translateX(-100%);transition:transform .22s ease;box-shadow:2px 0 16px rgba(0,0,0,.12)}
+.conv-sidebar.open{transform:none}
+.conv-head{display:flex;align-items:center;gap:8px;padding:14px 12px 10px;flex-shrink:0}
+.conv-brand{display:flex;align-items:center;gap:9px;flex:1;min-width:0}
+.conv-brand-icon{width:30px;height:30px;border-radius:8px;background:var(--theme,#1890ff);
+  color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.conv-brand-text{min-width:0}
+.conv-brand-title{font-size:14px;font-weight:600;color:#1f2329;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conv-brand-sub{font-size:11px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conv-new{width:30px;height:30px;flex-shrink:0;border:1px solid transparent;background:var(--theme,#1890ff);color:#fff;
+  border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.conv-search{display:flex;align-items:center;gap:7px;margin:0 12px 8px;padding:8px 10px;
+  background:#f6f7f9;border-radius:8px;color:#6b7280;flex-shrink:0}
+.conv-search input{flex:1;min-width:0;border:none;outline:none;background:transparent;
+  font-size:13px;color:#1f2329;font-family:inherit}
+.conv-list{flex:1;overflow-y:auto;padding:0 8px 8px;-webkit-overflow-scrolling:touch}
+.conv-group{position:sticky;top:0;z-index:2;background:#fff;
+  font-size:11px;font-weight:500;color:#6b7280;padding:12px 8px 5px;letter-spacing:.02em}
+.conv-item{display:flex;align-items:center;gap:7px;padding:9px 7px;border-radius:8px;
+  cursor:pointer;border-left:2px solid transparent;position:relative}
+.conv-item:active{background:#eef1f5}
+.conv-item.active{background:#e6f1fb;border-left-color:var(--theme,#1890ff)}
+.conv-item-title{flex:1;min-width:0;font-size:13px;color:#1f2329;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conv-item.active .conv-item-title{font-weight:500}
+.conv-item-time{min-width:32px;text-align:right;font-size:10.5px;color:#8a8f99;
+  white-space:nowrap;flex-shrink:0;font-variant-numeric:tabular-nums}
+.conv-item-dot{width:6px;height:6px;border-radius:50%;background:var(--theme,#1890ff);flex-shrink:0}
+.conv-item-more{width:22px;height:22px;flex-shrink:0;border:none;background:transparent;color:#8b929c;
+  border-radius:5px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  font-size:15px;line-height:1;font-family:inherit;padding:0}
+.conv-item-more:active{background:#dfe3e8}
+.conv-menu{position:absolute;right:4px;top:calc(100% - 2px);z-index:20;background:#fff;
+  border:1px solid #e5e7eb;border-radius:9px;box-shadow:0 6px 18px rgba(0,0,0,.14);padding:4px;min-width:108px}
+.conv-menu button{display:block;width:100%;text-align:left;padding:8px 11px;font-size:13px;
+  border:none;background:none;cursor:pointer;border-radius:6px;color:#1f2329;font-family:inherit}
+.conv-menu button.danger{color:#e5484d}
+.conv-rename{flex:1;min-width:0;font-size:13px;padding:3px 7px;border:1px solid var(--theme,#1890ff);
+  border-radius:6px;outline:none;font-family:inherit;color:#1f2329}
+.conv-confirm{margin:4px 2px 9px;padding:9px 11px;border:1px solid #f7c1c1;background:#fdf3f3;border-radius:8px}
+.conv-confirm-text{font-size:12.5px;color:#1f2329;line-height:1.5}
+.conv-confirm-hint{font-size:11px;color:#9aa0a6;margin-top:2px}
+.conv-confirm-actions{display:flex;gap:7px;justify-content:flex-end;margin-top:8px}
+.conv-confirm-actions button{font-size:12px;padding:4px 11px;border-radius:6px;cursor:pointer;font-family:inherit;
+  border:1px solid #dfe3e8;background:#fff;color:#5f6672}
+.conv-confirm-actions button.danger{border-color:#f0b4b6;color:#e5484d}
+.conv-empty{padding:22px 12px;text-align:center;font-size:12px;color:#9aa0a6;line-height:1.7}
+.conv-foot{flex-shrink:0;border-top:1px solid #eceef2;padding:9px 12px;
+  padding-bottom:calc(9px + env(safe-area-inset-bottom));
+  font-size:11px;color:#9aa0a6;text-align:center}
 </style>
 </head>
 <body>
+<div class="conv-drawer-mask" id="convMask"></div>
+<aside class="conv-sidebar" id="convSidebar">
+  <div class="conv-head">
+    <div class="conv-brand">
+      <div class="conv-brand-icon">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="conv-brand-text">
+        <div class="conv-brand-title" id="convBrandTitle">智能客服</div>
+        <div class="conv-brand-sub" id="convBrandSub">未登录</div>
+      </div>
+    </div>
+    <button type="button" class="conv-new" id="convNewBtn" aria-label="开始新对话">
+      <svg width="13" height="13" viewBox="0 0 12 12" fill="none"><path d="M6 1.5v9M1.5 6h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="conv-search">
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.6 10.6L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    <input type="text" id="convSearchInput" placeholder="搜索会话" autocomplete="off">
+  </div>
+  <div class="conv-list" id="convList"></div>
+  <div class="conv-foot" id="convFootHint">会话保留 7 天</div>
+</aside>
 <div class="chat-app">
   <!-- 顶部栏 -->
   <div class="chat-header">
-    <button class="back-btn" onclick="goBack()">‹</button>
+    <button class="back-btn" onclick="openConvDrawer()" aria-label="会话列表"><svg width="16" height="16" viewBox="0 0 12 12" fill="none"><path d="M1.5 3h9M1.5 6h9M1.5 9h9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
     <div class="avatar">🤖</div>
     <div class="info">
       <div class="title" id="chatTitle">智能客服</div>
@@ -190,6 +326,7 @@ html,body{height:100%;width:100%;overflow:hidden;background:#f5f6f8;-webkit-text
         <button onclick="quickSend('怎么申请退款？')">怎么申请退款？</button>
         <button onclick="quickSend('联系人工客服')">联系人工客服</button>
       </div>
+      <button class="welcome-resume" id="welcomeResume" type="button" hidden></button>
     </div>
   </div>
 
@@ -242,6 +379,8 @@ html,body{height:100%;width:100%;overflow:hidden;background:#f5f6f8;-webkit-text
 <!-- 连接状态 -->
 <div class="conn-toast" id="connToast">连接中...</div>
 
+<script src="conversations.js"></script>
+<script src="markdown.js?v=4"></script>
 <script>
 // ============ 配置解析 ============
 function qp(name){
@@ -471,6 +610,129 @@ async function ensureToken(){
   return s.token;
 }
 
+// ============ 历史会话（令牌过期后重新登录仍能续聊） ============
+// 归属判定全在服务端：这里只把当前令牌带上，绝不把 customer_id 放进请求。
+// 打开历史只读 —— 选完会话只改 thread_id 再连 WS，不触发任何 Agent 调用。
+async function switchConversation(s, path){
+  var resp = await authFetch(path, {
+    method: 'POST',
+    headers: {'Authorization': 'Bearer ' + s.token, 'Content-Type': 'application/json'}
+  });
+  var body = null;
+  try { body = await resp.json(); } catch(e) {}
+  if (!resp.ok || !body || body.code !== 0){
+    showToast((body && body.msg) || '会话切换失败');
+    return false;
+  }
+  s.thread_id = body.data.thread_id;
+  if (session) session.thread_id = body.data.thread_id;
+  saveStoredSession(s);
+  return true;
+}
+
+async function bootChat(){
+  var s;
+  try {
+    s = await ensureSession();
+  } catch(e) {
+    showToast(e.message || '登录失败');
+    return;
+  }
+  renderBrand(s);
+  await ConvList.load();
+  connectWS();
+}
+
+// 欢迎页"继续上次对话"：24 小时内有历史且非当前会话才显示，不自动切换。
+function renderResume(list){
+  var btn = document.getElementById('welcomeResume');
+  if (!btn) return;
+  if (!session || session.is_guest) { btn.hidden = true; return; }
+  var now = Date.now();
+  var cand = null;
+  for (var i = 0; i < (list || []).length; i++){
+    var it = list[i];
+    if (it.current || !it.last_active_at) continue;
+    if (now - new Date(it.last_active_at).getTime() > 86400000) continue;
+    cand = it; break;
+  }
+  if (!cand) { btn.hidden = true; return; }
+  btn.hidden = false;
+  btn.textContent = '继续上次：' + (cand.title || cand.preview || '空会话') + ' →';
+  btn.onclick = function(){
+    switchTo('/api/customer/conversations/' + encodeURIComponent(cand.thread_id) + '/activate');
+  };
+}
+
+// ============ 会话抽屉 ============
+function renderBrand(s){
+  document.getElementById('convBrandTitle').textContent = CONFIG.title || '智能客服';
+  var sub = s.is_guest ? '访客会话' : ((s.customer_id || '').split(':').pop() || '已登录');
+  document.getElementById('convBrandSub').textContent = sub;
+}
+
+function openConvDrawer(){
+  document.getElementById('convSidebar').classList.add('open');
+  document.getElementById('convMask').classList.add('open');
+}
+
+function closeConvDrawer(){
+  document.getElementById('convSidebar').classList.remove('open');
+  document.getElementById('convMask').classList.remove('open');
+}
+
+function closeWS(){
+  if (reconnectTimer){ clearTimeout(reconnectTimer); reconnectTimer = null; }
+  if (!ws) return;
+  // 先摘掉 onclose：否则 scheduleReconnect 会再建一条连接，同一条消息渲染两次
+  ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null;
+  try { ws.close(); } catch(e) {}
+  ws = null;
+  wsConnected = false;
+  stopHeartbeat();
+}
+
+function clearChatBody(){
+  var body = document.getElementById('chatBody');
+  if (!body) return;
+  body.querySelectorAll('.msg,.typing').forEach(function(c){ c.remove(); });
+  var w = document.getElementById('welcomeMsg');
+  if (w) w.style.display = 'block';
+  streamingEl = null;
+  clearPendingTimers();
+  renderedAnswerIds = new Set();
+}
+
+function switchTo(path){
+  switchConversation(session, path).then(function(ok){
+    if (!ok) return;
+    closeConvDrawer();
+    closeWS();
+    clearChatBody();
+    connectWS();
+    ConvList.load();
+  });
+}
+
+(function bindConversations(){
+  ConvList.init({
+    listEl: document.getElementById('convList'),
+    footHintEl: document.getElementById('convFootHint'),
+    getSession: function(){ return session; },
+    request: authFetch,
+    notify: showToast,
+    onSwitch: function(path){ switchTo(path); },
+    onLoaded: renderResume
+  });
+  var newBtn = document.getElementById('convNewBtn');
+  var mask = document.getElementById('convMask');
+  var search = document.getElementById('convSearchInput');
+  if (newBtn) newBtn.addEventListener('click', function(){ ConvList.create(); });
+  if (mask) mask.addEventListener('click', closeConvDrawer);
+  if (search) search.addEventListener('input', function(e){ ConvList.setKeyword(e.target.value); });
+  document.addEventListener('click', function(){ ConvList.closeMenu(); });
+})();
+
 // ============ WebSocket ============
 var ws = null, wsConnected = false, reconnectTimer = null, reconnectCount = 0, heartbeatTimer = null, kickedFlag = false, wsOpened = false;
 
@@ -494,7 +756,7 @@ function connectWS(){
       wsConnected = false; stopHeartbeat();
       if (streamingEl || document.getElementById('typingInd')) {
         hideTyping(); cancelStreaming();
-        addSystem('连接已断开，正在重连。若未收到回答，请重新发送。');
+        addSystem('连接已断开；已受理的问题继续处理，重连后同步结果。');
       }
       document.getElementById('chatStatus').textContent = '重连中...';
       if (kickedFlag) return; // 已在其他窗口建立连接，停止重连
@@ -536,22 +798,29 @@ function stopHeartbeat(){ if(heartbeatTimer){clearInterval(heartbeatTimer);heart
 // ============ 消息处理 ============
 function handleMsg(data){
   switch(data.type){
-    case 'history': renderHistory(data.messages||[]); refreshTicketNotice(); break;
+    case 'history': renderHistory(data.messages||[],data.turns||[]); resendUnacknowledged(data.turns||[]); refreshTicketNotice(); break;
     case 'chat_reply': hideTyping(); cancelStreaming(); addAI(data.msg); break;
     // 流式输出：Go 流式链路只下发 chat_chunk（增量）与 chat_end（全文收尾）
-    case 'chat_chunk': appendStreamChunk(data.chunk||''); break;
-    case 'chat_end': if(data.answer_id) latestAnswerId = data.answer_id; endStreaming(data.msg); break;  // [ours] S1 记录轮次锚点
+    case 'chat_chunk': receiveChatChunk(data); break;
+    case 'chat_end': if(data.answer_id) latestAnswerId=data.answer_id; removeTurnStatus(data.turn_id); if(data.turn_id)terminatedTurns.add(data.turn_id); clearUnacknowledged(data.turn_id); if(!data.turn_id||!renderedAnswerIds.has(data.turn_id)){endStreaming(data.msg);if(data.turn_id)renderedAnswerIds.add(data.turn_id);} break;  // [ours] S1 记录轮次锚点
     case 'ticket': {
-      hideTyping(); cancelStreaming();
+      removeTurnStatus(data.turn_id); hideTyping(); cancelStreaming();
+      if (data.turn_id) terminatedTurns.add(data.turn_id);
+      if (data.answer) {
+        addAI(data.answer);
+        if (data.turn_id) renderedAnswerIds.add(data.turn_id);
+      }
+      // 答复与工单分两条渲染：回答气泡在前，工单号单独一条系统提示。
+      // 原来有回答时直接 break，客户读到的是一段解答末尾追着"已提交人工客服，工单号：TK-xxx"。
       var why = data.reason ? ('（原因：' + data.reason + '）') : '';
       addSystem('🎫 ' + (data.reused
         ? ('您已提交人工客服，正在等待人工接入（工单号：' + (data.ticket_no||'') + '）' + why)
         : ('工单已创建（' + (data.ticket_no||'') + '），请等待客服接管' + why)));
       break;
     }
-    case 'human_notice': hideTyping(); cancelStreaming(); addSystem('👤 '+(data.msg||'人工客服已接入')); break;
+    case 'human_notice': removeTurnStatus(data.turn_id); hideTyping(); cancelStreaming(); addSystem('👤 '+(data.msg||'人工客服已接入')); break;
     case 'human_reply': hideTyping(); cancelStreaming(); if(data.msg_type==='image') addImage(data.msg, true); else if(data.msg_type==='video') addVideo(data.msg, true); else addAI(data.msg, true); break;
-    case 'notice': hideTyping(); cancelStreaming(); addSystem(data.msg); break;
+    case 'notice': removeTurnStatus(data.turn_id); hideTyping(); cancelStreaming(); addSystem(data.msg); break;
     case 'error': hideTyping(); cancelStreaming(); addSystem('⚠️ '+(data.msg||'出错了'));
       if (data.code === 'concurrency_full') {
         wsConnected = false;
@@ -560,6 +829,7 @@ function handleMsg(data){
         reconnectTimer = setTimeout(function(){ reconnectTimer=null; connectWS(); }, 30000);
       }
       break;
+    case 'turn_update': clearUnacknowledged(data.turn_id); upsertTurnStatus(data); break;
     case 'kicked':
       // 已在其他窗口建立连接：停止自动重连，避免无限互踢
       kickedFlag = true;
@@ -571,26 +841,86 @@ function handleMsg(data){
   }
 }
 
-function renderHistory(msgs){
-  if (!msgs || !msgs.length) return;
-  var w = document.getElementById('welcomeMsg'); if(w) w.style.display='none';
+function renderHistory(msgs,turns){
+  msgs=msgs||[]; turns=turns||[];
   var body = document.getElementById('chatBody');
+  Object.keys(turnStatusTimers).forEach(removeTurnStatus);
   body.querySelectorAll('.msg,.typing').forEach(function(c){c.remove();});
+  streamingEl=null; streamingTurnId=''; streamingLastSeq=-1; clearPendingTimers(); renderedAnswerIds=new Set(); terminatedTurns=new Set();
+  var byUserId={}; turns.forEach(function(t){byUserId[String(t.user_message_id)]=t;});
   msgs.forEach(function(m){
     var role = m.role||m.sender||'ai';
     var content = m.content||m.msg||m.message||'';
-    if(role==='user'||role==='customer') { if(m.msg_type==='image') addImage(content,false,m.created_at||m.timestamp,true); else if(m.msg_type==='video') addVideo(content,false,m.created_at||m.timestamp,true); else addUser(content,m.created_at||m.timestamp,true); }
+    if(role==='user'||role==='customer') { if(m.msg_type==='image') addImage(content,false,m.created_at||m.timestamp,true); else if(m.msg_type==='video') addVideo(content,false,m.created_at||m.timestamp,true); else addUser(content,m.created_at||m.timestamp,true); if(byUserId[String(m.id)])upsertTurnStatus(byUserId[String(m.id)]); }
     else if(role==='system'||role==='notice') addSystem(content,true);
-    else { if(m.msg_type==='image') addImage(content,false,m.created_at||m.timestamp,true); else if(m.msg_type==='video') addVideo(content,false,m.created_at||m.timestamp,true); else addAI(content,false,m.created_at||m.timestamp,true); }
+    else { if(m.msg_type==='image') addImage(content,false,m.created_at||m.timestamp,true); else if(m.msg_type==='video') addVideo(content,false,m.created_at||m.timestamp,true); else addAI(content,false,m.created_at||m.timestamp,true); if(m.answer_id)renderedAnswerIds.add(m.answer_id); }
   });
+  // 空会话保留欢迎语与"继续上次"入口；只有真渲染出消息才隐藏。
+  var w = document.getElementById('welcomeMsg'); if(w) w.style.display = msgs.length ? 'none' : 'block';
   scrollBottom();
+}
+
+// 未收到受理回执的消息保留同一个请求 ID，重连后安全重发。
+var renderedAnswerIds=new Set();
+// 已经给出终态的轮次：多 Worker 重试时，迟到的 running 事件不能把「处理中」画回来
+var terminatedTurns=new Set();
+function newTurnId(){
+  if(crypto.randomUUID)return crypto.randomUUID();
+  var b=crypto.getRandomValues(new Uint8Array(16)); b[6]=(b[6]&15)|64; b[8]=(b[8]&63)|128;
+  var h=Array.from(b,function(x){return x.toString(16).padStart(2,'0');}).join('');
+  return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20);
+}
+function pendingTurnKey(){return 'cs_h5_pending_turns_'+(session&&session.thread_id||'');}
+function pendingTurns(){try{return JSON.parse(localStorage.getItem(pendingTurnKey())||'{}');}catch(e){return {};}}
+function savePendingTurns(items){try{localStorage.setItem(pendingTurnKey(),JSON.stringify(items));}catch(e){}}
+function rememberUnacknowledged(id,msg,msgType){var items=pendingTurns();items[id]={msg:msg,msg_type:msgType||'text'};savePendingTurns(items);}
+function clearUnacknowledged(id){if(!id)return;var items=pendingTurns();if(items[id]){delete items[id];savePendingTurns(items);}}
+function resendUnacknowledged(turns){
+  if(!ws||ws.readyState!==WebSocket.OPEN)return;
+  var accepted=new Set((turns||[]).map(function(t){return t.turn_id;})),items=pendingTurns();
+  Object.keys(items).forEach(function(id){
+    if(accepted.has(id)){clearUnacknowledged(id);return;}
+    var item=items[id];
+    if(!document.getElementById('turn-status-'+id)){addUser(item.msg);upsertTurnStatus({turn_id:id,status:'queued'});}
+    ws.send(JSON.stringify({type:'chat',request_id:id,msg:item.msg,msg_type:item.msg_type}));
+  });
+}
+var turnStatusTimers={};
+var turnStatusStarted={};
+function removeTurnStatus(id,preserveStart){if(turnStatusTimers[id]){clearInterval(turnStatusTimers[id]);delete turnStatusTimers[id];}if(!preserveStart)delete turnStatusStarted[id];var el=id&&document.getElementById('turn-status-'+id);if(el)el.remove();}
+function upsertTurnStatus(turn){
+  if(!turn||!turn.turn_id)return;
+  if(terminatedTurns.has(turn.turn_id))return;   // 终态已出，迟到的事件不再渲染
+  removeTurnStatus(turn.turn_id,true);
+  if(turn.status==='completed'){delete turnStatusStarted[turn.turn_id];return;}
+  var d=document.createElement('div');d.className='msg ai turn-status';d.id='turn-status-'+turn.turn_id;
+  d.innerHTML=avatarHTML('ai')+'<div></div>';
+  var bubble=document.createElement('div');bubble.className='bubble';
+  var phases={searching:'正在查找相关信息',checking:'正在整理查询结果',reviewing:'正在核对答复',finalizing:'正在准备回复'};
+  var label=turn.status==='failed'?'处理失败，可重试':(turn.status==='running'?(phases[turn.phase]||'正在处理您的问题'):'已受理，等待处理');
+  if(turn.status==='running'){
+    if(!turnStatusStarted[turn.turn_id])turnStatusStarted[turn.turn_id]=Date.now();
+    var started=turnStatusStarted[turn.turn_id];
+    var updateElapsed=function(){var seconds=Math.floor((Date.now()-started)/1000);bubble.firstChild.textContent=label+'…'+(seconds>=5?' 已等待 '+seconds+' 秒':'');};
+    bubble.appendChild(document.createTextNode(''));updateElapsed();
+    turnStatusTimers[turn.turn_id]=setInterval(updateElapsed,1000);
+  }else{delete turnStatusStarted[turn.turn_id];bubble.textContent=label+'…';}
+  if(turn.status==='failed'){
+    var button=document.createElement('button');button.type='button';button.textContent='重试';
+    button.style.marginLeft='8px';button.onclick=function(){retryTurn(turn.turn_id);};bubble.appendChild(button);
+  }
+  d.lastElementChild.appendChild(bubble);document.getElementById('chatBody').appendChild(d);scrollBottom();
+}
+function retryTurn(id){
+  if(!ws||ws.readyState!==WebSocket.OPEN){addSystem('请等待连接恢复后重试');return;}
+  ws.send(JSON.stringify({type:'retry',turn_id:id}));upsertTurnStatus({turn_id:id,status:'queued'});
 }
 
 // ============ UI ============
 function addUser(text,time,noScroll){
   var w=document.getElementById('welcomeMsg'); if(w) w.style.display='none';
   var d=document.createElement('div'); d.className='msg user';
-  d.innerHTML='<div class="bubble"></div><div class="time"></div>';
+  d.innerHTML='<div><div class="bubble"></div><div class="time"></div></div>';
   d.querySelector('.bubble').textContent=text;
   d.querySelector('.time').textContent=fmtTime(time);
   document.getElementById('chatBody').appendChild(d);
@@ -600,19 +930,25 @@ function addUser(text,time,noScroll){
 function addVideo(url,isHuman,time,noScroll){
   var w=document.getElementById('welcomeMsg'); if(w) w.style.display='none';
   var d=document.createElement('div'); d.className='msg '+(isHuman?'ai':'user');
-  var av=isHuman?'👤':'😀';
-  d.innerHTML='<div style="font-size:22px;flex-shrink:0;margin-top:6px">'+av+'</div><div><div class="bubble" style="padding:4px"><video src="'+url+'" controls preload="metadata" style="max-width:260px;max-height:220px;border-radius:8px;display:block;background:#000"></video></div><div class="time"></div></div>';
+  var av=isHuman?avatarHTML('human'):'';
+  d.innerHTML=av+'<div><div class="bubble" style="padding:4px"><video src="'+url+'" controls preload="metadata" style="max-width:260px;max-height:220px;border-radius:8px;display:block;background:#000"></video></div><div class="time"></div></div>';
   d.querySelector('.time').textContent=fmtTime(time);
   document.getElementById('chatBody').appendChild(d);
   if(!noScroll) scrollBottom();
 }
 
 
+// 消息头像：AI 用品牌气泡图标，人工客服用人形底色块；用户消息不带头像。
+function avatarHTML(kind){
+  if (kind === 'human') return '<div class="msg-avatar human">人</div>';
+  return '<div class="msg-avatar ai"><span class="emoji">🤖</span></div>';
+}
+
 function addAI(text,isHuman,time,noScroll){
   var d=document.createElement('div'); d.className='msg ai';
-  var av=isHuman?'👤':'🤖';
-  d.innerHTML='<div style="font-size:22px;flex-shrink:0;margin-top:6px">'+av+'</div><div><div class="bubble"></div><div class="time"></div></div>';
-  d.querySelector('.bubble').textContent=text;
+  var av=isHuman?avatarHTML('human'):avatarHTML('ai');
+  d.innerHTML=av+'<div><div class="bubble"></div><div class="time"></div></div>';
+  renderMarkdown(d.querySelector('.bubble'), text);
   d.querySelector('.time').textContent=fmtTime(time);
   document.getElementById('chatBody').appendChild(d);
   if(!noScroll) scrollBottom();
@@ -622,8 +958,8 @@ function addAI(text,isHuman,time,noScroll){
 function addImage(url,isHuman,time,noScroll){
   var w=document.getElementById('welcomeMsg'); if(w) w.style.display='none';
   var d=document.createElement('div'); d.className='msg '+(isHuman?'ai':'user');
-  var av=isHuman?'👤':'😀';
-  d.innerHTML='<div style="font-size:22px;flex-shrink:0;margin-top:6px">'+av+'</div><div><div class="bubble" style="padding:4px"><img src="'+url+'" onclick="window.open(this.src)" style="max-width:220px;max-height:200px;border-radius:8px;display:block;cursor:pointer" /></div><div class="time"></div></div>';
+  var av=isHuman?avatarHTML('human'):'';
+  d.innerHTML=av+'<div><div class="bubble" style="padding:4px"><img src="'+url+'" onclick="window.open(this.src)" style="max-width:220px;max-height:200px;border-radius:8px;display:block;cursor:pointer" /></div><div class="time"></div></div>';
   d.querySelector('.time').textContent=fmtTime(time);
   document.getElementById('chatBody').appendChild(d);
   if(!noScroll) scrollBottom();
@@ -661,7 +997,21 @@ function addSystem(text,noScroll){
 // 导致助手气泡一直为空（消息已发出、服务端已答复，页面却什么也不显示）。
 var streamingEl = null;   // 当前正在流式输出的消息元素
 var streamingText = '';   // 已接收的流式文本
+var streamingTurnId = '';
+var streamingLastSeq = -1;
 var pendingTimers = [];
+
+function receiveChatChunk(data){
+  if(data.turn_id&&renderedAnswerIds.has(data.turn_id))return;
+  if(data.turn_id&&streamingTurnId&&streamingTurnId!==data.turn_id)cancelStreaming();
+  if(data.turn_id){
+    if(streamingTurnId===data.turn_id&&Number.isInteger(data.seq)&&data.seq<=streamingLastSeq)return;
+    streamingTurnId=data.turn_id;
+    if(Number.isInteger(data.seq))streamingLastSeq=data.seq;
+    removeTurnStatus(data.turn_id);
+  }
+  appendStreamChunk(data.chunk||'');
+}
 
 function clearPendingTimers(){
   pendingTimers.forEach(clearTimeout);
@@ -677,44 +1027,57 @@ function startStreaming(){
   hideTyping();
   var w=document.getElementById('welcomeMsg'); if(w) w.style.display='none';
   var d=document.createElement('div'); d.className='msg ai'; d.id='streamingMsg';
-  d.innerHTML='<div style="font-size:22px;flex-shrink:0;margin-top:6px">🤖</div><div><div class="bubble" role="status" aria-live="polite"></div><div class="time"></div></div>';
+  d.innerHTML=avatarHTML('ai')+'<div><div class="bubble" role="status" aria-live="polite"></div><div class="time"></div></div>';
   d.querySelector('.time').textContent=fmtTime();
   document.getElementById('chatBody').appendChild(d);
   streamingEl=d; streamingText='';
   scrollBottom();
 }
+// 流式节流：每 chunk 全量重建是 O(n²)，60ms 合并一次
+var mdRenderTimer=null;
+function scheduleStreamRender(){
+  if(mdRenderTimer) return;
+  mdRenderTimer=setTimeout(function(){
+    mdRenderTimer=null;
+    if(!streamingEl) return;
+    renderMarkdown(streamingEl.querySelector('.bubble'), streamingText);
+    scrollBottom();
+  }, 60);
+}
 function appendStreamChunk(chunk){
   if(!chunk) return;
   if(!streamingEl) startStreaming();
   streamingText += chunk;
-  streamingEl.querySelector('.bubble').textContent=streamingText;
-  scrollBottom();
+  scheduleStreamRender();
 }
 function endStreaming(fullText){
   hideTyping();
   if(streamingEl){
-    if(fullText){ streamingText=fullText; streamingEl.querySelector('.bubble').textContent=fullText; }
+    if(mdRenderTimer){ clearTimeout(mdRenderTimer); mdRenderTimer=null; }
+    if(fullText){ streamingText=fullText; renderMarkdown(streamingEl.querySelector('.bubble'), fullText); }
     if(!streamingText){
       streamingEl.remove(); streamingEl=null;
       addSystem('暂时没有收到回复，请重试。');
       return;
     }
-    streamingEl.id=''; streamingEl=null;
+    streamingEl.id=''; streamingEl=null; streamingTurnId=''; streamingLastSeq=-1;
     scrollBottom();
     return;
   }
   // 快答/缓存链路可能一个 chat_chunk 都不发，只给整段 chat_end：
   // 此时没有流式元素，必须直接落一条完整消息，否则气泡永远是空的。
   if(fullText){ streamingText=fullText; hideTyping(); addAI(fullText); }
+  streamingTurnId=''; streamingLastSeq=-1;
 }
 function cancelStreaming(){
+  streamingTurnId=''; streamingLastSeq=-1;
   if(streamingEl){ streamingEl.remove(); streamingEl=null; streamingText=''; }
 }
 
 function showTyping(){
   hideTyping();
   var d=document.createElement('div'); d.className='typing'; d.id='typingInd';
-  d.innerHTML='<div style="font-size:22px;flex-shrink:0;margin-top:6px">🤖</div><div class="bubble" role="status" aria-live="polite">正在处理您的问题…</div>';
+  d.innerHTML=avatarHTML('ai')+'<div class="bubble" role="status" aria-live="polite">正在处理您的问题…</div>';
   document.getElementById('chatBody').appendChild(d);
   pendingTimers.push(setTimeout(function(){ setPendingText('仍在处理，请稍候…'); }, 8000));
   pendingTimers.push(setTimeout(function(){ setPendingText('问题较复杂，正在继续处理…'); }, 25000));
@@ -810,9 +1173,10 @@ function sendMessage(){
   if(!wsConnected){addSystem('连接未建立，请稍候...');return;}
   addUser(text);
   input.value=''; autoResize(input);
-  showTyping();
-  try{ ws.send(JSON.stringify({type:'chat',msg:text})); }
-  catch(e){ hideTyping(); addSystem('发送失败：'+e.message); }
+  var requestId=newTurnId();rememberUnacknowledged(requestId,text,'text');
+  upsertTurnStatus({turn_id:requestId,status:'queued'});
+  try{ ws.send(JSON.stringify({type:'chat',request_id:requestId,msg:text})); }
+  catch(e){ addSystem('发送暂未确认，重连后会用同一请求 ID 重试。'); }
 }
 
 // 图片/视频消息上传：校验 → 上传 → 本地显示 → WS 发送 msg_type=image/video
@@ -839,7 +1203,9 @@ async function uploadMedia(input, kind, file){
     if(data.code!==0){ addSystem('上传失败：'+(data.msg||'')); return; }
     var url=data.data.url;
     if(kind==='image') addImage(url,false); else addVideo(url,false);
-    ws.send(JSON.stringify({type:'chat',msg:url,msg_type:kind}));
+    var requestId=newTurnId();rememberUnacknowledged(requestId,url,kind);
+    upsertTurnStatus({turn_id:requestId,status:'queued'});
+    ws.send(JSON.stringify({type:'chat',request_id:requestId,msg:url,msg_type:kind}));
   }catch(e){ addSystem('上传失败：'+e.message); }
 }
 
@@ -882,7 +1248,9 @@ function requestHandoff(){
   if(!wsConnected){addSystem('连接未建立，请稍候...');return;}
   addUser('请转接人工客服');
   showTyping();
-  try{ ws.send(JSON.stringify({type:'chat',msg:'请转接人工客服'})); }
+  try{ var requestId=newTurnId();rememberUnacknowledged(requestId,'请转接人工客服','text');
+    upsertTurnStatus({turn_id:requestId,status:'queued'});
+    ws.send(JSON.stringify({type:'chat',request_id:requestId,msg:'请转接人工客服'})); }
   catch(e){ hideTyping(); addSystem('发送失败：'+e.message); }
 }
 
@@ -938,7 +1306,8 @@ function showMenu(){
 }
 
 // ============ 初始化 ============
-connectWS();
+// 先登录，再看有没有可恢复的历史会话，最后才连 WS（WS 握手会用最终的 thread_id）
+bootChat();
 </script>
 </body>
 </html>

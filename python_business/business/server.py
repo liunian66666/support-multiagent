@@ -10,9 +10,10 @@ from fastapi.responses import JSONResponse, Response
 from business.admin import (auth, catalog, content, ops, platform, rbac,
                             sessions, tickets)
 from business.agent import internal
-from business.chat import realtime
+from business.chat import realtime, turns
 from business.core.errors import SoftError, code_to_status, deny
 from business.customer import routes as customer
+from business.infra import storage
 from business.infra.runtime import metrics, ws_hub
 from business.infra.storage import cache, one
 
@@ -37,9 +38,20 @@ async def collect_http_metrics(request: Request, call_next):
 
 @app.get("/metrics")
 def prometheus_metrics():
+    # 队列与连接池指标采集失败时传空：宁缺勿假，0 会让告警哑掉
+    queue = pool = None
+    try:
+        queue = turns.queue_stats()
+    except Exception:
+        pass
+    try:
+        pool = storage.pool_stats()
+    except Exception:
+        pass
     return Response(metrics.render(
         ws_connections=len(ws_hub.users) + len(ws_hub.admins),
         active_sessions=len(ws_hub.users),
+        queue=queue, pool=pool,
     ), media_type="text/plain; version=0.0.4")
 
 

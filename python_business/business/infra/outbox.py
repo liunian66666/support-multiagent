@@ -17,11 +17,12 @@ import time
 
 import httpx
 
+from business.core.constants import AGENT_URL as _AGENT_URL
 from business.infra.storage import many, write
 
 logger = logging.getLogger("business.outbox")
 
-AGENT_URL = os.getenv("CS_AGENT_URL", "http://agent:8000")
+AGENT_URL = _AGENT_URL
 BATCH_SIZE = 100
 
 

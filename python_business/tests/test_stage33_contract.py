@@ -16,6 +16,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 import main_compat as main
+from business.chat import recovery
 from patch_business import patch_business
 
 SECRET_HASH = hashlib.sha256(b"demo-secret").hexdigest()
@@ -58,7 +59,10 @@ class Stage33Test(unittest.TestCase):
         self.logs = []
         self.posts = []
         self.ws_messages = []
+        self.gets = []
+        self.resume_writes = []
         self.resume_reply = "已接管，您好"
+        self.probe_state = "pending"
         # [ours] CAS 抢锁结果：接管 SQL 带 WHERE status=0，命中返回 1、抢锁失败返回 0
         self.claim_fails = False
 
@@ -106,12 +110,22 @@ class Stage33Test(unittest.TestCase):
         def post(url, json=None, headers=None, timeout=None):
             self.posts.append((url, json or {}, headers or {}))
             response = type("R", (), {})()
+            response.status_code = 200
             if url.endswith("/agent/resume"):
                 if isinstance(self.resume_reply, Exception):
                     raise self.resume_reply
-                response.json = lambda: {"content": self.resume_reply}
+                # 真实 Contract：{"success": true, "content": ...}；只看 content 是旧缺陷
+                response.json = lambda: {"success": True, "content": self.resume_reply}
             else:
                 response.json = lambda: {"code": 0}
+            return response
+
+        def get(url, headers=None, timeout=None):
+            """恢复前必须先探测三态：默认 pending，才能走到 resume。"""
+            self.gets.append((url, headers or {}))
+            response = type("R", (), {})()
+            response.status_code = 200
+            response.json = lambda: {"approval_state": self.probe_state}
             return response
 
         def fake_write(sql, args):
@@ -121,12 +135,25 @@ class Stage33Test(unittest.TestCase):
                 return 0 if self.claim_fails else 1
             return 1
 
+        def resume_write(sql, args):
+            """恢复待办记账单独收集：tickets 的写断言不能被这几条淹掉。"""
+            self.resume_writes.append((sql, args))
+            return 1
+
+        def resume_one(sql, args=()):
+            if "approval_resume_attempts" in sql:
+                return {"n": 0}
+            return None
+
         self.patches = (
             patch_business(main, "one", side_effect=one),
             patch_business(main, "many", side_effect=many),
             patch_business(main, "write", side_effect=fake_write),
+            patch.object(recovery, "write", side_effect=resume_write),
+            patch.object(recovery, "one", side_effect=resume_one),
             patch_business(main, "cache", return_value=self.redis),
             patch.object(main.httpx, "post", side_effect=post),
+            patch.object(main.httpx, "get", side_effect=get),
             patch.object(main.ws_hub, "broadcast_from_thread",
                          side_effect=lambda target, payload, key="", tenant_id="":
                          self.ws_messages.append(("python", {
@@ -310,12 +337,46 @@ class Stage33Test(unittest.TestCase):
         self.assertEqual(self.writes_matching("INSERT INTO ticket_logs")[0][1][8], "t_demo")
 
     def test_takeover_resume_failure_still_takes_over(self):
-        self.resume_reply = RuntimeError("agent down")
+        self.resume_reply = main.httpx.ConnectError("agent down")
         response = self.client.post("/api/admin/tickets/7/takeover",
                                     headers=self.auth(), json={})
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["msg"].startswith("接管成功，但恢复Agent会话失败"))
         self.assertTrue(self.writes_matching("UPDATE tickets SET status"))
+
+    def test_takeover_resume_failure_leaves_a_retryable_todo(self):
+        """恢复失败不是"处理完了"：工单上必须留下待办，后台线程接着做。"""
+        self.resume_reply = main.httpx.ConnectError("agent down")
+        self.client.post("/api/admin/tickets/7/takeover", headers=self.auth(), json={})
+
+        pending = [w for w in self.resume_writes if "approval_resume_state" in w[0]]
+        self.assertTrue(pending, "恢复失败必须写成待办")
+        self.assertEqual(pending[0][1][0], recovery.RESUME_PENDING)
+        self.assertIn("approval_resume_next_at", pending[0][0])
+
+    def test_takeover_without_a_pending_approval_skips_resume(self):
+        """探测到 clear 就不要调 resume：那会在空检查点上白跑一轮旧图。"""
+        self.probe_state = "clear"
+        response = self.client.post("/api/admin/tickets/7/takeover",
+                                    headers=self.auth(), json={})
+
+        self.assertEqual(response.json()["msg"], "已接管")
+        self.assertEqual(self.resumes(), [])
+        done = [w for w in self.resume_writes if "approval_resume_state" in w[0]]
+        self.assertEqual(done[0][1][0], recovery.RESUME_DONE)
+
+    def test_approve_cancel_survives_a_resume_failure(self):
+        """取消转接已经改了状态：恢复失败不能让接口报 500（状态回不去）。"""
+        self.ticket = ticket_row(status=0)
+        self.resume_reply = main.httpx.ConnectError("agent down")
+        response = self.client.post("/api/admin/ticket/approve", headers=self.auth(),
+                                    json={"ticket_no": "TK-abc12345", "confirmed": False})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["msg"], "转接申请已取消")
+        self.assertEqual(self.writes_matching("UPDATE tickets SET status")[0][1], (2, 7))
+        pending = [w for w in self.resume_writes if "approval_resume_state" in w[0]]
+        self.assertEqual(pending[0][1][0], recovery.RESUME_PENDING)
 
     def test_takeover_rejects_closed_and_canceled(self):
         for status, msg in ((3, "工单已关闭"), (2, "工单已取消")):

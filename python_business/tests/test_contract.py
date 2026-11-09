@@ -4,6 +4,7 @@ import os
 import hashlib
 import time
 import unittest
+from datetime import datetime
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -25,6 +26,47 @@ class FakeRedis:
 
     def set(self, key, value, ex=None):
         self.values[key] = value
+
+
+class _FakeCursor:
+    """Records SQL into the same sink as the patched ``write`` so assertions stay uniform."""
+
+    def __init__(self, sink):
+        self.sink = sink
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+    def execute(self, sql, args=()):
+        self.sink.append((sql, args))
+
+
+class _FakeConn:
+    """Minimal transaction surface used by ``issue_session`` (begin/commit/cursor)."""
+
+    def __init__(self, sink):
+        self.sink = sink
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+    def begin(self):
+        pass
+
+    def commit(self):
+        pass
+
+    def rollback(self):
+        pass
+
+    def cursor(self):
+        return _FakeCursor(self.sink)
 
 
 class CustomerContractTest(unittest.TestCase):
@@ -49,6 +91,11 @@ class CustomerContractTest(unittest.TestCase):
                 return {"tenant_id": "t_demo", "app_secret_hash": "hash"}
             if "FROM customer_sessions" in sql:
                 return self.session
+            if "FROM chat_conversations" in sql:
+                return {"tenant_id": "t_demo", "customer_id": self.customer_id,
+                        "thread_id": "t_demo:buyer1:session",
+                        "is_guest": 0, "is_preview": 0, "status": "active",
+                        "last_active_at": datetime.now()}
             if "FROM orders" in sql and args == ("t_demo", "t_demo:buyer1", "ORD-1"):
                 return {"order_id": "ORD-1", "item": "课程", "amount": 99,
                         "status": "已发货", "create_date": "2024-01-01"}
@@ -69,6 +116,7 @@ class CustomerContractTest(unittest.TestCase):
             patch.object(customer_routes, "one", side_effect=one),
             patch.object(customer_routes, "many", side_effect=many),
             patch.object(customer_routes, "write", side_effect=lambda sql, args: self.writes.append((sql, args))),
+            patch.object(customer_routes, "db", side_effect=lambda: _FakeConn(self.writes)),
             patch.object(customer_routes, "cache", return_value=self.redis),
             patch.dict(os.environ, {"INTERNAL_API_TOKEN": "internal-test"}),
         )
@@ -145,8 +193,17 @@ class CustomerContractTest(unittest.TestCase):
             })
         self.assertEqual(guest.status_code, 200)
         self.assertEqual(preview.status_code, 200)
-        self.assertTrue(self.writes[0][1][5])  # is_guest
-        self.assertTrue(self.writes[1][1][4])  # is_preview
+        # 一次登录写两行（登录令牌 + 会话索引），按 SQL 筛选而不是按写入顺序断言
+        logins = [args for sql, args in self.writes if "INSERT INTO customer_sessions" in sql]
+        self.assertEqual(len(logins), 2, self.writes)
+        self.assertTrue(logins[0][5])  # guest is_guest
+        self.assertTrue(logins[1][4])  # preview is_preview
+        conversations = [(sql, args) for sql, args in self.writes
+                         if "INSERT INTO chat_conversations" in sql]
+        self.assertEqual(len(conversations), 2, self.writes)
+        self.assertTrue(conversations[0][1][3])  # guest is_guest
+        self.assertTrue(conversations[1][1][4])  # preview is_preview
+        self.assertIn("'draft'", conversations[0][0])  # 登录产生的空会话不进历史列表
         self.assertNotEqual(guest.json()["data"]["customer_id"],
                             preview.json()["data"]["customer_id"])
 

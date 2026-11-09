@@ -13,11 +13,69 @@ from business.admin.ops import (AGENT_URL, agent_payload_response,
                                 decrypt_api_key, proxy_to_agent,
                                 require_platform, tenant_config_row)
 from business.admin.platform import required_field_error
-from business.core.errors import code_to_status, soft
+from business.core.errors import code_to_status, deny, soft
 from business.core.requests import body_json
 from business.infra.storage import one
 
 router = APIRouter()
+
+
+async def proxy_experience(request: Request, method: str, path: str, admin: Admin):
+    """Authenticated tenant proxy; the browser never sees the internal Agent token."""
+    headers = {"X-Internal-Token": os.getenv("INTERNAL_API_TOKEN", ""),
+               "X-Tenant-Id": admin.tenant_id}
+    url = AGENT_URL + path + (("?" + request.url.query) if method == "GET" and request.url.query else "")
+    async with httpx.AsyncClient(timeout=20) as client:
+        try:
+            response = await client.request(method, url,
+                                            content=await request.body() if method != "GET" else None,
+                                            headers={**headers, "Content-Type": "application/json"})
+        except httpx.HTTPError:
+            deny(503, "经验服务暂时不可用")
+    try:
+        payload = response.json()
+    except ValueError:
+        deny(502, "经验服务响应异常")
+    if response.status_code >= 400:
+        deny(response.status_code, payload.get("detail", "经验操作失败")
+             if isinstance(payload, dict) else "经验操作失败")
+    return payload
+
+
+@router.get("/api/admin/experience/items")
+async def admin_experience_items(request: Request,
+                                 admin: Admin = Depends(require_perm("experience:view"))):
+    return await proxy_experience(request, "GET", "/agent/experience/items", admin)
+
+
+@router.post("/api/admin/experience/items")
+async def admin_experience_create(request: Request,
+                                  admin: Admin = Depends(require_perm("experience:edit"))):
+    return await proxy_experience(request, "POST", "/agent/experience/items", admin)
+
+
+@router.put("/api/admin/experience/items/{item_id}")
+async def admin_experience_edit(item_id: int, request: Request,
+                                admin: Admin = Depends(require_perm("experience:edit"))):
+    return await proxy_experience(request, "PUT", f"/agent/experience/items/{item_id}", admin)
+
+
+@router.post("/api/admin/experience/review")
+async def admin_experience_review(request: Request,
+                                  admin: Admin = Depends(require_perm("experience:edit"))):
+    return await proxy_experience(request, "POST", "/agent/experience/review", admin)
+
+
+@router.get("/api/admin/experience/mode")
+async def admin_experience_mode(request: Request,
+                                admin: Admin = Depends(require_perm("experience:view"))):
+    return await proxy_experience(request, "GET", "/agent/experience/mode", admin)
+
+
+@router.post("/api/admin/experience/mode")
+async def admin_experience_set_mode(request: Request,
+                                    admin: Admin = Depends(require_perm("experience:edit"))):
+    return await proxy_experience(request, "POST", "/agent/experience/mode", admin)
 
 # ============================================================================
 # 阶段 3-7：代理域（Prompt / 知识库 / 平台设置 / 模型可用性测试）

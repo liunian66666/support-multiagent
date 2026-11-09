@@ -34,10 +34,12 @@
 | 改动 | 说明 | 位置 |
 |---|---|---|
 | Python 业务层迁移 | 客户会话、商家管理、认证、工单、Agent 内部接口及 WebSocket 全部由 FastAPI 提供；新库租户初始化与每日消息归档也由 Python 完成。原 `go_service/` 已移除 | `python_business/`、`deploy/init/mysql/init.sql` |
-| 业务层模块化 | 原 3.9k 行 `main.py` 拆为 12 个职责模块，`main.py` 只保留 3 行入口；131 条路由的方法/路径/名称/注册顺序由 `route_baseline.json` 锁定，防止拆分引入回归 | `python_business/business/`、`tests/test_route_manifest.py` |
+| 业务层模块化 | 原单体 `main.py` 拆为职责模块，`main.py` 只保留入口；当前 139 条路由的方法、路径、名称和注册顺序由 `route_baseline.json` 锁定 | `python_business/business/`、`python_business/tests/test_route_manifest.py` |
 | 客户身份与只读订单 | FastAPI 签发客户会话，订单查询按「租户 + 客户」双条件限定归属；未知单号与「非本人订单」返回完全一致的提示，不暴露订单存在性 | `business/customer/routes.py`、`python_agent/app/agent/tools.py` |
 | 电商客服意图与 FAQ | 区分政策咨询、订单查询、主动转人工和退款/支付执行请求；政策回答保留知识来源，不把演示政策冒充真实商家承诺 | `python_agent/app/chat/`、`python_agent/app/api/chat.py` |
-| 四 Agent 协作 | Supervisor 动态委派 FAQ、Order、General Agent，Reviewer 规则节点校验证据和权限；复合咨询在 LangGraph 主图中汇总 | `agent/`、`python_agent/app/services/four_agent.py` |
+| 四 Agent 协作 | Supervisor 动态委派 FAQ、Order、General Agent，Reviewer 规则节点校验证据和权限；复合咨询在 LangGraph 主图中汇总 | `python_agent/app/agent/support/`、`python_agent/app/services/four_agent.py` |
+| 知识库证据门控 | 文档审核状态、商品适用范围和有效期参与 FAQ 与复合问答的证据筛选；索引使用稳定分片 ID | `python_agent/app/kb/`、`python_agent/evaluation/` |
+| 可恢复客户会话 | 客户消息与处理任务同事务入库，独立维护进程保存回答；登录客户可管理自己的历史会话 | `python_business/business/chat/turns.py`、`worker.py`、`web/chat/conversations.js` |
 | 可追溯的决策轨迹 | 每轮对话的路由、工具、检索证据、模型用量写入 PostgreSQL `agent_trace_runs`；字段白名单过滤，用户原话与提示词不入库 | `python_agent/app/services/trace.py` |
 | 前后端联通 | Nginx 将 Vue 后台、客户聊天页、SDK 的 API 与 WebSocket 统一接入 Python；商家实时接收本租户转人工工单 | `deploy/nginx.conf`、`web/`、`admin-app/` |
 
@@ -45,9 +47,11 @@
 
 | 能力 | 说明 |
 |------|------|
-| 🤖 AI 智能对话 | LangGraph 编排、流式输出、RAG 知识库检索、工具调用 |
+| 🤖 AI 智能对话 | 四 Agent LangGraph 主图、JSON/SSE 回复、RAG 证据筛选、只读订单工具与水位线会话记忆 |
 | 👨‍💼 人工客服 | 工单管理、会话查看、人工接管对话、实时推送通道 |
-| 📚 知识库管理 | 文档上传、向量索引、语义检索、批量重索引、按租户隔离 |
+| 📚 知识库管理 | 文档上传与审核、适用范围和有效期管理、稳定分片索引、按租户隔离的检索与证据门控 |
+| 💬 客户会话 | 断线后后台继续处理、重连恢复答复和失败状态；登录客户可管理近 7 天历史会话 |
+| 🧠 经验召回实验 | 支持 `off`、`shadow`、`inject` 策略与版本治理；已有对照尚未证明注入能提升答复质量 |
 | 📝 Prompt 管理 | 版本控制、回滚、租户级 + 平台级 Prompt 优先级 |
 | 🏢 多租户 | 数据/知识库/模型配置隔离、用量配额、平台/租户双级管理 |
 | 👤 账号与安全 | 平台/租户管理员账号密码登录（专属链接 `#/login-account?tid=` 自动填充租户）、修改密码、连续输错密钥触发登录限流防爆破 |
@@ -74,8 +78,8 @@
         ▼                       ▼
 ┌──────────────────┐   ┌──────────────────────────┐
 │ MySQL 8.4 (3306) │   │ Python Agent (8000 内网)  │
-│ 业务库/工单/消息  │   │ LangGraph：智能对话/RAG/  │
-│ /租户/审计/归档   │   │ 工具调用/人工接管中断     │
+│ 业务库/工单/消息  │   │ LangGraph：四 Agent/RAG/   │
+│ /会话轮次/审计     │   │ 工具调用/人工接管中断     │
 └──────────────────┘   └──────┬─────────┬─────────┘
                               ▼         ▼
                      PostgreSQL (5432)  Qdrant (6333)
@@ -91,11 +95,13 @@
 └──────────────────────────────────────────────────┘
 ```
 
-消息归档由独立的 Python `business-maintenance` 服务定时执行。
+独立的 Python `business-maintenance` 服务负责领取客户聊天轮次、保存处理结果和定时归档消息。客户断线后，已受理轮次仍由该服务处理；至少要保持一个维护进程运行。
 
 ## 当前 Agent 入口与兼容范围
 
-普通 JSON/SSE 聊天固定进入 `agent/` 中的四 Agent LangGraph 主图；`FOUR_AGENT_GRAPH` 环境变量与 `X-Agent-Graph` 请求头不再切换旧图。主图使用持久化检查点，旧会话的历史消息首次进入新图时只读导入。已有未完成审批继续沿原检查点恢复，审批完成后新聊天进入主图。退款、支付执行仍未开放。
+普通 JSON/SSE 聊天固定进入 `python_agent/app/agent/support/` 中的四 Agent LangGraph 主图；`FOUR_AGENT_GRAPH` 环境变量与 `X-Agent-Graph` 请求头不再切换旧图。主图使用持久化检查点，旧会话的历史消息首次进入新图时只读导入。已有未完成审批继续沿原检查点恢复，审批完成后新聊天进入主图。退款、支付执行仍未开放。
+
+主图按会话串行写入 PostgreSQL 检查点。Reviewer 对订单归属、无证据政策数值和交易请求设规则边界；摘要只帮助理解上下文，不能作为订单状态或店铺政策的依据。当前 Compose 打开 `SUPPORT_V2_THREAD_LOCK`，并设置了演示用模型覆盖值 `FOUR_AGENT_MODEL_NAME=glm-5.3`；接入真实租户前须核对或移除该覆盖值。
 
 历史评测报告保留旧版对照数据；其中的旧入口开关说明仅反映当时实验配置。
 
@@ -112,7 +118,7 @@ cp .env.example .env
 # 3. 一键启动（Docker Compose）
 docker compose up -d --build
 
-# 4. 等待健康检查通过（约 1-2 分钟）
+# 4. 等待健康检查通过
 docker compose ps
 
 # 5. 访问系统
@@ -142,6 +148,8 @@ docker compose ps
 
 演示客户 secret 经 `.env` 的 `DEMO_CUSTOMER_DEMO_BUYER_KEY_SECRET` 注入，`CS_AUTH_DEMO_CUSTOMER_LOGIN=false` 可整体关闭。登录页使用 POST 提交密码，网址与浏览器存储均不保存密码，只保存两小时客户会话令牌；旧版 URL 中的密码会在首次请求时经过 Web 服务器，应停止分享旧链接。商家旧链接预览由 `CS_AUTH_MERCHANT_PREVIEW_LOGIN` 控制，预览会话**不能读取订单**。生产环境应关闭演示客户登录、演示访客与旧链接预览三个入口。
 
+登录客户在 PC/H5 聊天页可查看近 7 天会话、切换、新建、重命名和删除；访客与商家预览会话不提供跨登录历史。消息发出后即使页面断开，维护进程仍会处理已受理轮次；失败轮次可在页面重试。旧数据库升级需先执行 [会话迁移说明](./docs/durable_chat_turns.md) 中的 MySQL 迁移脚本，新库由初始化 SQL 建表。
+
 ## ⚠️ 能力边界（未开放的部分）
 
 订单查询与归属校验逻辑已就绪，使用演示订单数据验证（2 条）。以下功能**未**开放，避免用演示数据冒充真实业务：
@@ -153,16 +161,19 @@ docker compose ps
 
 ## 🧪 验证与测试
 
-| 检查项 | 结果 | 命令 |
-|---|---|---|
-| 业务层单元测试 | **330 项通过** | `docker compose run --rm --no-deps business python -m unittest discover -s tests -q` |
-| Agent 单元测试 | **80 项通过** | 见 `python_agent/tests/`（镜像不含 tests，需挂载目录运行） |
-| 路由契约 | **131 条路由**（含 2 个 WebSocket）的方法/路径/名称/顺序锁定 | `tests/test_route_manifest.py` |
-| 网关路由探测 | 静态页 200、未授权 401、内部接口 404、废弃接口 410 均符合预期 | `docker compose exec -T business python verify_gateway_routes.py` |
-| 实时聊天 | 经 Nginx 实测 FAQ 流式回复、转人工建单、同租户商家收到通知 | `docker compose exec -T -e CHAT_BACKEND=http://nginx business python verify_realtime_live.py` |
-| 会话恢复 | 重启业务容器后用同一访客会话可读历史 | `python_business/verify_session_restart.py` |
+以下为**已有记录**，注明评测对象与口径；不能把字面规则通过率当成答案忠实度。当前工作区另有未提交改动，下面的历史结果不等于这些改动已完成完整回归。
 
-逐阶段实测记录与未完成边界见 [MERGE_ACCEPTANCE.md](./docs/MERGE_ACCEPTANCE.md)；可对外表述的范围界定见 [RESUME_CLAIMS.md](./docs/RESUME_CLAIMS.md)。
+| 检查项 | 已记录结果与限制 | 依据 |
+|---|---|---|
+| 业务与路由 | 2026-10-23 镜像验收为 **330 项业务测试通过**，当时路由为 132 条；当前路由契约清单为 **139 条（含 2 个 WebSocket）**，本次契约测试通过 | [评测基线](./docs/EVALUATION_BASELINE.md)、`python_business/tests/route_baseline.json` |
+| 知识库证据 | 演示租户 24 题（12 有答案、12 无答案）中，最终证据的目标源文档 Recall@3 为 **12/12**，无答案拒绝片段 **12/12**；仅 2 个源文档，不能推断真实商家效果 | [知识库最终验收](./docs/EVALUATION_BASELINE.md) |
+| 四 Agent 同模型留出题 | DeepSeek 36 题旧/新图按严格字面闸门均为 **34/36**，新图复跑为 **33/36**；首轮新图 p50 **7.8 秒**、旧图 **3.4 秒**，token **149.3k/43.3k**。质量差异处于样本波动内，成本明显更高 | [逐题差异](./python_agent/evaluation/four_agent/runs/heldout_diff_dsv41_off_vs_on.md)、[实际效果报告 §8g](./python_agent/docs/four_agent/实际效果报告.md) |
+| 另一模型留出题 | GLM 同模型两次 36 题均为旧图 **34/36**、新图 **35/36**，但逐题均有 **1 例字面回退**，发布闸门未放行；这不能表述为整体质量提升 | [第 2 轮逐题差异](./python_agent/evaluation/four_agent/runs/glm_heldout_diff_r2.md) |
+| 长对话记忆 | DeepSeek 10 条、每条 12 轮的后续复测中，旧图 **0/10**、新图 **9/10** 找回全部预埋信息；整条对话的墙钟 p50 为 **34.8/177.1 秒**，不能当成单轮时延 | [逐题对照](./python_agent/evaluation/four_agent/runs/mem_diff_dsv41_r4_off_vs_r5_on.md) |
+| 经验召回（RSI） | Qwen 真模型 50 题、off/inject 各两轮，字面分数分别为 **41/43、43/43**；off 自身也波动 2 题，人工核查首轮表面改善为 0，尚无质量提升证据 | [Qwen 对照](./python_agent/evaluation/runs/2026-10-25-qwen-rsi/README.md) |
+| 断线处理 | 2026-10-29 基线实测出现“1 条用户消息、0 条 AI 消息”；当前代码改为 MySQL 持久轮次与独立 Worker，待按升级说明完成真实 MySQL 和浏览器断线复验 | [断线基线](./docs/chat_turn_baseline.md)、[持久轮次说明](./docs/durable_chat_turns.md) |
+
+本地本次确认 **351 个业务测试**、**116 个四 Agent 测试**可收集；路由契约与新增会话相关测试 **12 通过、2 跳过**（跳过项需独立 MySQL 测试库），四 Agent 规则和评分尺子测试 **20 通过**。完整套件本次未跑完，因此不把收集数量写成“已通过”。复现入口与原始记录见 [四 Agent 评测说明](./python_agent/docs/four_agent/README.md)；逐阶段历史验收见 [MERGE_ACCEPTANCE.md](./docs/MERGE_ACCEPTANCE.md)。
 
 ## 🔌 服务端口
 
@@ -190,11 +201,14 @@ support-multiagent/
 │   └── business/             #   按职责拆分：core/infra/customer/admin/agent/chat
 ├── python_agent/             # Python LangGraph Agent
 │   ├── main.py               #   入口
-│   ├── app/agent/            #   图构建、工具、检索、LLM 配置
+│   ├── app/agent/            #   能力层：工具、检索、LLM 配置、FAQ/General 专职 Agent
+│   ├── app/agent/support/    #   编排层：四 Agent 主图、Reviewer、记忆、状态契约
 │   ├── app/api/              #   chat / kb / session / trace 等接口
 │   ├── app/chat/             #   意图识别、FAQ、订单、回复
-│   ├── app/services/         #   supervisor / specialists / trace
-│   └── app/kb/               #   知识库索引与检索
+│   ├── app/services/         #   supervisor / specialists / trace / four_agent 适配器
+│   ├── app/kb/               #   知识库索引与证据筛选
+│   ├── evaluation/           #   金标、采集脚本与原始评测记录
+│   └── tests/                #   Agent 与四 Agent 图测试
 ├── admin-app/                # 管理后台前端源码（Vue3 + Vite）
 ├── web/                      # 静态前端（chat/ 用户端、sdk/ 接入示例）
 │   └── admin/dist/           #   管理后台构建产物（nginx 镜像多阶段构建时生成）
@@ -219,6 +233,10 @@ support-multiagent/
 | [模块功能说明文档](./docs/模块功能说明文档.md) | 模块详细功能、数据模型、流程设计 | 开发/测试 |
 | [架构与开发指南](./docs/05-架构与开发指南.md) | 目录结构、模块职责、开发规范 | 开发者 |
 | [业务层模块结构](./docs/BUSINESS_MODULARIZATION.md) | `business/` 各模块职责与依赖方向 | 开发者 |
+| [四 Agent 主图](./python_agent/docs/four_agent/README.md) | 当前入口、图状态、持久化与复现命令；下半部分保留历史实验说明 | 开发/评测 |
+| [四 Agent 实际效果报告](./python_agent/docs/four_agent/实际效果报告.md) | 逐题质量、长对话、检索稳定性、时延与成本口径 | 开发/评测 |
+| [评测基线](./docs/EVALUATION_BASELINE.md) | 规则、检索、知识库审核与证据门控的阶段结果 | 开发/评测 |
+| [断线可恢复聊天](./docs/durable_chat_turns.md) | MySQL 升级、Worker 处理与验证步骤 | 开发/运维 |
 | [运维监控指南](./docs/运维监控指南.md) | Grafana/Prometheus/Loki 使用、故障排查 | 运维/SRE |
 | [客户接入手册](./docs/接入手册.md) | 产品化接入步骤、Token 换取、多端接入 | 客户/第三方 |
 | [订单接入契约](./docs/ORDER_ADAPTER_CONTRACT.md) | 真实订单适配器要求与验收覆盖 | 集成方 |
@@ -234,7 +252,7 @@ support-multiagent/
 检查「平台模型配置」：对话模型/向量模型是否配置、API Key 是否正确、测试连通性是否通过。
 
 **Q：修改了代码如何生效？**
-业务层：`docker compose up -d --build business business-maintenance`；Agent：`docker compose up -d --build agent`；前端（admin-app / chat / sdk）：`docker compose up -d --build nginx`。nginx.conf 改动后执行 `docker exec cs_nginx nginx -s reload`。
+业务层：`docker compose up -d --build business business-maintenance`；Agent：`docker compose up -d --build agent`；前端（admin-app / chat / sdk）：`docker compose up -d --build nginx`。nginx.conf 改动后执行 `docker exec SM_nginx nginx -s reload`。
 
 **Q：知识库检索不到？**
 文档状态需为「已索引」；更换 Embedding 模型后必须到知识库页重新索引。

@@ -691,7 +691,7 @@ class Stage36Test(unittest.TestCase):
         self.assertEqual(payload["msg"], "内置菜单已重置为初始状态")
         inserts = [s for s in self.statements if s[0].startswith("INSERT INTO menus")]
         self.assertEqual(len(inserts), len(main.BUILTIN_MENUS))
-        self.assertEqual(len(inserts), 50)
+        self.assertEqual(len(inserts), 53)
         grants = [s for s in self.statements
                   if s[0].startswith("INSERT INTO sys_role_menu")]
         self.assertEqual(len(grants), 4)                    # 2 个 admin 角色 × 2 个业务菜单
@@ -700,7 +700,7 @@ class Stage36Test(unittest.TestCase):
         ids = [m[0] for m in main.BUILTIN_MENUS]
         self.assertEqual(len(ids), len(set(ids)))           # 主键不重复
         self.assertIn(107, ids)                             # 菜单权限页
-        self.assertEqual(sum(1 for m in main.BUILTIN_MENUS if m[6] == "业务中心"), 38)
+        self.assertEqual(sum(1 for m in main.BUILTIN_MENUS if m[6] == "业务中心"), 41)
         self.assertEqual(sum(1 for m in main.BUILTIN_MENUS if m[6] == "系统管理"), 12)
 
 

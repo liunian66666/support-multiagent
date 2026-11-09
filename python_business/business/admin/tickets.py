@@ -1,15 +1,15 @@
 """Human-support tickets, takeover, messaging and approval decisions."""
 
-import os
 from datetime import datetime, timedelta
 
-import httpx
 import pymysql
 from fastapi import APIRouter, Depends, Request
 
 from business.admin.auth import Admin, require_perm, user_perms, write_audit
 from business.admin.catalog import to_int
 from business.admin.sessions import tenant_of_thread, extract_from_content, upsert_extracted_profile
+from business.chat.recovery import recover_for_ticket, recover_thread
+from business.core.constants import AGENT_URL as _AGENT_URL
 from business.core.errors import deny, soft
 from business.core.requests import body_json
 from business.customer.routes import iso
@@ -25,7 +25,7 @@ router = APIRouter()
 # POST /api/agent/ws/broadcast（本轮新增，仅转发不落库），保证只有一个 WS Hub。
 # ==========================================================================
 
-AGENT_URL = os.getenv("CS_AGENT_URL", "http://agent:8000")
+AGENT_URL = _AGENT_URL
 
 TICKET_STATUS_PENDING = 0
 TICKET_STATUS_HANDLING = 1
@@ -63,21 +63,15 @@ def reload_go_extract_rules():
 
 
 def agent_resume(thread_id, confirmed, wait_time, ticket_no, trace_id=""):
-    """行为约定：POST {agent}/agent/resume，传输失败重试一次。"""
-    payload = {"thread_id": thread_id, "confirmed": confirmed,
-               "wait_time": wait_time, "ticket_id": ticket_no}
-    headers = {"X-Internal-Token": os.getenv("INTERNAL_API_TOKEN", ""),
-               "X-Tenant-Id": tenant_of_thread(thread_id),
-               "X-Trace-Id": trace_id}
-    error = None
-    for _ in range(2):
-        try:
-            response = httpx.post(AGENT_URL + "/agent/resume", json=payload,
-                                  headers=headers, timeout=60)
-            return (response.json() or {}).get("content") or ""
-        except (httpx.HTTPError, ValueError, AttributeError) as exc:
-            error = exc
-    raise RuntimeError(str(error))
+    """恢复一次旧审批，返回**结构化结果**（:class:`business.chat.recovery.ResumeResult`）。
+
+    只取 ``content`` 就当恢复成功是错的：``success=false``（没有待审批 / 状态未知）、
+    ``503``、超时都不会抛异常，而是"这次没恢复"。四种结果与失败重试见
+    :mod:`business.chat.recovery`。保留这个薄函数是因为 ``/agent/resume`` 的 HTTP 细节
+    属于工单域，恢复策略属于聊天域。
+    """
+    return recover_thread(thread_id, confirmed=confirmed, wait_time=wait_time,
+                          ticket_no=ticket_no, trace_id=trace_id)
 
 
 def save_message(thread_id, role, content, msg_type="", ticket_id=None, answer_id=""):
@@ -382,12 +376,15 @@ def takeover_ticket(ticket, wait_time, trace_id, handler_uid, handler_name):
         if claimed:
             ticket["handler_uid"] = handler_uid
             ticket["handler_name"] = handler_name
-            # 线程处于 HITL 中断，恢复 Agent 会话（best effort，失败不阻断人工接管）
+            # 线程处于 HITL 中断，恢复 Agent 会话（失败不阻断人工接管，但会记成待办）
             try:
-                msg = agent_resume(ticket["thread_id"], True, wait_time, ticket["ticket_no"],
-                                   trace_id)
-            except RuntimeError as exc:
-                msg = "接管成功，但恢复Agent会话失败:" + str(exc)
+                result = recover_for_ticket(ticket, wait_time=wait_time,
+                                            trace_id=trace_id)
+                msg = result.content if result.settled else ""
+                if not result.settled:
+                    msg = "接管成功，但恢复Agent会话失败，已转入后台重试"
+            except Exception:
+                msg = "接管成功，但恢复Agent会话失败，已转入后台重试"
     if not claimed:
         # 抢锁失败：不写状态/日志/消息/计数/广播。用 deny 而非 soft —— soft() 不置
         # request.state.denied，会经 audit_writes 中间件多落一条 audit_logs，
@@ -592,16 +589,16 @@ async def admin_ticket_approve(request: Request,
         deny(403, "无权访问该租户工单")
     trace_id = request.headers.get("X-Trace-Id", "")
     if not confirmed:
-        # 取消转接：先改状态，再唤醒 Agent（保持该次序 —— Agent 失败时状态已改）
+        # 取消转接：先改状态，再唤醒 Agent（保持该次序 —— Agent 失败时状态已改，
+        # 恢复失败则落成后台待办，而不是把已经取消的工单状态回滚或直接报 500）
         try:
             update_ticket_status(ticket, TICKET_STATUS_CANCELED)
             add_ticket_log(ticket, "cancel", TICKET_STATUS_PENDING, TICKET_STATUS_CANCELED,
                            int(ticket["priority"] or 0), int(ticket["priority"] or 0),
                            "system", "取消转接申请，智能客服继续服务")
-            content = agent_resume(ticket["thread_id"], False, wait_time,
-                                   ticket["ticket_no"], trace_id)
-        except RuntimeError as exc:
-            soft(500, str(exc))
+            result = recover_for_ticket(ticket, confirmed=False, wait_time=wait_time,
+                                        trace_id=trace_id)
+            content = result.content if result.settled else ""
         except pymysql.MySQLError as exc:
             soft(500, str(exc))
         save_message(ticket["thread_id"], "system", "转接申请已取消，智能客服继续服务",
@@ -612,7 +609,7 @@ async def admin_ticket_approve(request: Request,
         go_broadcast("admins_tenant", {"type": "ticket_update",
                                        "ticket": ticket_json(ticket)},
                      tenant_id=tenant_of_thread(ticket["user_id"] or ""))
-        return {"code": 0, "msg": content}
+        return {"code": 0, "msg": content or "转接申请已取消"}
     try:
         msg = takeover_ticket(ticket, wait_time, trace_id, 0, "system")
     except pymysql.MySQLError as exc:

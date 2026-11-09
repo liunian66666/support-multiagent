@@ -64,10 +64,12 @@ from business.admin.tickets import go_broadcast as go_broadcast
 from business.admin.tickets import reload_go_extract_rules as reload_go_extract_rules
 from business.admin.tickets import save_message as save_message
 from main import app as app
+from business.chat import recovery as recovery
 from business.chat.realtime import assign_last_user_message as assign_last_user_message
 from business.chat.realtime import ensure_customer_ticket as ensure_customer_ticket
 from business.chat.realtime import handling_ticket as handling_ticket
 from business.chat.realtime import pending_ticket as pending_ticket
+from business.chat.realtime import waiting_ticket as waiting_ticket
 from business.chat.realtime import stream_agent_reply as stream_agent_reply
 from business.infra.storage import cache as cache
 from business.infra.storage import db as db

@@ -136,6 +136,7 @@ const PY_ADMIN_PREFIXES = [
   // /api/admin/model-config/test 不单列：它已被上面的 /api/admin/model-config 前缀命中
   '/api/admin/prompts',
   '/api/admin/kb',
+  '/api/admin/experience',
   '/api/admin/platform-settings'
 ]
 

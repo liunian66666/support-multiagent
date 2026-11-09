@@ -1,4 +1,4 @@
-﻿-- ============================================================================
+-- ============================================================================
 -- 智能客服系统 - MySQL 初始化脚本
 -- 覆盖 Python 业务层所需的表；与现有业务库的字段保持一致。
 -- 新数据库的租户由 python_business/bootstrap.py 在服务启动时写入；
@@ -88,6 +88,38 @@ CREATE TABLE IF NOT EXISTS `messages` (
   KEY `idx_messages_ticket_id` (`ticket_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='会话消息表';
 
+-- Durable customer chat turns. Apply to existing MySQL volumes without clearing data.
+CREATE TABLE IF NOT EXISTS `chat_turns` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `turn_id` varchar(64) NOT NULL,
+  `tenant_id` varchar(64) NOT NULL,
+  `customer_id` varchar(255) NOT NULL,
+  `thread_id` varchar(255) NOT NULL,
+  `user_message_id` bigint unsigned NOT NULL,
+  `answer_message_id` bigint unsigned DEFAULT NULL,
+  `user_message` text NOT NULL,
+  `msg_type` varchar(16) NOT NULL DEFAULT 'text',
+  `status` varchar(16) NOT NULL DEFAULT 'queued',
+  `result_type` varchar(16) NOT NULL DEFAULT '',
+  `attempt_count` int unsigned NOT NULL DEFAULT 0,
+  `next_attempt_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `lease_until` datetime(3) DEFAULT NULL,
+  `lease_token` char(32) DEFAULT NULL,
+  `error_code` varchar(64) NOT NULL DEFAULT '',
+  `error_message` varchar(255) NOT NULL DEFAULT '',
+  `trace_id` varchar(64) NOT NULL DEFAULT '',
+  `ticket_no` varchar(64) NOT NULL DEFAULT '',
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_chat_turn_id` (`turn_id`),
+  UNIQUE KEY `uq_chat_turn_user_message` (`user_message_id`),
+  UNIQUE KEY `uq_chat_turn_answer_message` (`answer_message_id`),
+  KEY `idx_chat_turn_ready` (`status`, `next_attempt_at`, `id`),
+  KEY `idx_chat_turn_thread_order` (`tenant_id`, `thread_id`, `id`),
+  KEY `idx_chat_turn_customer` (`tenant_id`, `customer_id`, `thread_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='持久化客户聊天轮次';
+
 -- 工单表（人工客服转接）
 CREATE TABLE IF NOT EXISTS `tickets` (
   `id` bigint NOT NULL AUTO_INCREMENT,
@@ -103,13 +135,20 @@ CREATE TABLE IF NOT EXISTS `tickets` (
   `handler_uid` bigint(20) unsigned DEFAULT 0 COMMENT '接管客服子账号ID（0=app_key管理员）',
   `handler_name` varchar(64) DEFAULT NULL COMMENT '接管客服名（冗余快照）',
   `closed_at` datetime(3) DEFAULT NULL COMMENT '关闭/取消时刻',
+  `approval_resume_state` tinyint(1) NOT NULL DEFAULT 0 COMMENT '0无 1待恢复旧审批 2已恢复 3重试用尽',
+  `approval_resume_attempts` int NOT NULL DEFAULT 0 COMMENT '后台恢复重试次数',
+  `approval_resume_next_at` datetime(3) DEFAULT NULL COMMENT '下次重试时间',
+  `approval_resume_error` varchar(64) DEFAULT NULL COMMENT '最近一次恢复结果/错误码',
+  `approval_resume_lease` varchar(64) DEFAULT NULL COMMENT '恢复短租约（多实例互斥）',
+  `approval_resume_lease_until` datetime(3) DEFAULT NULL COMMENT '恢复租约到期时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uni_tickets_ticket_no` (`ticket_no`),
   KEY `idx_tickets_tenant_id` (`tenant_id`),
   KEY `idx_tickets_tenant_status` (`tenant_id`,`status`),
   KEY `idx_tickets_tenant_status_time` (`tenant_id`,`status`,`created_at`),
   KEY `idx_tickets_created_at` (`created_at`),
-  KEY `idx_ticket_thread_status` (`thread_id`,`status`)
+  KEY `idx_ticket_thread_status` (`thread_id`,`status`),
+  KEY `idx_tickets_resume_due` (`approval_resume_state`,`approval_resume_next_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工单表';
 
 -- 租户表（模型 BYOK 配置 + 配额字段，与 model.TenantRow 一致）
@@ -245,6 +284,26 @@ CREATE TABLE IF NOT EXISTS `customer_sessions` (
   KEY `idx_csess_thread` (`thread_id`),
   KEY `idx_csess_expires` (`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='客户会话表';
+
+-- 聊天会话索引（与 2 小时登录令牌解耦：令牌只证明"此刻是谁"，本表证明"这段对话属于谁"）
+-- status：draft=登录分配但尚未受理消息（不进历史列表）；active=已受理消息；expired=超期待清理
+-- last_active_at 只在 accept_turn 的事务里更新，即"最后一次成功受理客户消息"的时间
+CREATE TABLE IF NOT EXISTS `chat_conversations` (
+  `thread_id` varchar(255) NOT NULL COMMENT '会话线程ID（与 messages.thread_id 同值，不带 support_v2: 前缀）',
+  `tenant_id` varchar(64) NOT NULL DEFAULT '' COMMENT '租户ID',
+  `customer_id` varchar(255) NOT NULL DEFAULT '' COMMENT '稳定客户标识（服务端判定，不取前端入参）',
+  `title` varchar(120) NOT NULL DEFAULT '' COMMENT '用户自定义名称；空串表示用首条用户消息作为显示名',
+  `is_guest` tinyint(1) NOT NULL DEFAULT 0 COMMENT '免登录访客会话（不提供历史列表）',
+  `is_preview` tinyint(1) NOT NULL DEFAULT 0 COMMENT '商家预览会话（不提供历史列表）',
+  `status` varchar(16) NOT NULL DEFAULT 'draft' COMMENT 'draft/active/expired',
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `last_active_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '最后一次成功受理客户消息',
+  `deleted_at` datetime(3) DEFAULT NULL COMMENT '用户主动删除时间；非空即不再出现在列表',
+  PRIMARY KEY (`thread_id`),
+  KEY `idx_conv_owner` (`tenant_id`, `customer_id`, `last_active_at`),
+  KEY `idx_conv_status_active` (`status`, `last_active_at`),
+  KEY `idx_conv_deleted` (`tenant_id`, `customer_id`, `deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='聊天会话索引（跨登录令牌存活）';
 
 -- 客户信息表（会话维度：正则自动提取 phone/email + 后台人工补全 name/address/remark）
 CREATE TABLE IF NOT EXISTS `customer_profiles` (
@@ -475,6 +534,9 @@ INSERT INTO `menus` (`id`,`parent_id`,`group_name`,`name`,`type`,`path`,`compone
 (31,30,'业务中心','新增角色',3,'','','role:add',1,1,1,1),
 (32,30,'业务中心','修改角色',3,'','','role:edit',2,1,1,1),
 (33,30,'业务中心','删除角色',3,'','','role:remove',3,1,1,1),
+(46,0,'业务中心','租户管理',1,'','',NULL,7,1,1,1),
+(47,46,'业务中心','可复用经验',2,'/experience','views/Experience.vue','experience:view',1,1,1,1),
+(48,47,'业务中心','维护经验',3,'','','experience:edit',1,1,1,1),
 (110,0,'系统管理','租户管理',1,'','',NULL,1,1,1,1),
 (100,110,'系统管理','租户列表',2,'/tenants','views/Tenants.vue',NULL,1,1,1,1),
 (113,0,'系统管理','模型管理',1,'','',NULL,2,1,1,1),
