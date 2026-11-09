@@ -6,22 +6,13 @@
     ORD-2024-001 能不能退款？没拆封的话能不能退款，拆开用过了还能不能退款？
 
 当时的答复是 700 字的政策复述：证据齐、安全规则一条没犯，客户却看不到"能不能"。
-两条路径必须一起看：``answer_gaps`` 说出"这段文字没回答问题"，图级用例再证明这句
-反馈真的把 Supervisor 退回重写、并且改写后的答复逐项给了结论。
+这里钉的是 ``answer_gaps`` 本身；同一句反馈真的把撰写退回重写，由
+``test_node_engine.py::test_shape_gap_rewrites_the_answer_without_re_dispatching`` 证明。
 """
 
 from __future__ import annotations
 
-from typing import Any
-
-import pytest
-from langchain_core.messages import AIMessage, HumanMessage
-
 from app.agent.support import guards
-from app.agent.support.deps import SupportDeps
-from app.agent.support.fakes import USAGE, ScriptedSupportModel, ai_with_tools, tool_call
-from app.agent.support.fakes import offline_deps as make_deps
-from app.agent.support.graph import TURN_STEP_BUDGET, build_support_graph
 from app.agent.support.state import Delegation
 
 QUESTION = "ORD-2024-001 能不能退款？没拆封的话能不能退款，拆开用过了还能不能退款？"
@@ -50,15 +41,6 @@ def finding(specialist: str, *, answer: str = "", verified=()) -> Delegation:
     return {"turn_id": "t1", "specialist": specialist, "answer": answer, "tool_calls": [],
             "evidence": [], "verified_results": list(verified), "used_search": True,
             "failed": False}
-
-
-async def ask(deps: SupportDeps, question: str, *, turn: str = "t-shape",
-              **graph_kwargs: Any) -> dict[str, Any]:
-    graph = await build_support_graph(deps, **{"engine": "tools", **graph_kwargs})
-    config = {"configurable": {"thread_id": f"probe-{turn}"},
-              "recursion_limit": TURN_STEP_BUDGET}
-    return await graph.ainvoke(
-        {"messages": [HumanMessage(content=question, id=f"{turn}:u")], "turn_id": turn}, config)
 
 
 def test_policy_dump_without_a_verdict_is_sent_back() -> None:
@@ -107,26 +89,3 @@ def test_clarifying_reply_and_short_answer_are_not_sent_back() -> None:
     """澄清和一句话回答不该被"缺结论"推去重写——只有铺开的条款才是政策复述。"""
     assert guards.answer_gaps(QUESTION, "请问您是想查这笔订单的状态，还是想了解退货政策？", []) == []
     assert guards.answer_gaps("退货怎么弄？", "签收后 7 天内可申请退货。", []) == []
-
-
-@pytest.mark.asyncio
-async def test_graph_rewrites_the_policy_dump_into_item_verdicts() -> None:
-    """同一轮里被退回一次，第二次逐项作答：结论真的变成了答复。"""
-    deps, _model, events, _ = make_deps(
-        orders={"ORD-2024-001": ORDER},
-        model=ScriptedSupportModel(supervisor_script=[
-            AIMessage(content=POLICY_DUMP, usage_metadata=USAGE),
-            ai_with_tools("先核实政策与这笔订单", [
-                tool_call("consult_faq", {"question": "未拆封与已拆封的退货条件"}, "c1"),
-                tool_call("consult_order", {"question": "ORD-2024-001 状态"}, "c2")]),
-            AIMessage(content=ITEM_BY_ITEM, usage_metadata=USAGE)]))
-    state = await ask(deps, QUESTION)
-
-    assert state["attempts"] == 2, state["review_issues"]
-    assert state["outcome"] == "answered", state["review_issues"]
-    assert "可以申请" in state["answer"] and "不可以" in state["answer"]
-    assert "未拆封" in state["answer"] and "已拆封" in state["answer"]
-    # 第一遍的反馈必须点出"没有结论"，否则这条链路只是碰巧通过。
-    first_issues = state["ledger"][0]["review_issues"]
-    assert any("没有给出" in issue for issue in first_issues), first_issues
-    assert any(e["stage"] == "review" for e in events)

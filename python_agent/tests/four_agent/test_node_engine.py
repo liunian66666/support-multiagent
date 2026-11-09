@@ -1,15 +1,13 @@
 # 中文文案必然包含全角标点
-"""Node 引擎验收：路由只派发、专家各答一路、compose 只写答复、review 决定补派或重写。
+"""四 Agent 主图验收：路由只派发、专家各答一路、compose 只写答复、review 决定补派或重写。
 
-这组用例刻意和 ``test_graph.py`` 分开：那份文件固定跑 ``tools`` 引擎，作为回滚路径的
-回归；这里跑默认引擎，断言的是「决策与执行分离」本身——同一份 Reviewer、同一份 state，
-但每一路专家是独立节点，重试只补缺的那一路。
+断言的是「决策与执行分离」本身——同一份 Reviewer、同一份 state，但每一路专家是独立
+节点，重试只补缺的那一路。
 """
 
 from __future__ import annotations
 
 import asyncio
-import os
 from dataclasses import replace
 from typing import Any
 
@@ -18,7 +16,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from app.agent.support.deps import EvidenceLedger
 from app.agent.support.fakes import USAGE, FakeSpecialist, ScriptedSupportModel, ai_with_tools, offline_deps, tool_call
-from app.agent.support.graph import DEFAULT_ENGINE, TURN_STEP_BUDGET, build_support_graph
+from app.agent.support.graph import TURN_STEP_BUDGET, build_support_graph
 from app.agent.support.plan import ROUTER_PROMPT
 
 pytestmark = pytest.mark.asyncio
@@ -31,7 +29,7 @@ def plan(*calls: tuple[str, str]) -> AIMessage:
 
 
 async def ask(deps: Any, question: str, *, turn: str = "n1", **graph_kwargs: Any) -> dict[str, Any]:
-    graph = await build_support_graph(deps, engine="nodes", **graph_kwargs)
+    graph = await build_support_graph(deps, **graph_kwargs)
     config = {"configurable": {"thread_id": f"probe-{turn}"},
               "recursion_limit": TURN_STEP_BUDGET}
     return await graph.ainvoke(
@@ -234,7 +232,7 @@ async def test_specialist_failure_is_recorded_not_silently_dropped() -> None:
 
 async def test_node_graph_shape_is_visible() -> None:
     deps, *_rest = offline_deps()
-    graph = await build_support_graph(deps, engine="nodes")
+    graph = await build_support_graph(deps)
     nodes = set(graph.get_graph().nodes)
     assert {"open_turn", "precheck", "route", "faq_node", "order_node", "general_node",
             "compose", "review", "finalize", "compact"} <= nodes
@@ -242,29 +240,6 @@ async def test_node_graph_shape_is_visible() -> None:
     edges = {(edge.source, edge.target) for edge in graph.get_graph().edges}
     assert ("review", "compose") in edges and ("review", "route") in edges
     assert ("route", "faq_node") in edges
-
-
-async def test_unknown_engine_is_rejected() -> None:
-    deps, *_rest = offline_deps()
-    with pytest.raises(ValueError):
-        await build_support_graph(deps, engine="graph")
-
-
-async def test_default_engine_follows_the_suite_switch() -> None:
-    """不传 ``engine`` 时用的是谁：默认常量，或 ``SUPPORT_TEST_ENGINE`` 指定的那一套。
-
-    这条守的是测试基础设施本身。``engine`` 曾经写成 ``engine: str = DEFAULT_ENGINE``，
-    默认参数在函数定义时求值，于是「改默认值」对已导入的函数完全无效——那种接法下
-    ``SUPPORT_TEST_ENGINE=nodes pytest`` 会一声不响地继续跑 tools，而整套用例照样全绿。
-    """
-    deps, *_rest = offline_deps()
-    graph = await build_support_graph(deps)          # 刻意不传 engine
-    nodes = set(graph.get_graph().nodes)
-    requested = os.getenv("SUPPORT_TEST_ENGINE", "").strip() or DEFAULT_ENGINE
-    if requested == "nodes":
-        assert {"route", "compose", "faq_node"} <= nodes and "supervisor" not in nodes
-    else:
-        assert "supervisor" in nodes and "route" not in nodes
 
 
 class GatedFaq(FakeSpecialist):
@@ -305,7 +280,7 @@ async def test_another_turn_starting_does_not_clear_this_turns_evidence() -> Non
         compose_script=[AIMessage(content="可以申请：签收后 7 天内退货，运费自担。",
                                   usage_metadata=USAGE)]), faq=faq)
     deps = replace(deps, evidence=ledger)
-    graph = await build_support_graph(deps, engine="nodes")
+    graph = await build_support_graph(deps)
 
     def config(thread: str) -> dict[str, Any]:
         return {"configurable": {"thread_id": thread}, "recursion_limit": TURN_STEP_BUDGET}

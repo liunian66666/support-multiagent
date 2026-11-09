@@ -55,8 +55,8 @@ START → open_turn → supervisor → review → ┬(should_continue)→ superv
 
 ## 模块 4｜主图拓扑 `graph.py`（1.5h）
 - 文件：`app/agent/support/graph.py`。
-- 重点：五个节点各自的输入输出与副作用；`should_continue` 的有界条件；三层上界——middleware（模型/工具次数）→ `attempts`（supervisor pass，默认 3）→ `recursion_limit`（图步数，TURN_STEP_BUDGET=48）。
-- 关注常量：`SUPERVISOR_STEP_BUDGET=32`、`TURN_STEP_BUDGET=48`，注释里写了实测二分过程。
+- 重点：九个节点各自的输入输出与副作用（`open_turn/precheck/route/{faq,order,general}_node/compose/review/finalize/compact`）；`should_end` 的有界条件（预算 → 补派 → hard 重写或收尾）；两层上界——`attempts`（Reviewer 轮次，默认 3）→ `recursion_limit`（图步数，TURN_STEP_BUDGET=48）。
+- 关注常量：`TURN_STEP_BUDGET=48`，注释里写了实测二分过程。
 - 检查题：`finalize` 如何区分 answered / answered_unchecked / review_blocked / no_result？为什么空草稿也要给客户一句话？
 
 ## 模块 5｜动手：离线跑一轮观察 state（1h）
@@ -75,11 +75,11 @@ START → open_turn → supervisor → review → ┬(should_continue)→ superv
 ## 模块 6｜四 Agent 构建 `agents.py`（1.5h）
 - 文件：`app/agent/support/agents.py`。
 - 重点：
-  - `build_supervisor`：`consult_faq/order/general` 三个 `@tool` 内部 `_delegate` 跑专职 Agent，并回收 `Delegation`。
+  - `build_specialists`：三个角色各一个可按调用体，交给图的专家节点直接调用；`run_specialist` 跑一路并把结果归一成 `Delegation`（失败也是数据，不抛）。
   - `build_order_agent`：`lookup_my_order/list_my_orders` 两个只读工具，身份取自服务端，模型无法指定客户。
-  - 中间件：`ToolCallLimitMiddleware`、`ModelCallLimitMiddleware`、`safety_gate`（`@before_model` 装饰器产物）。
+  - 中间件：`ToolCallLimitMiddleware`、`safety_gate`（`@before_model` 装饰器产物）。
   - `collect_usage/add_usage`：token 按 pass 累加，重试是真实开销。
-- 检查题：为什么专职 Agent 不挂自己的 checkpointer？`_delegate` 里 `evidence_cursor` 起什么作用？
+- 检查题：为什么专职 Agent 不挂自己的 checkpointer？`EvidenceLedger` 的派发窗口起什么作用？
 
 ## 模块 7｜Reviewer 规则 `guards.py`（1.5h）
 - 文件：`app/agent/support/guards.py`。
