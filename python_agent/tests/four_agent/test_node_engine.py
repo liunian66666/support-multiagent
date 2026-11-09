@@ -56,6 +56,49 @@ async def test_composite_question_fans_out_and_composes_once() -> None:
     assert state["usage"]["n1"]["delegate_calls"] == 2
 
 
+async def test_order_refund_answer_rewrites_unconfirmed_ticket_promise() -> None:
+    question = "ORD-2024-003这个可以退吗？"
+    unsafe = ("能否退款：目前无法确认。订单 ORD-2024-003 待发货。"
+              "政策核验这一路没有返回结果。您的退款请求会由人工客服跟进处理，"
+              "稍后会有工单提示。")
+    safe = ("这笔订单能否退款：目前无法确认。ORD-2024-003 目前待发货；"
+            "还需核实课程的开通、使用情况，以及适用的退款条件。"
+            "如需人工协助，可以回复「转人工」。")
+    model = ScriptedSupportModel(
+        supervisor_script=[plan(("consult_order", "ORD-2024-003 的状态"),
+                                ("consult_faq", "课程退款条件"))],
+        compose_script=[AIMessage(content=unsafe, usage_metadata=USAGE),
+                        AIMessage(content=safe, usage_metadata=USAGE)],
+        order_answer="订单 ORD-2024-003 状态：待发货；商品：数据分析课程。")
+    deps, model, _events, _ledger = offline_deps(
+        model=model, faq=FakeSpecialist(answer="", raises=True),
+        orders={"ORD-2024-003": {"code": "ok", "order_id": "ORD-2024-003",
+                                 "text": "订单 ORD-2024-003 状态：待发货；商品：数据分析课程。"}})
+    state = await ask(deps, question, turn="n-ticket-promise")
+
+    assert state["outcome"] == "answered", state["review_issues"]
+    assert state["answer"] == safe
+    assert model.recorded.count("compose") == 2
+    assert not any(term in state["answer"] for term in ("政策核验这一路", "工单提示", "人工客服跟进"))
+
+
+async def test_repeated_ticket_promise_is_blocked() -> None:
+    unsafe = "这笔订单目前待发货，退款请求会由人工客服跟进，稍后会有工单提示。"
+    model = ScriptedSupportModel(
+        supervisor_script=[plan(("consult_order", "ORD-2024-003 状态"),
+                                ("consult_faq", "课程退款条件"))],
+        compose_script=[AIMessage(content=unsafe, usage_metadata=USAGE),
+                        AIMessage(content=unsafe, usage_metadata=USAGE)],
+        order_answer="订单 ORD-2024-003 状态：待发货；商品：数据分析课程。")
+    deps, _model, _events, _ledger = offline_deps(
+        model=model, orders={"ORD-2024-003": {"code": "ok", "order_id": "ORD-2024-003",
+                                               "text": "订单 ORD-2024-003 状态：待发货；商品：数据分析课程。"}})
+    state = await ask(deps, "ORD-2024-003这个可以退吗？", turn="n-ticket-block")
+
+    assert state["outcome"] == "review_blocked"
+    assert "工单提示" not in state["answer"]
+
+
 async def test_router_receives_its_own_system_prompt() -> None:
     """路由提示词必须真的发给模型。
 

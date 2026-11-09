@@ -33,6 +33,24 @@ def test_customer_reply_avoids_internal_terms_and_unverified_cancel_button() -> 
     assert "课程是否已开通或使用" in answer
 
 
+def test_unconfirmed_handoff_and_internal_process_are_rejected() -> None:
+    order = {"code": "ok", "text": "订单 ORD-2024-003 状态：待发货；商品：数据分析课程。"}
+    draft = ("订单 ORD-2024-003 待发货，但目前无法确认能否退款。"
+             "政策核验这一路没有返回结果。您的退款请求会由人工客服跟进处理，"
+             "稍后会有工单提示。")
+    hard, _ = guards.review("ORD-2024-003 这个可以退吗？", draft,
+                            [finding("order", verified=[order])])
+    assert guards.INTERNAL_PROCESS_ISSUE in hard
+    assert guards.UNCONFIRMED_HANDOFF_ISSUE in hard
+    assert guards.redraftable_hard(hard)
+
+
+def test_optional_handoff_guidance_is_not_a_ticket_promise() -> None:
+    answer = "目前无法确认能否退款。如需人工协助，可以回复「转人工」。"
+    assert not guards.UNCONFIRMED_HANDOFF.search(answer)
+    assert not guards.INTERNAL_PROCESS.search(answer)
+
+
 def test_hard_fabricated_transaction() -> None:
     hard, _soft = guards.review("退款多久到账？", "已为您退款 199.00 元。",
                                 [finding("faq", answer="退款一般 3 个工作日到账。",

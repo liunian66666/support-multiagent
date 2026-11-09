@@ -28,8 +28,10 @@ from .state import Delegation
 # --- question shape -----------------------------------------------------------
 
 POLICY_MARKERS = re.compile(
-    r"退货|退款政策|退款规则|换货|包邮|运费|邮费|发票|开票|售后|保修|质保|理赔|保障|"
+    r"退货|退换|换货|退款政策|退款规则|包邮|运费|邮费|发票|开票|售后|保修|质保|理赔|保障|"
     r"支付方式|货到付款|分期|到账|时效|期限|多久|几天|手续费|押金|定金|起订|门槛")
+"""「退换」是一个词，既不含「退货」也不含「换货」；漏了它，客户问「可以退换吗」
+连政策问题都算不上，Reviewer 也不会要求这一轮必须派 FAQ。"""
 ORDER_MARKERS = re.compile(
     r"(?:ORD-[A-Za-z0-9-]+|TB\d{6,}|JD\d{6,}|PDD\d{6,}|DY\d{6,}|SF\d{6,})|"
     r"我的订单|查(?:一下|看|询|下)?(?:我的)?订单|订单(?:号|状态|进度|信息)|"
@@ -44,6 +46,17 @@ GREETING_MARKERS = re.compile(
     r"[\s!！。,.，~～、?？]*$", re.I)
 GREETING_MAX = 24
 """超过这个长度基本都带了具体诉求，不再算寒暄。"""
+
+HOWTO_MARKERS = re.compile(
+    r"怎么(?:查|看|找|弄|办|操作|申请|退|换|下载|开|用|设置|改)|"
+    r"如何(?:查|看|找|办|操作|申请|退|换|下载|开|用|设置|改)|"
+    r"怎样|在哪(?:里|儿)?|哪里|入口|步骤|路径|从哪|去哪|账单|交易记录")
+"""操作指引型提问：客户要「第一步做什么」，不是「能不能」的判定。
+
+这类问题套用资格判定的三选一结论，会被逼出「目前无法确认」，模型随后自行补一段
+菜单路径——那正是无依据时最容易编造的地方。实际线上案例：「怎么查询账单信息？」
+答成了「目前无法确认。本轮店铺资料中没有查到……建议登录商城后在个人中心查看」。
+"""
 
 # --- forbidden claims ---------------------------------------------------------
 
@@ -101,6 +114,14 @@ NON_ASSERTIVE = re.compile(r"[?？]|建议|请以|为准|无法|暂不|不确定
                            r"未(?:说明|提及)|需要.{0,6}核实")
 
 INTERNAL_LEAK = re.compile(r"\[K\d+\]|知识库片段|检索片段|chunk_id|doc_id|score\s*[:=]")
+INTERNAL_PROCESS = re.compile(
+    r"(?:政策|订单|FAQ|Order|General).{0,12}(?:核验|查询|检索).{0,12}(?:这一路|分支|节点|没有返回结果)"
+    r"|(?:FAQ|Order|General)\s*Agent", re.I)
+UNCONFIRMED_HANDOFF = re.compile(
+    r"(?:请求|问题|申请).{0,12}(?:会|将|由).{0,10}人工(?:客服)?.{0,12}(?:跟进|处理|联系|接管)"
+    r"|人工(?:客服)?.{0,8}(?:会|将).{0,10}(?:跟进|处理|联系|接管)"
+    r"|(?:稍后|随后|接下来|届时).{0,14}(?:工单(?:号|提示)?|人工(?:客服)?)"
+    r"|(?:会|将|即将).{0,10}(?:创建|生成|提交|建立).{0,4}工单")
 
 BLOCKED_TERMS = ("黄X", "X博", "违法")
 """请求本身越界，不必再走向任何专家。放在 guards 里是因为两个入口都要用同一条判定：
@@ -178,6 +199,11 @@ def is_order_question(text: str) -> bool:
 
 def is_account_question(text: str) -> bool:
     return bool(ACCOUNT_MARKERS.search(text))
+
+
+def is_howto_question(text: str) -> bool:
+    """客户在问操作路径/步骤，而不是资格判定。``compose`` 据此切换写作档位。"""
+    return bool(HOWTO_MARKERS.search(text))
 
 
 def is_greeting(text: str) -> bool:
@@ -346,6 +372,45 @@ _LONG_ANSWER = 240
 _CONCLUSION_LEAD = 160
 
 
+INTERNAL_TERMS = ("本轮店铺资料", "店铺资料中", "没有查到", "未查到", "检索失败",
+                  "专职 Agent", "核验结果", "检索片段", "本轮尚未核实", "待业务确认")
+"""答复里不该出现的内部过程措辞。
+
+刻意取复合短语而不是「本轮」「检索」这类词：后者在正常答复和现有用例里到处都是，
+一拦就会大面积误伤。这里只对应真实线上那句「本轮店铺资料中没有查到……」。
+"""
+
+COURTESY_TAIL = re.compile(
+    r"如有其他问题|如有其他疑问|很乐意(?:继续)?为您|随时(?:欢迎)?(?:咨询|联系)|祝您生活愉快")
+"""与诉求无关的结尾客套：客户没拿到答案时先看到这句，观感最差。"""
+
+UNCONFIRMED_VERDICT = re.compile(
+    r"目前无法确认|无法(?:确认|判断|核定)|暂(?:时)?无法|不能(?:判断|确定)")
+"""「已经下了一个消极判定」的措辞，不是澄清。
+
+``NON_ASSERTIVE`` 里的「无法」会把这类整段答复当成澄清式回答提前放行，于是漏项、
+结论前置等形状检查全部失效——最防御性的答复反而最容易通过 Reviewer。含这些词的
+草稿必须继续走后面的形状检查；真正在反问客户的句子（带问号、请补充）不含它们。
+"""
+
+RETURN_SWAP_QUESTION = re.compile(r"退换|退或换|退货.{0,6}换货|换货.{0,6}退货")
+RETURN_TERM = re.compile(r"退货|退款|退回|退掉")
+SWAP_TERM = re.compile(r"换货|换码|换尺码|换颜色|调换|换一个|换款")
+"""「退换」其实是两件事。``_ASK_ITEMS`` 只认拆解条件（未拆封/已拆封/超期），认不出
+这一档，所以「只讲退货、不提换货」的答复一直能过。KB 里换货条款是有的。"""
+
+
+def has_policy_basis(delegations: list[Delegation]) -> bool:
+    """本轮是否有可引用的政策依据，足以把已知条件推成结论。
+
+    只认 FAQ 这一路的证据，且该路不能失败：只有订单状态、政策这一路没派或失败时，
+    缺的正是判定条件，写「目前无法确认」是诚实的，不该被推去重答。反过来，只要有
+    政策条款，再叠上订单状态，就没有理由把「条件尚未满足」说成「信息不足」。
+    """
+    return any(item["evidence"] and not item["failed"]
+               for item in delegations if item["specialist"] == "faq")
+
+
 def answer_gaps(question: str, draft: str, delegations: list[Delegation]) -> list[str]:
     """答复是否真的回答了客户问的那几件事。
 
@@ -359,9 +424,31 @@ def answer_gaps(question: str, draft: str, delegations: list[Delegation]) -> lis
     阈值取 240 字：短答复里的澄清、反问、拒绝都不该被这条推去重写，只有铺开的条款
     才算"用政策代替结论"。
     """
-    if not is_assertive(draft):
-        return []
     gaps: list[str] = []
+    # 这三条与「草稿是不是断言」无关，必须放在 is_assertive 早退之前：澄清式、
+    # 反问式答复里出现内部过程词或客套尾句，一样不该发给客户。
+    leaked = [term for term in INTERNAL_TERMS if term in draft]
+    if leaked:
+        gaps.append("答复暴露了内部检索过程（" + "、".join(leaked[:2])
+                    + "），改为直接给结论或下一步")
+    if COURTESY_TAIL.search(draft):
+        gaps.append("答复带了无关的结尾客套，删掉")
+    if is_howto_question(question) and "目前无法确认" in draft:
+        gaps.append("操作指引类问题不应以「目前无法确认」收尾，应给步骤或明确的下一步")
+    hedged = bool(UNCONFIRMED_VERDICT.search(draft))
+    if hedged and DECISION_MARKERS.search(question) and has_policy_basis(delegations):
+        # 材料里既有订单状态又有政策条件，缺的不是证据，是把已知条件推成结论。
+        gaps.append("本轮已有可引用依据却以「目前无法确认」收尾：按已知订单状态与政策条件"
+                    "给出「现在还不行、满足什么条件后可以」的结论")
+    if RETURN_SWAP_QUESTION.search(question) and (is_assertive(draft) or hedged):
+        missing = [label for label, pattern in (("退货", RETURN_TERM), ("换货", SWAP_TERM))
+                   if not pattern.search(draft)]
+        if missing:
+            gaps.append("客户问的是退换两件事，答复没有回应"
+                        + "、".join(f"「{label}」" for label in missing) + "，需要逐项作答")
+    # 消极判定也是判定，不能借 NON_ASSERTIVE 里的「无法」绕过后面的漏项与结论前置检查。
+    if not is_assertive(draft) and not hedged:
+        return gaps
     decision = bool(DECISION_MARKERS.search(question))
     conclusion = CONCLUSION.search(draft)
     if decision and len(draft) >= _LONG_ANSWER and conclusion is None:
@@ -430,17 +517,20 @@ def refillable_hard(hard: list[str]) -> bool:
     return bool(hard) and all(issue in REFILLABLE_HARD for issue in hard)
 
 
-REDRAFTABLE_HARD = frozenset({UNSUPPORTED_VALUES})
-"""可以由「只重写、不补派」修复的 hard ——比 ``REFILLABLE_HARD`` 更窄一格。
+INTERNAL_PROCESS_ISSUE = "向客户暴露专家或检索流程"
+UNCONFIRMED_HANDOFF_ISSUE = "承诺尚未创建的工单或人工接管"
+REDRAFTABLE_HARD = frozenset({UNSUPPORTED_VALUES, INTERNAL_PROCESS_ISSUE,
+                              UNCONFIRMED_HANDOFF_ISSUE})
+"""可以由「只重写、不补派」修复的 hard。
 
 ``UNVERIFIED_ORDER_FACTS`` 不在里面：订单事实没核验，重写再多次也变不出核验结果，
-那一路必须补派 Order（或直接说无法确认）。剩下的情形才是「材料已经在手、撰写时自己
-编了一个数」——重写一次、且**不带旧稿**，是唯一能修好它的动作。
+那一路必须补派 Order（或直接说无法确认）。数值编造、内部流程措辞和未发生的工单承诺
+都可以在材料已到手时重新措辞；只给一次不带旧稿的机会，复审不过仍然拦截。
 """
 
 
 def redraftable_hard(hard: list[str]) -> bool:
-    """这轮 hard 是否只是「撰写编了数值」这一条。"""
+    """这轮 hard 是否只含可用已有材料重新措辞修复的问题。"""
     return bool(hard) and all(issue in REDRAFTABLE_HARD for issue in hard)
 
 
@@ -464,6 +554,10 @@ def review(question: str, draft: str, delegations: list[Delegation],
         hard.append("承诺代为执行退款/支付等已关闭的操作，应改为指引客户自助申请或转人工")
     if INTERNAL_LEAK.search(draft):
         hard.append("向客户暴露内部检索片段或编号")
+    if INTERNAL_PROCESS.search(draft):
+        hard.append(INTERNAL_PROCESS_ISSUE)
+    if UNCONFIRMED_HANDOFF.search(draft):
+        hard.append(UNCONFIRMED_HANDOFF_ISSUE)
     if not evidence_supported(draft, delegations):
         hard.append(UNSUPPORTED_VALUES)
 
@@ -528,3 +622,22 @@ def safe_fallback(hard: list[str], soft: list[str], delegations: list[Delegation
         parts.append("目前无法可靠核实这项信息，请补充更具体的问题。")
     parts.append("需要人工协助时回复「转人工」。")
     return "\n".join(parts)
+
+
+def uncovered_reply(question: str) -> str:
+    """本轮没有可用依据时的确定性话术：给下一步，不解释「我为什么不能」。
+
+    由 ``compose`` 在无材料时直接返回，连一次模型调用都不花。刻意避开
+    ``INTERNAL_TERMS`` 里的措辞（不写「没有查到」「本轮……」），否则 Reviewer 会把
+    这句自己生成的安全话术重新退回重写，来回空转到预算用尽。
+    """
+    if is_account_question(question) and not is_order_question(question) \
+            and not is_policy_question(question):
+        return account_safe_reply(question)
+    if is_howto_question(question):
+        return ("这个操作的入口当前缺少可核实的店铺说明，为避免指错位置，请回复「转人工」，"
+                "由客服直接告诉您具体路径。")
+    if is_policy_question(question):
+        return ("这条规则当前缺少可核实的条款，具体以店铺公示为准。"
+                "需要人工协助时回复「转人工」。")
+    return "这个问题当前缺少可核实的信息，请补充更具体的说明；需要人工协助时回复「转人工」。"

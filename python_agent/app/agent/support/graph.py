@@ -245,8 +245,8 @@ async def build_support_graph(deps: SupportDeps, *, checkpointer: Any = None,
         FAQ 单角色一律过 compose，因为「先给结论、少列字段、不承诺」这些规则只在
         ``COMPOSE_PROMPT`` 里，透传就是把它们丢掉。
 
-        ``redraft`` 置位时（Reviewer 判定「材料已在手、只是编了数值」）重写**不带旧稿**：
-        把含错数值的上一版喂回去，模型通常照抄那个数、只换措辞，等于白跑一次。
+        ``redraft`` 置位时（Reviewer 判定材料已在手、草稿措辞不合规）重写**不带旧稿**：
+        否则模型可能照抄错误数值或虚构的工单承诺。
         """
         turn_id = state.get("turn_id", "")
         question = _question(state)
@@ -262,6 +262,14 @@ async def build_support_graph(deps: SupportDeps, *, checkpointer: Any = None,
         if not own and not state.get("draft"):
             # 没有任何材料可写：宁可交白卷走安全话术，也不让模型凭空补一段。
             return {**clear_redraft, "draft": ""}
+        if (guards.is_howto_question(question) and not feedback
+                and not _has_usable_material(own, turn_id)):
+            # 操作指引型问题在「无依据」时最容易被逼出两段编造：先说「目前无法确认」，
+            # 再猜一个菜单路径（线上实例：账单查询被答成「建议登录商城后在个人中心查看」）。
+            # 有材料时照常撰写，没材料就不调模型，直接给下一步。只对这一档短路：
+            # 判定型问题仍走原来的 Reviewer → 安全话术路径，别改变既有收敛语义。
+            deps.trace("compose", "uncovered", roles=_roles(own))
+            return {**clear_redraft, "draft": guards.uncovered_reply(question)}
         if len(own) == 1 and not feedback and _may_passthrough(question, own[0]):
             deps.trace("compose", "passthrough", role=own[0]["specialist"])
             return clear_redraft | {"draft": own[0]["answer"]}
@@ -311,8 +319,8 @@ async def build_support_graph(deps: SupportDeps, *, checkpointer: Any = None,
                 # 再交一遍，白白空转到预算用尽；这里直接交给 finalize 说安全话术。
                 gaps = []
             update["review_gaps"] = gaps
-            # 三种处理，按可修复性从强到弱：缺角色补派；材料已在手、只是草稿编了数值
-            # 则重写一次；越权或其他不可修复的 hard 直接由 should_end 收尾。
+            # 三种处理，按可修复性从强到弱：缺角色补派；材料已在手、草稿含可修正
+            # 的数值或措辞问题则重写一次；其余 hard 由 should_end 收尾。
             update["redraft"] = bool(
                 hard and not refill and not state.get("redraft_used")
                 and guards.redraftable_hard(hard)
@@ -333,9 +341,9 @@ async def build_support_graph(deps: SupportDeps, *, checkpointer: Any = None,
         或 hard 全都是「缺当轮证据」；后者的草稿已经被 ``route`` 清掉，补派拿回证据后由
         ``compose`` 依据新材料重写，再走一次 ``review``。
 
-        再往后是这条窄路：hard 只剩「数值无当轮证据」、材料已在手、又还没有重写过，
+        再往后是这条窄路：hard 只含可重写的问题、材料已在手、又还没有重写过，
         就给一次「不看旧稿」的重写；``redraft`` 由 Reviewer 置位且每轮只置一次，所以
-        第二次仍编数值必然落到 ``finalize``，不会靠换措辞拖满预算。其余 hard 说的是
+        第二次仍不合规必然落到 ``finalize``，不会靠换措辞拖满预算。其余 hard 说的是
         「这段陈述本身不该出现」，重派或重写都不会让它变合规，直接收尾说安全话术。
         """
         if state.get("attempts", 0) >= max_passes:

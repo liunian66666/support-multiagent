@@ -14,12 +14,19 @@
 from __future__ import annotations
 
 import pytest
-
 from business.chat import recovery, worker
-from business.chat.routing import (ERROR_APPROVAL_PENDING, ERROR_APPROVAL_UNKNOWN,
-                                   ROUTE_AGENT, ROUTE_ANSWER_THEN_HANDOFF, ROUTE_HANDOFF,
-                                   ROUTE_HUMAN, ROUTE_MEDIA, ROUTE_PENDING,
-                                   answer_then_handoff, route_message)
+from business.chat.routing import (
+    ERROR_APPROVAL_PENDING,
+    ERROR_APPROVAL_UNKNOWN,
+    ROUTE_AGENT,
+    ROUTE_ANSWER_THEN_HANDOFF,
+    ROUTE_HANDOFF,
+    ROUTE_HUMAN,
+    ROUTE_MEDIA,
+    ROUTE_PENDING,
+    answer_then_handoff,
+    route_message,
+)
 
 TICKET = {"id": 11, "ticket_no": "TK-1", "status": 0, "reason": "等人工", "created_at": None}
 
@@ -194,6 +201,16 @@ def test_plain_question_goes_to_the_agent_and_commits_once(monkeypatch) -> None:
     assert rec.tickets == []
     assert rec.committed[0]["result_type"] == "ai"
     assert rec.events[-1]["type"] == "chat_end"
+
+
+def test_order_refund_question_does_not_create_a_ticket(monkeypatch) -> None:
+    rec = Recorder()
+    rec.install(monkeypatch, reply="目前无法确认这笔订单能否退款。")
+    worker.process_claim(row("ORD-2024-003这个可以退吗？"))
+
+    assert rec.agent_calls == 1
+    assert rec.tickets == []
+    assert rec.committed[0]["result_type"] == "ai"
 
 
 def test_conditional_handoff_keeps_reviewed_answer_and_creates_one_ticket(monkeypatch) -> None:
