@@ -1,0 +1,100 @@
+# 宿主机 HTTPS 反代示例（放到 /etc/nginx/conf.d/demo.conf）
+# 前置：SM_nginx 只监听 127.0.0.1:8080（见 docker-compose.demo.yaml）
+# 用法：按 docs/公开演示部署指南.md 的 ② 先申请证书、再用 ③ 替换域名并启用。
+#       本文件引用 443 证书，证书尚未生成时直接 nginx -t 会失败。
+#
+# 分层：公网 443 → 本层（TLS / 限流 / 路径屏蔽）→ 127.0.0.1:8080（SM_nginx）
+#       → FastAPI business / Agent。内层 nginx.conf 与业务代码都不需要改。
+
+limit_req_zone $binary_remote_addr zone=demo_page:10m rate=10r/s;
+limit_req_zone $binary_remote_addr zone=demo_api:10m rate=2r/s;
+limit_conn_zone $binary_remote_addr zone=demo_conn:10m;
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 80;
+    server_name demo.example.com;
+
+    # certbot HTTP-01 校验；该目录由 certbot --webroot 或 nginx 插件使用
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    server_name demo.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/demo.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/demo.example.com/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options   "nosniff" always;
+    add_header Referrer-Policy          "no-referrer" always;
+
+    # 演示只需小图片上传；内层 nginx 是 110m，这里先收窄，减少磁盘滥用面
+    client_max_body_size 12m;
+    limit_conn demo_conn 20;
+
+    # 关键：只把 socket 对端 IP 写进 X-Forwarded-For，不信任客户端自带的 XFF。
+    # 内层 00-realip.conf 据此把 $remote_addr 还原成真实访客 IP。
+    # 注意 nginx 继承规则：某个 location 一旦自己写了 proxy_set_header，
+    # 就不再继承 server 级的设置 —— 所以 /ws/chat 里必须重复一遍。
+    proxy_set_header Host              $host;
+    proxy_set_header X-Forwarded-For   $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Real-IP         $remote_addr;
+
+    # ---- 演示站不放行的路径（纵深防御）----
+    # 管理后台前端与全部管理端 API：演示只暴露终端用户侧，后台用截图展示即可。
+    location ^~ /admin/            { return 404; }
+    location ^~ /api/admin/        { return 404; }
+    location ^~ /py-api/api/admin/ { return 404; }
+    # 内部接口：内层 nginx 已挡 /api/agent/ 与 /py-api/api/agent/，外层再挡一次。
+    location ^~ /api/agent/        { return 404; }
+    location ^~ /py-api/api/agent/ { return 404; }
+    location ^~ /agent/            { return 404; }  # 决策轨迹 /agent/traces/*
+    location ^~ /py-api/agent/     { return 404; }
+    location = /ws/admin           { return 404; }
+    location = /metrics            { return 404; }
+    location = /docs               { return 404; }
+    location = /openapi.json       { return 404; }
+    # /py-api/ 在内层会被 rewrite 成 /，等价路径必须一并挡住：
+    # 内层只显式挡了 /py-api/api/agent/，管理端 API 与 FastAPI 文档仍会从这里穿过。
+    location ^~ /py-api/metrics      { return 404; }
+    location ^~ /py-api/docs         { return 404; }
+    location ^~ /py-api/openapi.json { return 404; }
+    location ^~ /py-api/redoc        { return 404; }
+
+    # ---- 客户侧 API（/api/ 供聊天页，/py-api/ 供 SDK 与登录页）----
+    location ~ ^/(api|py-api)/ {
+        limit_req zone=demo_api burst=10 nodelay;
+        proxy_pass http://127.0.0.1:8080;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_connect_timeout 5s;
+    }
+
+    location = /ws/chat {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Forwarded-For   $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        $connection_upgrade;
+        proxy_read_timeout 300s;
+    }
+
+    location / {
+        limit_req zone=demo_page burst=30 nodelay;
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_read_timeout 60s;
+    }
+}

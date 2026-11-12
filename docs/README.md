@@ -36,8 +36,8 @@
 ### 2.1 一键部署
 
 ```bash
-git clone https://github.com/myrockey/ai_customer_service.git
-cd ai_customer_service
+git clone https://github.com/liunian66666/support-multiagent.git
+cd support-multiagent
 cp .env.example .env    # 按需修改密钥/端口
 docker compose up -d --build          # 等待 1~2 分钟全部 healthy
 docker compose ps                     # 确认所有容器 healthy

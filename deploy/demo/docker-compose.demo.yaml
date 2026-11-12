@@ -1,0 +1,25 @@
+# 公开演示站 override：与根目录 docker-compose.yaml 叠加，不修改基础编排。
+#
+# 只在仓库根目录执行：
+#   docker compose -f docker-compose.yaml -f deploy/demo/docker-compose.demo.yaml up -d --build
+# 下线（不删卷、不 prune）：
+#   docker compose -f docker-compose.yaml -f deploy/demo/docker-compose.demo.yaml down
+#
+# 做三件事：
+#   1) nginx 只绑回环地址，公网唯一入口是宿主机 HTTPS 反代（nginx-edge.conf.example）
+#   2) 追加 00-realip.conf，让业务层拿到真实访客 IP（否则限流键全体共用）
+#   3) 不启动 observability profile，避免 Grafana/Prometheus/Loki 额外暴露
+#
+# 版本要求：ports 的 !override 需要 Docker Compose v2.24.4+（docker compose version）。
+# 若版本较低，不要删掉 !override 直接启动：那会与基础端口映射合并，
+# 出现 0.0.0.0:8080 仍在监听、公网可绕过 TLS 直连。低版本请改用
+# docs/公开演示部署指南.md 中的「备选：复制编排改端口」小节。
+
+services:
+  nginx:
+    ports: !override
+      - "127.0.0.1:${HTTP_PORT:-8080}:80"
+    # volumes 是多值项，Compose 按容器路径去重后追加，基础里的
+    # ./deploy/nginx.conf 挂载与 cs_kb_files / cs_msg_files 卷都会保留。
+    volumes:
+      - ./deploy/demo/00-realip.conf:/etc/nginx/conf.d/00-realip.conf:ro
